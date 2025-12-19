@@ -963,8 +963,18 @@ async def clone_bot_repository(bot_id: int):
 @app.get("/api/panel/git-status")
 async def get_panel_git_status():
     """Получение статуса Git репозитория панели"""
-    status = get_git_status(BASE_DIR)
-    return status
+    try:
+        status = get_git_status(BASE_DIR)
+        return status
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting panel git status: {str(e)}", exc_info=True)
+        return {
+            "is_repo": False,
+            "error": f"Ошибка при получении статуса Git: {str(e)}",
+            "git_not_installed": False
+        }
 
 @app.post("/api/panel/update")
 async def update_panel():

@@ -228,24 +228,31 @@ def get_git_status(path: Path) -> Dict[str, Any]:
     
     try:
         # Проверяем, есть ли изменения
-        result = subprocess.run(
-            [git_cmd, "status", "--porcelain"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        has_changes = bool(result.stdout.strip())
+        try:
+            result = subprocess.run(
+                [git_cmd, "status", "--porcelain"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            has_changes = bool(result.stdout.strip())
+        except Exception:
+            has_changes = False
         
         # Получаем текущую ветку
-        result = subprocess.run(
-            [git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        current_branch = result.stdout.strip() if result.returncode == 0 else None
+        current_branch = None
+        try:
+            result = subprocess.run(
+                [git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            current_branch = result.stdout.strip() if result.returncode == 0 else None
+        except Exception:
+            pass
         
         # Если ветка не определена (нет коммитов), пробуем получить имя ветки из .git/HEAD
         if not current_branch:
@@ -262,51 +269,65 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         
         # Получаем последний коммит
         last_commit = None
-        # Проверяем, есть ли коммиты
-        result = subprocess.run(
-            [git_cmd, "rev-list", "--count", "HEAD"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        has_commits = result.returncode == 0 and result.stdout.strip() and int(result.stdout.strip() or "0") > 0
-        
-        if has_commits:
+        try:
+            # Проверяем, есть ли коммиты
             result = subprocess.run(
-                [git_cmd, "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
+                [git_cmd, "rev-list", "--count", "HEAD"],
                 cwd=str(path),
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            if result.returncode == 0 and result.stdout.strip():
-                parts = result.stdout.strip().split("|", 2)
-                if len(parts) == 3:
-                    last_commit = {
-                        "hash": parts[0][:7],
-                        "message": parts[1],
-                        "date": parts[2]
-                    }
-        
-        # Проверяем, есть ли обновления
-        has_updates = False
-        if get_git_remote(path):
-            result = subprocess.run(
-                [git_cmd, "fetch", "origin"],
-                cwd=str(path),
-                capture_output=True,
-                timeout=30
-            )
-            if result.returncode == 0:
+            has_commits = result.returncode == 0 and result.stdout.strip() and int(result.stdout.strip() or "0") > 0
+            
+            if has_commits:
                 result = subprocess.run(
-                    [git_cmd, "rev-list", "--count", "HEAD..origin/" + (current_branch or "main")],
+                    [git_cmd, "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
                     cwd=str(path),
                     capture_output=True,
                     text=True,
                     timeout=10
                 )
-                has_updates = result.returncode == 0 and int(result.stdout.strip() or "0") > 0
+                if result.returncode == 0 and result.stdout.strip():
+                    parts = result.stdout.strip().split("|", 2)
+                    if len(parts) == 3:
+                        last_commit = {
+                            "hash": parts[0][:7],
+                            "message": parts[1],
+                            "date": parts[2]
+                        }
+        except Exception:
+            # Игнорируем ошибки при получении коммитов
+            pass
+        
+        # Проверяем, есть ли обновления
+        has_updates = False
+        remote_url = None
+        try:
+            remote_url = get_git_remote(path)
+            if remote_url:
+                try:
+                    result = subprocess.run(
+                        [git_cmd, "fetch", "origin"],
+                        cwd=str(path),
+                        capture_output=True,
+                        timeout=30
+                    )
+                    if result.returncode == 0:
+                        result = subprocess.run(
+                            [git_cmd, "rev-list", "--count", "HEAD..origin/" + (current_branch or "main")],
+                            cwd=str(path),
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        has_updates = result.returncode == 0 and int(result.stdout.strip() or "0") > 0
+                except Exception:
+                    # Игнорируем ошибки при проверке обновлений
+                    pass
+        except Exception:
+            # Игнорируем ошибки при получении remote
+            pass
         
         return {
             "is_repo": True,
@@ -314,7 +335,7 @@ def get_git_status(path: Path) -> Dict[str, Any]:
             "current_branch": current_branch,
             "last_commit": last_commit,
             "has_updates": has_updates,
-            "remote": get_git_remote(path)
+            "remote": remote_url
         }
     except FileNotFoundError:
         return {
