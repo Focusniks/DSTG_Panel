@@ -889,6 +889,11 @@ async def update_bot_from_git_endpoint(bot_id: int):
 @app.post("/api/bots/{bot_id}/clone")
 async def clone_bot_repository(bot_id: int):
     """Принудительное клонирование репозитория бота (удаляет существующие файлы кроме config.json)"""
+    import logging
+    import json
+    import tempfile
+    logger = logging.getLogger(__name__)
+    
     bot = get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
@@ -899,72 +904,113 @@ async def clone_bot_repository(bot_id: int):
     bot_dir = Path(bot['bot_dir'])
     branch = bot.get('git_branch', 'main')
     repo_url = bot.get('git_repo_url')
+    config_path = bot_dir / "config.json"
+    config_backup = None
     
     try:
         # Сохраняем config.json
-        config_path = bot_dir / "config.json"
-        config_backup = None
         if config_path.exists():
-            import tempfile
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
                 config_backup = tmp.name
                 shutil.copy2(config_path, config_backup)
         
         # Удаляем все файлы кроме config.json, если директория существует
-        if bot_dir.exists() and is_git_repo(bot_dir):
-            # Если это Git репозиторий, удаляем .git
-            git_dir = bot_dir / ".git"
-            if git_dir.exists():
-                shutil.rmtree(git_dir)
-        
-        # Удаляем все файлы кроме config.json
+        # Git clone не может клонировать в существующую директорию, поэтому нужно временно удалить config.json
+        config_removed = False
         if bot_dir.exists():
+            if is_git_repo(bot_dir):
+                # Если это Git репозиторий, удаляем .git
+                git_dir = bot_dir / ".git"
+                if git_dir.exists():
+                    shutil.rmtree(git_dir)
+            
+            # Удаляем все файлы кроме config.json
             for item in bot_dir.iterdir():
                 if item.name != "config.json" and item.name != ".git":
-                    if item.is_dir():
-                        shutil.rmtree(item)
-                    else:
-                        item.unlink()
+                    try:
+                        if item.is_dir():
+                            shutil.rmtree(item)
+                        else:
+                            item.unlink()
+                    except Exception as e:
+                        logger.warning(f"Failed to remove {item}: {str(e)}")
+            
+            # Временно удаляем config.json, чтобы директория была полностью пустой для git clone
+            if config_path.exists() and not config_backup:
+                # Если бэкап еще не создан, создаем его
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+                    config_backup = tmp.name
+                    shutil.copy2(config_path, config_backup)
+            
+            if config_path.exists():
+                config_path.unlink()
+                config_removed = True
         
         # Клонируем репозиторий
+        logger.info(f"Cloning repository {repo_url} to {bot_dir}")
         success, message = update_bot_from_git(bot_dir, repo_url, branch)
         
-        # Восстанавливаем config.json
-        if config_backup and config_path.exists():
-            # Обновляем config.json, сохраняя существующие настройки
-            with open(config_path, 'r', encoding='utf-8') as f:
-                import json
-                existing_config = json.load(f)
-            
-            # Восстанавливаем из бэкапа
-            shutil.copy2(config_backup, config_path)
-            
-            # Обновляем настройки из существующего конфига
-            with open(config_path, 'r', encoding='utf-8') as f:
-                new_config = json.load(f)
-            
-            # Сохраняем важные настройки
-            for key in ['name', 'bot_type', 'start_file', 'cpu_limit', 'memory_limit', 'git_repo_url', 'git_branch']:
-                if key in existing_config:
-                    new_config[key] = existing_config[key]
-            
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(new_config, f, ensure_ascii=False, indent=2)
-            
-            os.unlink(config_backup)
-        
-        if success:
-            return {"success": True, "message": message}
-        else:
+        if not success:
+            # Восстанавливаем config.json при ошибке клонирования
+            if config_backup and os.path.exists(config_backup):
+                try:
+                    if not config_path.exists():
+                        bot_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(config_backup, config_path)
+                except Exception as e:
+                    logger.error(f"Failed to restore config.json: {str(e)}")
             raise HTTPException(status_code=500, detail=message)
-    except Exception as e:
-        # Восстанавливаем config.json при ошибке
-        if config_backup and config_path.exists():
+        
+        # Восстанавливаем config.json после успешного клонирования
+        if config_backup and os.path.exists(config_backup):
             try:
+                if config_path.exists():
+                    # Читаем существующий конфиг из клонированного репозитория
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        new_config = json.load(f)
+                    
+                    # Читаем бэкап с нашими настройками
+                    with open(config_backup, 'r', encoding='utf-8') as f:
+                        existing_config = json.load(f)
+                    
+                    # Сохраняем важные настройки из бэкапа
+                    for key in ['name', 'bot_type', 'start_file', 'cpu_limit', 'memory_limit', 'git_repo_url', 'git_branch']:
+                        if key in existing_config:
+                            new_config[key] = existing_config[key]
+                    
+                    # Сохраняем обновленный конфиг
+                    with open(config_path, 'w', encoding='utf-8') as f:
+                        json.dump(new_config, f, ensure_ascii=False, indent=2)
+                else:
+                    # Если config.json не существует, просто восстанавливаем из бэкапа
+                    shutil.copy2(config_backup, config_path)
+                
+                # Удаляем временный файл
+                os.unlink(config_backup)
+            except Exception as e:
+                logger.error(f"Failed to merge config.json: {str(e)}")
+                # В крайнем случае просто восстанавливаем из бэкапа
+                try:
+                    shutil.copy2(config_backup, config_path)
+                    os.unlink(config_backup)
+                except:
+                    pass
+        
+        return {"success": True, "message": message}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cloning repository for bot {bot_id}: {str(e)}", exc_info=True)
+        # Восстанавливаем config.json при ошибке
+        if config_backup and os.path.exists(config_backup):
+            try:
+                if not bot_dir.exists():
+                    bot_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(config_backup, config_path)
                 os.unlink(config_backup)
-            except:
-                pass
+            except Exception as restore_error:
+                logger.error(f"Failed to restore config.json after error: {str(restore_error)}")
         raise HTTPException(status_code=500, detail=f"Error cloning repository: {str(e)}")
 
 # Panel settings endpoints

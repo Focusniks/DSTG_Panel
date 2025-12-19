@@ -1512,8 +1512,16 @@
                     loadGitStatus();
                 }
             } else {
-                const error = await response.json().catch(() => ({ detail: 'Неизвестная ошибка' }));
-                showError('Ошибка клонирования', error.detail || 'Не удалось клонировать репозиторий');
+                let errorDetail = 'Неизвестная ошибка';
+                try {
+                    const error = await response.json();
+                    errorDetail = error.detail || error.message || errorDetail;
+                    console.error('Clone error response:', error);
+                } catch (e) {
+                    errorDetail = `HTTP ${response.status}: ${response.statusText}`;
+                    console.error('Failed to parse error response:', e);
+                }
+                showError('Ошибка клонирования', errorDetail);
                 loadGitStatus();
             }
         } catch (error) {

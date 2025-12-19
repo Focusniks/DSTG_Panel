@@ -639,11 +639,11 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                 return False, "Repository URL required for initialization"
             
             # Клонируем репозиторий
+            # Проверяем, не пуста ли директория (игнорируем .gitkeep, .git и config.json)
             if bot_dir.exists():
-                # Проверяем, не пуста ли директория (игнорируем .gitkeep и .git)
-                files = [f for f in bot_dir.iterdir() if f.name not in ['.gitkeep', '.git']]
+                files = [f for f in bot_dir.iterdir() if f.name not in ['.gitkeep', '.git', 'config.json']]
                 if files:
-                    return False, "Directory is not empty and not a Git repository"
+                    return False, f"Directory is not empty and not a Git repository. Found files: {', '.join([f.name for f in files[:5]])}"
             
             # Преобразуем HTTPS URL в SSH для приватных репозиториев (если нужно)
             clone_url = repo_url
@@ -656,6 +656,13 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
             
+            # Git clone не может клонировать в существующую директорию, нужно клонировать во временную и переместить
+            # Или использовать git clone с пустой директорией
+            if bot_dir.exists() and any(bot_dir.iterdir()):
+                # Если директория существует и не пуста (но не Git репозиторий), это ошибка
+                # Но мы уже проверили выше, так что здесь должно быть пусто (только config.json)
+                pass
+            
             result = subprocess.run(
                 [git_cmd, "clone", "-b", branch, clone_url, str(bot_dir)],
                 capture_output=True,
@@ -666,7 +673,8 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             if result.returncode == 0:
                 return True, "Repository cloned successfully"
-            return False, result.stderr or "Clone failed"
+            error_msg = result.stderr or result.stdout or "Clone failed"
+            return False, f"Git clone failed: {error_msg}"
         
         # Если репозиторий уже существует, обновляем его
         # Используем SSH окружение для всех Git операций
