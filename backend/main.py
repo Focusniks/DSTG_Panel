@@ -945,6 +945,22 @@ async def clone_bot_repository(bot_id: int):
             if config_path.exists():
                 config_path.unlink()
                 config_removed = True
+            
+            # Git clone не может клонировать в существующую директорию, даже если она пустая
+            # Удаляем директорию полностью, если она пустая
+            try:
+                if bot_dir.exists():
+                    # Проверяем, что директория действительно пустая
+                    remaining_files = list(bot_dir.iterdir())
+                    if not remaining_files:
+                        # Директория пустая, можно удалить
+                        bot_dir.rmdir()
+                    elif len(remaining_files) == 1 and remaining_files[0].name == '.gitkeep':
+                        # Только .gitkeep, удаляем его и директорию
+                        remaining_files[0].unlink()
+                        bot_dir.rmdir()
+            except Exception as e:
+                logger.warning(f"Failed to remove empty directory {bot_dir}: {str(e)}")
         
         # Клонируем репозиторий
         logger.info(f"Cloning repository {repo_url} to {bot_dir}")
@@ -1001,7 +1017,13 @@ async def clone_bot_repository(bot_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cloning repository for bot {bot_id}: {str(e)}", exc_info=True)
+        # Получаем детальную информацию об ошибке
+        error_type = type(e).__name__
+        error_msg = str(e) if str(e) else repr(e)
+        error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
+        
+        logger.error(f"Error cloning repository for bot {bot_id}: {error_detail}", exc_info=True)
+        
         # Восстанавливаем config.json при ошибке
         if config_backup and os.path.exists(config_backup):
             try:
@@ -1011,7 +1033,8 @@ async def clone_bot_repository(bot_id: int):
                 os.unlink(config_backup)
             except Exception as restore_error:
                 logger.error(f"Failed to restore config.json after error: {str(restore_error)}")
-        raise HTTPException(status_code=500, detail=f"Error cloning repository: {str(e)}")
+        
+        raise HTTPException(status_code=500, detail=f"Error cloning repository: {error_detail}")
 
 # Panel settings endpoints
 @app.get("/api/panel/git-status")

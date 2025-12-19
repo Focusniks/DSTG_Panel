@@ -638,12 +638,34 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             if not repo_url:
                 return False, "Repository URL required for initialization"
             
+            # Убеждаемся, что родительская директория существует
+            try:
+                bot_dir.parent.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                return False, f"Failed to create parent directory: {str(e)}"
+            
             # Клонируем репозиторий
             # Проверяем, не пуста ли директория (игнорируем .gitkeep, .git и config.json)
             if bot_dir.exists():
                 files = [f for f in bot_dir.iterdir() if f.name not in ['.gitkeep', '.git', 'config.json']]
                 if files:
                     return False, f"Directory is not empty and not a Git repository. Found files: {', '.join([f.name for f in files[:5]])}"
+                
+                # Git clone не может клонировать в существующую директорию в большинстве версий Git
+                # Удаляем пустую директорию, чтобы git clone мог создать её заново
+                try:
+                    remaining = list(bot_dir.iterdir())
+                    if not remaining or (len(remaining) == 1 and remaining[0].name == '.gitkeep'):
+                        # Удаляем .gitkeep если есть
+                        for item in remaining:
+                            if item.name == '.gitkeep':
+                                item.unlink()
+                        # Удаляем пустую директорию
+                        if not any(bot_dir.iterdir()):
+                            bot_dir.rmdir()
+                except Exception as e:
+                    # Если не удалось удалить, попробуем клонировать в temp и переместить
+                    logger.warning(f"Could not remove empty directory {bot_dir}: {str(e)}")
             
             # Преобразуем HTTPS URL в SSH для приватных репозиториев (если нужно)
             clone_url = repo_url
@@ -656,13 +678,6 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
             
-            # Git clone не может клонировать в существующую директорию, нужно клонировать во временную и переместить
-            # Или использовать git clone с пустой директорией
-            if bot_dir.exists() and any(bot_dir.iterdir()):
-                # Если директория существует и не пуста (но не Git репозиторий), это ошибка
-                # Но мы уже проверили выше, так что здесь должно быть пусто (только config.json)
-                pass
-            
             result = subprocess.run(
                 [git_cmd, "clone", "-b", branch, clone_url, str(bot_dir)],
                 capture_output=True,
@@ -673,8 +688,18 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             if result.returncode == 0:
                 return True, "Repository cloned successfully"
-            error_msg = result.stderr or result.stdout or "Clone failed"
-            return False, f"Git clone failed: {error_msg}"
+            
+            # Формируем детальное сообщение об ошибке
+            error_parts = []
+            if result.stderr:
+                error_parts.append(f"stderr: {result.stderr.strip()}")
+            if result.stdout:
+                error_parts.append(f"stdout: {result.stdout.strip()}")
+            if not error_parts:
+                error_parts.append("Unknown error (no output from git)")
+            
+            error_msg = " | ".join(error_parts)
+            return False, f"Git clone failed (exit code {result.returncode}): {error_msg}"
         
         # Если репозиторий уже существует, обновляем его
         # Используем SSH окружение для всех Git операций
@@ -724,13 +749,16 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             return True, "Bot updated successfully"
         return False, result.stderr or "Pull failed"
         
-    except subprocess.TimeoutExpired:
-        return False, "Timeout"
-    except FileNotFoundError:
+    except subprocess.TimeoutExpired as e:
+        return False, f"Timeout while executing git command: {str(e) if str(e) else 'Operation timed out'}"
+    except FileNotFoundError as e:
         return False, "Git не установлен. Установите Git для работы с репозиториями."
     except Exception as e:
-        error_msg = str(e)
-        if "No such file or directory" in error_msg or "git" in error_msg.lower():
+        error_type = type(e).__name__
+        error_msg = str(e) if str(e) else repr(e)
+        error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
+        
+        if "No such file or directory" in error_detail or "git" in error_detail.lower():
             return False, "Git не установлен. Установите Git для работы с репозиториями."
-        return False, str(e)
+        return False, error_detail
 
