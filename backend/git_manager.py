@@ -11,8 +11,24 @@ from backend.ssh_manager import convert_https_to_ssh, get_git_env_with_ssh
 
 def get_git_command() -> str:
     """Получение команды git с учетом платформы"""
+    # Сначала пробуем найти через which
     git_cmd = shutil.which("git")
-    return git_cmd if git_cmd else "git"
+    if git_cmd:
+        return git_cmd
+    
+    # Если не найдено, пробуем стандартные пути для Unix
+    if os.name != 'nt':
+        standard_paths = [
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ]
+        for path in standard_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                return path
+    
+    # В крайнем случае просто "git" - пусть система сама найдет
+    return "git"
 
 def run_git_command(path: Path, *args, **kwargs) -> subprocess.CompletedProcess:
     """Выполнение Git команды с автоматическим определением пути к git"""
@@ -86,17 +102,76 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
 
 def check_git_installed() -> bool:
     """Проверка, установлен ли Git"""
+    # Пробуем несколько способов проверки
+    methods = [
+        # Способ 1: Через get_git_command()
+        lambda: _try_git_command(get_git_command()),
+        # Способ 2: Прямо через "git" (может быть в PATH)
+        lambda: _try_git_command("git"),
+        # Способ 3: Через shell на Unix (если предыдущие не сработали)
+        lambda: _try_git_via_shell() if os.name != 'nt' else False
+    ]
+    
+    for method in methods:
+        try:
+            if method():
+                return True
+        except Exception:
+            continue
+    
+    return False
+
+def _try_git_command(git_cmd: str) -> bool:
+    """Попытка выполнить git --version с указанной командой"""
     try:
-        git_cmd = get_git_command()
         result = subprocess.run(
             [git_cmd, "--version"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
+            stderr=subprocess.DEVNULL  # Игнорируем stderr
         )
         return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False
+
+def _try_git_via_shell() -> bool:
+    """Попытка найти git через shell команды (только для Unix)"""
+    try:
+        # Пробуем через which
+        result = subprocess.run(
+            ["which", "git"],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            git_path = result.stdout.strip()
+            return _try_git_command(git_path)
+    except Exception:
+        pass
+    
+    try:
+        # Пробуем через whereis (если which не сработал)
+        result = subprocess.run(
+            ["whereis", "-b", "git"],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            # whereis выводит "git: /usr/bin/git /usr/local/bin/git"
+            if ":" in output:
+                paths = output.split(":", 1)[1].strip().split()
+                for path in paths:
+                    if os.path.exists(path) and os.access(path, os.X_OK):
+                        if _try_git_command(path):
+                            return True
+    except Exception:
+        pass
+    
+    return False
 
 def get_git_status(path: Path) -> Dict[str, Any]:
     """Получение статуса Git репозитория"""
