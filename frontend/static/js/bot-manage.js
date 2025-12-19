@@ -1428,7 +1428,7 @@
                 if (status.is_repo) {
                     let html = '<div class="alert alert-info">';
                     html += '<strong>Репозиторий:</strong> ' + escapeHtml(status.remote || 'Локальный') + '<br>';
-                    html += '<strong>Ветка:</strong> ' + escapeHtml(status.branch || 'N/A') + '<br>';
+                    html += '<strong>Ветка:</strong> ' + escapeHtml(status.current_branch || status.branch || 'N/A') + '<br>';
                     if (status.has_changes) {
                         html += '<span class="text-warning">Есть несохраненные изменения</span>';
                     } else {
@@ -1437,11 +1437,89 @@
                     html += '</div>';
                     container.innerHTML = html;
                 } else {
-                    container.innerHTML = '<div class="alert alert-secondary">Git репозиторий не найден</div>';
+                    // Проверяем, указан ли URL репозитория в настройках бота
+                    const botInfo = await fetch('/api/bots/' + botId).then(r => r.ok ? r.json() : null).catch(() => null);
+                    const repoUrl = botInfo?.git_repo_url;
+                    
+                    if (repoUrl) {
+                        container.innerHTML = `
+                            <div class="alert alert-warning">
+                                <h6><i class="fas fa-exclamation-triangle"></i> Git репозиторий не клонирован</h6>
+                                <p class="mb-2">Репозиторий указан в настройках, но не клонирован в директорию бота.</p>
+                                <p class="mb-2"><strong>URL:</strong> ${escapeHtml(repoUrl)}</p>
+                                <button class="btn btn-primary btn-sm" onclick="handleCloneRepository()">
+                                    <i class="fas fa-download"></i> Клонировать репозиторий
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        container.innerHTML = '<div class="alert alert-secondary">Git репозиторий не найден</div>';
+                    }
                 }
             }
         } catch (error) {
             console.error('Error loading git status:', error);
+        }
+    }
+    
+    // Клонирование репозитория
+    async function handleCloneRepository() {
+        if (!botId) return;
+        
+        const confirmed = await showConfirm(
+            'Клонирование репозитория',
+            'Клонировать репозиторий? Все файлы в директории бота (кроме config.json) будут заменены файлами из репозитория.',
+            'btn-warning'
+        );
+        if (!confirmed) {
+            return;
+        }
+        
+        const container = document.getElementById('git-status-info');
+        if (container) {
+            container.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Клонирование репозитория...</div>';
+        }
+        
+        try {
+            // Получаем информацию о боте
+            const botResponse = await fetch('/api/bots/' + botId);
+            if (!botResponse.ok) {
+                throw new Error('Не удалось получить информацию о боте');
+            }
+            const bot = await botResponse.json();
+            
+            if (!bot.git_repo_url) {
+                showError('Ошибка', 'URL репозитория не указан в настройках бота');
+                loadGitStatus();
+                return;
+            }
+            
+            // Используем endpoint клонирования
+            const response = await fetch('/api/bots/' + botId + '/clone', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    showSuccess('Репозиторий клонирован', 'Репозиторий успешно клонирован в директорию бота');
+                    setTimeout(() => {
+                        loadGitStatus();
+                    }, 1000);
+                } else {
+                    const error = await response.json().catch(() => ({ detail: 'Неизвестная ошибка' }));
+                    showError('Ошибка клонирования', error.detail || 'Не удалось клонировать репозиторий');
+                    loadGitStatus();
+                }
+            } else {
+                const error = await response.json().catch(() => ({ detail: 'Неизвестная ошибка' }));
+                showError('Ошибка клонирования', error.detail || 'Не удалось клонировать репозиторий');
+                loadGitStatus();
+            }
+        } catch (error) {
+            console.error('Error cloning repository:', error);
+            showError('Ошибка клонирования', error.message || 'Неизвестная ошибка');
+            loadGitStatus();
         }
     }
     

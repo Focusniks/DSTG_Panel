@@ -878,6 +878,87 @@ async def update_bot_from_git_endpoint(bot_id: int):
     else:
         raise HTTPException(status_code=500, detail=message)
 
+@app.post("/api/bots/{bot_id}/clone")
+async def clone_bot_repository(bot_id: int):
+    """Принудительное клонирование репозитория бота (удаляет существующие файлы кроме config.json)"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    if not bot.get('git_repo_url'):
+        raise HTTPException(status_code=400, detail="Git repository URL not set for this bot")
+    
+    bot_dir = Path(bot['bot_dir'])
+    branch = bot.get('git_branch', 'main')
+    repo_url = bot.get('git_repo_url')
+    
+    try:
+        # Сохраняем config.json
+        config_path = bot_dir / "config.json"
+        config_backup = None
+        if config_path.exists():
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+                config_backup = tmp.name
+                shutil.copy2(config_path, config_backup)
+        
+        # Удаляем все файлы кроме config.json, если директория существует
+        if bot_dir.exists() and is_git_repo(bot_dir):
+            # Если это Git репозиторий, удаляем .git
+            git_dir = bot_dir / ".git"
+            if git_dir.exists():
+                shutil.rmtree(git_dir)
+        
+        # Удаляем все файлы кроме config.json
+        if bot_dir.exists():
+            for item in bot_dir.iterdir():
+                if item.name != "config.json" and item.name != ".git":
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+        
+        # Клонируем репозиторий
+        success, message = update_bot_from_git(bot_dir, repo_url, branch)
+        
+        # Восстанавливаем config.json
+        if config_backup and config_path.exists():
+            # Обновляем config.json, сохраняя существующие настройки
+            with open(config_path, 'r', encoding='utf-8') as f:
+                import json
+                existing_config = json.load(f)
+            
+            # Восстанавливаем из бэкапа
+            shutil.copy2(config_backup, config_path)
+            
+            # Обновляем настройки из существующего конфига
+            with open(config_path, 'r', encoding='utf-8') as f:
+                new_config = json.load(f)
+            
+            # Сохраняем важные настройки
+            for key in ['name', 'bot_type', 'start_file', 'cpu_limit', 'memory_limit', 'git_repo_url', 'git_branch']:
+                if key in existing_config:
+                    new_config[key] = existing_config[key]
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(new_config, f, ensure_ascii=False, indent=2)
+            
+            os.unlink(config_backup)
+        
+        if success:
+            return {"success": True, "message": message}
+        else:
+            raise HTTPException(status_code=500, detail=message)
+    except Exception as e:
+        # Восстанавливаем config.json при ошибке
+        if config_backup and config_path.exists():
+            try:
+                shutil.copy2(config_backup, config_path)
+                os.unlink(config_backup)
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f"Error cloning repository: {str(e)}")
+
 # Panel settings endpoints
 @app.get("/api/panel/git-status")
 async def get_panel_git_status():
@@ -909,10 +990,18 @@ async def init_panel_git_repo(request: InitGitRepoRequest):
         logger.info(f"Git init result: success={success}, message={message}")
         
         if success:
-            return {"success": True, "message": message}
+            # Проверяем, что репозиторий действительно создан
+            from backend.git_manager import is_git_repo
+            if is_git_repo(BASE_DIR):
+                return {"success": True, "message": message}
+            else:
+                logger.warning("Git repo initialized but is_git_repo returns False")
+                return {"success": True, "message": message + " (требуется проверка)"}
         else:
             logger.error(f"Git init failed: {message}")
             raise HTTPException(status_code=500, detail=message)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Exception during Git init: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error initializing Git repository: {str(e)}")
@@ -990,6 +1079,10 @@ async def change_password(request: Request, password_data: ChangePasswordRequest
 @app.on_event("startup")
 async def startup_event():
     """Восстановление состояния ботов при запуске панели"""
+    # Инициализируем базу данных (гарантируем создание таблиц)
+    from backend.database import init_database
+    init_database()
+    
     from backend.bot_manager import restore_bot_states
     restore_bot_states()
     

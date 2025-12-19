@@ -98,6 +98,25 @@
         </div>
     </div>
 
+    <!-- Модальное окно подтверждения -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="confirmModalTitle">Подтверждение</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmModalMessage">Вы уверены?</p>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-danger" id="confirmModalBtn">Подтвердить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/app.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -234,7 +253,12 @@
         }
         
         async function generateNewSSHKey() {
-            if (!confirm('Вы уверены, что хотите сгенерировать новый SSH ключ? Старый ключ будет заменен, и вам нужно будет обновить его во всех репозиториях GitHub.')) {
+            const confirmed = await showConfirm(
+                'Генерация нового SSH ключа',
+                'Вы уверены, что хотите сгенерировать новый SSH ключ? Старый ключ будет заменен, и вам нужно будет обновить его во всех репозиториях GitHub.',
+                'btn-warning'
+            );
+            if (!confirmed) {
                 return;
             }
             
@@ -329,8 +353,10 @@
 
         async function loadPanelGitStatus() {
             try {
+                console.log('Loading panel git status...');
                 const response = await fetch('/api/panel/git-status');
                 const status = await response.json();
+                console.log('Git status response:', status);
                 
                 const container = document.getElementById('panel-git-status');
                 if (status.is_repo) {
@@ -353,9 +379,13 @@
                     `;
                     document.getElementById('update-panel-btn').disabled = false;
                 } else {
+                    // Проверяем, есть ли ошибка
+                    const errorMsg = status.error ? `<p class="text-danger mb-2"><strong>Ошибка:</strong> ${escapeHtml(status.error)}</p>` : '';
+                    
                     container.innerHTML = `
                         <div class="alert alert-warning">
                             <h6><i class="fas fa-exclamation-triangle"></i> Панель не является Git репозиторием</h6>
+                            ${errorMsg}
                             <p class="mb-2">Для обновления панели из GitHub необходимо инициализировать Git репозиторий.</p>
                             <p class="mb-2">Вы можете:</p>
                             <ol class="mb-2">
@@ -390,6 +420,8 @@
             console.log('Repo URL:', repoUrl);
             
             const btn = document.querySelector('button[onclick="initPanelGitRepo()"]');
+            const originalBtnText = btn ? btn.innerHTML : '';
+            
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Инициализация...';
@@ -407,37 +439,78 @@
                     })
                 });
                 console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
                 
-                const result = await response.json();
+                let result;
+                try {
+                    result = await response.json();
+                    console.log('Response result (full):', JSON.stringify(result, null, 2));
+                    console.log('Result success:', result.success);
+                    console.log('Result success type:', typeof result.success);
+                    console.log('Result message:', result.message);
+                    console.log('Result keys:', Object.keys(result));
+                } catch (e) {
+                    console.error('Failed to parse JSON response:', e);
+                    const text = await response.text();
+                    console.error('Response text:', text);
+                    throw new Error('Не удалось обработать ответ сервера');
+                }
                 
-                if (response.ok) {
-                    showAlert('Git репозиторий успешно инициализирован! ' + (result.message || ''), 'success');
-                    // Очищаем поле ввода
+                // Проверяем успешность операции
+                // Проверяем разные варианты успешного ответа
+                const isSuccess = response.ok && (
+                    result.success === true || 
+                    result.success === 'true' ||
+                    (result.message && result.message.toLowerCase().includes('success')) ||
+                    (result.message && result.message.toLowerCase().includes('инициализирован'))
+                );
+                
+                console.log('isSuccess:', isSuccess);
+                
+                if (isSuccess) {
+                    console.log('Success branch - showing alert');
+                    const successMsg = result.message || 'Git репозиторий успешно инициализирован!';
+                    showAlert(successMsg, 'success');
+                    
+                    // Очищаем поле ввода только после успешной инициализации
                     if (repoUrlInput) {
                         repoUrlInput.value = '';
                     }
-                    // Перезагружаем статус
+                    
+                    // Перезагружаем статус с небольшой задержкой, чтобы БД успела обновиться
                     setTimeout(() => {
                         loadPanelGitStatus();
-                    }, 500);
+                    }, 1000);
                 } else {
+                    console.log('Not in success branch');
+                    console.log('response.ok:', response.ok);
+                    console.log('result.success:', result.success);
+                    console.log('result:', result);
                     const errorMsg = result.detail || result.message || 'Неизвестная ошибка';
                     console.error('Git init error:', errorMsg);
                     showAlert('Ошибка инициализации: ' + errorMsg, 'danger');
+                    
+                    // Не перезагружаем статус при ошибке, чтобы форма осталась видимой
                 }
             } catch (error) {
                 console.error('Error initializing Git repo:', error);
-                showAlert('Ошибка инициализации Git репозитория: ' + (error.message || 'Неизвестная ошибка'), 'danger');
+                const errorMsg = error.message || 'Неизвестная ошибка';
+                showAlert('Ошибка инициализации Git репозитория: ' + errorMsg, 'danger');
             } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-code-branch"></i> Инициализировать';
+                    btn.innerHTML = originalBtnText;
                 }
             }
         }
 
         async function updatePanel() {
-            if (!confirm('Обновить панель из GitHub? Панель может перезапуститься.')) return;
+            const confirmed = await showConfirm(
+                'Обновление панели',
+                'Обновить панель из GitHub? Панель может перезапуститься.',
+                'btn-primary'
+            );
+            if (!confirmed) return;
             
             const btn = document.getElementById('update-panel-btn');
             btn.disabled = true;
@@ -471,6 +544,33 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+        
+        // Функция подтверждения
+        function showConfirm(title, message, confirmBtnClass = 'btn-danger') {
+            return new Promise((resolve) => {
+                const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+                document.getElementById('confirmModalTitle').textContent = title;
+                document.getElementById('confirmModalMessage').textContent = message;
+                const confirmBtn = document.getElementById('confirmModalBtn');
+                confirmBtn.className = 'btn ' + confirmBtnClass;
+                
+                const handleConfirm = () => {
+                    modal.hide();
+                    confirmBtn.removeEventListener('click', handleConfirm);
+                    resolve(true);
+                };
+                
+                const handleCancel = () => {
+                    confirmBtn.removeEventListener('click', handleConfirm);
+                    resolve(false);
+                };
+                
+                confirmBtn.onclick = handleConfirm;
+                document.getElementById('confirmModal').addEventListener('hidden.bs.modal', handleCancel, { once: true });
+                
+                modal.show();
+            });
         }
         
         function showAlert(message, type) {

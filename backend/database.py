@@ -9,37 +9,49 @@ from backend.config import PANEL_DB_PATH
 
 def get_db_connection():
     """Получение соединения с БД"""
+    # Убеждаемся, что директория существует
+    PANEL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    
     conn = sqlite3.connect(PANEL_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_database():
     """Инициализация базы данных"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Таблица ботов
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            bot_type TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'stopped',
-            start_file TEXT,
-            bot_dir TEXT NOT NULL,
-            pid INTEGER,
-            cpu_limit REAL DEFAULT 50.0,
-            memory_limit INTEGER DEFAULT 512,
-            db_name TEXT,
-            git_repo_url TEXT,
-            git_branch TEXT DEFAULT 'main',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    conn.commit()
-    conn.close()
+    try:
+        # Убеждаемся, что директория для БД существует
+        PANEL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Таблица ботов
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                bot_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'stopped',
+                start_file TEXT,
+                bot_dir TEXT NOT NULL,
+                pid INTEGER,
+                cpu_limit REAL DEFAULT 50.0,
+                memory_limit INTEGER DEFAULT 512,
+                db_name TEXT,
+                git_repo_url TEXT,
+                git_branch TEXT DEFAULT 'main',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        # Логируем ошибку, но не прерываем выполнение
+        import logging
+        logging.error(f"Ошибка инициализации базы данных: {e}")
+        raise
 
 def create_bot(name: str, bot_type: str, start_file: str = None, 
                cpu_limit: float = 50.0, memory_limit: int = 512,
