@@ -741,12 +741,28 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             # Проверяем типичные ошибки SSH в порядке приоритета
             # Сначала проверяем критические ошибки (SSH не установлен)
-            if "ssh: not found" in combined_output or "ssh: command not found" in combined_output:
-                error_parts.append("SSH client is not installed. Please install OpenSSH client:")
-                error_parts.append("  - Debian/Ubuntu: sudo apt-get install openssh-client")
-                error_parts.append("  - CentOS/RHEL: sudo yum install openssh-clients")
-                error_parts.append("  - Alpine: apk add openssh-client")
-                # Не добавляем другие ошибки, если SSH не установлен - это основная проблема
+            # Проверяем в обоих stderr и stdout, так как git может выводить в разные потоки
+            ssh_not_found_patterns = [
+                "ssh: not found",
+                "ssh: command not found",
+                "/bin/sh.*ssh.*not found",
+                "ssh.*:.*not found"
+            ]
+            
+            ssh_not_found = any(pattern in combined_output for pattern in ssh_not_found_patterns)
+            
+            if ssh_not_found:
+                # Это критическая ошибка - SSH не установлен
+                # Не добавляем другие ошибки, так как это основная проблема
+                error_parts.clear()  # Очищаем все предыдущие ошибки
+                error_parts.append("SSH client is not installed.")
+                error_parts.append("")
+                error_parts.append("Please install OpenSSH client:")
+                error_parts.append("  • Debian/Ubuntu: sudo apt-get install openssh-client")
+                error_parts.append("  • CentOS/RHEL: sudo yum install openssh-clients")
+                error_parts.append("  • Alpine: apk add openssh-client")
+                error_parts.append("")
+                error_parts.append("After installation, try cloning again.")
             elif "Permission denied" in combined_output:
                 error_parts.append("SSH authentication failed. Check if SSH key is added to your GitHub account.")
             elif "Host key verification failed" in combined_output:
@@ -773,7 +789,15 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                     error_parts.append(fatal_msg)
             
             # Добавляем детали из stderr только если это не критическая ошибка SSH
-            if error_parts and "SSH client is not installed" not in " ".join(error_parts):
+            # Проверяем, является ли это ошибкой отсутствия SSH
+            is_ssh_not_found_error = any(
+                "SSH client is not installed" in part or 
+                "ssh: not found" in part.lower() or 
+                "ssh: command not found" in part.lower()
+                for part in error_parts
+            )
+            
+            if not is_ssh_not_found_error:
                 # Если это не ошибка отсутствия SSH, добавляем детали
                 if stderr_text:
                     stderr_already_included = any(stderr_text in part for part in error_parts)
@@ -783,9 +807,9 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                         # Убираем дублирующиеся части
                         if "fatal:" in stderr_short and "fatal:" not in " ".join(error_parts):
                             fatal_part = stderr_short.split("fatal:")[-1].strip()
-                            if fatal_part:
+                            if fatal_part and "ssh:" not in fatal_part.lower():
                                 error_parts.append(f"Details: {fatal_part}")
-                        else:
+                        elif "ssh:" not in stderr_short.lower():
                             error_parts.append(f"Details: {stderr_short}")
             
             # Если все еще нет сообщения, создаем базовое
@@ -797,8 +821,13 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                     error_parts.append("No error message from git command")
             
             # Формируем финальное сообщение
-            # Если это многострочное сообщение (например, инструкции по установке), используем переносы строк
-            if len(error_parts) > 1 and any("sudo" in part or "apt-get" in part or "yum" in part for part in error_parts):
+            # Если это многострочное сообщение (например, инструкции по установке SSH), используем переносы строк
+            is_multiline = (
+                len(error_parts) > 1 and 
+                any("sudo" in part or "apt-get" in part or "yum" in part or "apk" in part or "Please install" in part for part in error_parts)
+            )
+            
+            if is_multiline:
                 error_msg = "\n".join(error_parts)
             else:
                 error_msg = " | ".join(error_parts)

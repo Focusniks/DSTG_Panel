@@ -180,7 +180,9 @@ def check_ssh_available() -> Tuple[bool, Optional[str]]:
     # Пробуем найти ssh в PATH
     ssh_path = shutil.which("ssh")
     if ssh_path:
-        return True, ssh_path
+        # Дополнительно проверяем, что файл действительно существует и исполняемый
+        if os.path.exists(ssh_path) and os.access(ssh_path, os.X_OK):
+            return True, ssh_path
     
     # На Unix системах пробуем стандартные пути
     if os.name != 'nt':
@@ -192,6 +194,25 @@ def check_ssh_available() -> Tuple[bool, Optional[str]]:
         for path in standard_paths:
             if os.path.exists(path) and os.access(path, os.X_OK):
                 return True, path
+    
+    # Дополнительная проверка: пробуем выполнить ssh --version
+    # Это более надежный способ проверки
+    try:
+        result = subprocess.run(
+            ["ssh", "-V"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        if result.returncode == 0 or "OpenSSH" in result.stderr or "OpenSSH" in result.stdout:
+            # SSH доступен, находим путь
+            ssh_path = shutil.which("ssh") or "/usr/bin/ssh"
+            return True, ssh_path
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    except Exception:
+        # Любая другая ошибка означает, что SSH недоступен
+        pass
     
     return False, None
 
