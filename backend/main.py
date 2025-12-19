@@ -862,21 +862,29 @@ async def get_bot_git_status(bot_id: int):
 @app.post("/api/bots/{bot_id}/update")
 async def update_bot_from_git_endpoint(bot_id: int):
     """Обновление бота из Git репозитория"""
-    bot = get_bot(bot_id)
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
-    
-    if not bot.get('git_repo_url'):
-        raise HTTPException(status_code=400, detail="Git repository URL not set for this bot")
-    
-    bot_dir = Path(bot['bot_dir'])
-    branch = bot.get('git_branch', 'main')
-    
-    success, message = update_bot_from_git(bot_dir, bot.get('git_repo_url'), branch)
-    if success:
-        return {"success": True, "message": message}
-    else:
-        raise HTTPException(status_code=500, detail=message)
+    try:
+        bot = get_bot(bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        if not bot.get('git_repo_url'):
+            raise HTTPException(status_code=400, detail="Git repository URL not set for this bot")
+        
+        bot_dir = Path(bot['bot_dir'])
+        branch = bot.get('git_branch', 'main')
+        
+        success, message = update_bot_from_git(bot_dir, bot.get('git_repo_url'), branch)
+        if success:
+            return {"success": True, "message": message}
+        else:
+            raise HTTPException(status_code=500, detail=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error updating bot {bot_id} from git: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating bot from git: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/clone")
 async def clone_bot_repository(bot_id: int):

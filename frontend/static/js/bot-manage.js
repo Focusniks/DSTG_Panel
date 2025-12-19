@@ -1462,8 +1462,8 @@
         }
     }
     
-    // Клонирование репозитория
-    async function handleCloneRepository() {
+    // Клонирование репозитория (глобальная функция для onclick)
+    window.handleCloneRepository = async function() {
         if (!botId) return;
         
         const confirmed = await showConfirm(
@@ -1521,7 +1521,7 @@
             showError('Ошибка клонирования', error.message || 'Неизвестная ошибка');
             loadGitStatus();
         }
-    }
+    };
     
     // Обновление из Git
     async function handleUpdateFromGit() {
