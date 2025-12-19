@@ -985,8 +985,11 @@ async def init_panel_git_repo(request: InitGitRepoRequest):
     logger = logging.getLogger(__name__)
     
     try:
-        logger.info(f"Initializing Git repo at {BASE_DIR}, URL: {request.repo_url}")
-        success, message = init_git_repo(BASE_DIR, request.repo_url)
+        # Используем фиксированный URL репозитория панели
+        from backend.config import PANEL_REPO_URL
+        repo_url = PANEL_REPO_URL
+        logger.info(f"Initializing Git repo at {BASE_DIR}, URL: {repo_url}")
+        success, message = init_git_repo(BASE_DIR, repo_url)
         logger.info(f"Git init result: success={success}, message={message}")
         
         if success:
@@ -1090,6 +1093,19 @@ async def startup_event():
     if not get_ssh_key_exists():
         generate_ssh_key()
         setup_ssh_config_for_github()
+    
+    # Автоматически инициализируем Git репозиторий панели, если его нет
+    from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
+    from backend.git_manager import is_git_repo, init_git_repo, set_git_remote, get_git_remote
+    
+    if not is_git_repo(BASE_DIR):
+        # Пытаемся инициализировать репозиторий
+        success, message = init_git_repo(BASE_DIR, PANEL_REPO_URL)
+        if success:
+            # Проверяем, что remote установлен правильно
+            remote = get_git_remote(BASE_DIR)
+            if remote != PANEL_REPO_URL:
+                set_git_remote(BASE_DIR, PANEL_REPO_URL)
 
 if __name__ == "__main__":
     import uvicorn

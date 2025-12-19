@@ -403,22 +403,10 @@
                             <div class="alert alert-warning">
                                 <h6><i class="fas fa-exclamation-triangle"></i> Панель не является Git репозиторием</h6>
                                 ${errorMsg}
-                                <p class="mb-2">Для обновления панели из GitHub необходимо инициализировать Git репозиторий.</p>
-                                <p class="mb-2">Вы можете:</p>
-                                <ol class="mb-2">
-                                    <li>Инициализировать новый репозиторий (если панель еще не в Git)</li>
-                                    <li>Указать URL существующего репозитория для подключения</li>
-                                </ol>
-                                <div class="mt-3">
-                                    <label for="git-repo-url" class="form-label">URL репозитория (необязательно):</label>
-                                    <div class="input-group">
-                                        <input type="text" class="form-control" id="git-repo-url" placeholder="git@github.com:username/repo.git или https://github.com/username/repo.git">
-                                        <button class="btn btn-primary" onclick="initPanelGitRepo()">
-                                            <i class="fas fa-code-branch"></i> Инициализировать
-                                        </button>
-                                    </div>
-                                    <small class="form-text text-muted">Если не указать URL, будет создан локальный репозиторий. URL можно добавить позже.</small>
-                                </div>
+                                <p class="mb-2">Панель будет подключена к репозиторию <strong>https://github.com/Focusniks/DSTG_Panel</strong>.</p>
+                                <button class="btn btn-primary btn-sm" onclick="initPanelGitRepo()">
+                                    <i class="fas fa-code-branch"></i> Инициализировать репозиторий
+                                </button>
                             </div>
                         `;
                         document.getElementById('update-panel-btn').disabled = true;
@@ -433,9 +421,6 @@
 
         async function initPanelGitRepo() {
             console.log('initPanelGitRepo called');
-            const repoUrlInput = document.getElementById('git-repo-url');
-            const repoUrl = repoUrlInput?.value.trim() || null;
-            console.log('Repo URL:', repoUrl);
             
             const btn = document.querySelector('button[onclick="initPanelGitRepo()"]');
             const originalBtnText = btn ? btn.innerHTML : '';
@@ -447,14 +432,13 @@
             
             try {
                 console.log('Sending request to /api/panel/init-git');
+                // URL репозитория фиксированный, не передаем его в запросе
                 const response = await fetch('/api/panel/init-git', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        repo_url: repoUrl
-                    })
+                    body: JSON.stringify({})
                 });
                 console.log('Response status:', response.status);
                 console.log('Response ok:', response.ok);
@@ -489,11 +473,6 @@
                     console.log('Success branch - showing alert');
                     const successMsg = result.message || 'Git репозиторий успешно инициализирован!';
                     showAlert(successMsg, 'success');
-                    
-                    // Очищаем поле ввода только после успешной инициализации
-                    if (repoUrlInput) {
-                        repoUrlInput.value = '';
-                    }
                     
                     // Перезагружаем статус с небольшой задержкой
                     setTimeout(() => {

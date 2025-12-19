@@ -3,10 +3,23 @@
 """
 import subprocess
 import os
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any
 from backend.config import BASE_DIR
 from backend.ssh_manager import convert_https_to_ssh, get_git_env_with_ssh
+
+def get_git_command() -> str:
+    """Получение команды git с учетом платформы"""
+    git_cmd = shutil.which("git")
+    return git_cmd if git_cmd else "git"
+
+def run_git_command(path: Path, *args, **kwargs) -> subprocess.CompletedProcess:
+    """Выполнение Git команды с автоматическим определением пути к git"""
+    git_cmd = get_git_command()
+    cmd = [git_cmd] + list(args)
+    cwd = kwargs.pop('cwd', str(path))
+    return subprocess.run(cmd, cwd=cwd, **kwargs)
 
 def is_git_repo(path: Path) -> bool:
     """Проверка, является ли директория Git репозиторием"""
@@ -16,8 +29,9 @@ def is_git_repo(path: Path) -> bool:
 def get_git_remote(path: Path) -> Optional[str]:
     """Получение URL удаленного репозитория"""
     try:
+        git_cmd = get_git_command()
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
+            [git_cmd, "remote", "get-url", "origin"],
             cwd=str(path),
             capture_output=True,
             text=True,
@@ -32,9 +46,10 @@ def get_git_remote(path: Path) -> Optional[str]:
 def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
     """Установка удаленного репозитория"""
     try:
+        git_cmd = get_git_command()
         # Проверяем существование remote
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
+            [git_cmd, "remote", "get-url", "origin"],
             cwd=str(path),
             capture_output=True,
             timeout=5
@@ -43,7 +58,7 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
         if result.returncode == 0:
             # Обновляем существующий remote
             result = subprocess.run(
-                ["git", "remote", "set-url", "origin", url],
+                [git_cmd, "remote", "set-url", "origin", url],
                 cwd=str(path),
                 capture_output=True,
                 text=True,
@@ -52,7 +67,7 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
         else:
             # Создаем новый remote
             result = subprocess.run(
-                ["git", "remote", "add", "origin", url],
+                [git_cmd, "remote", "add", "origin", url],
                 cwd=str(path),
                 capture_output=True,
                 text=True,
@@ -72,8 +87,9 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
 def check_git_installed() -> bool:
     """Проверка, установлен ли Git"""
     try:
+        git_cmd = get_git_command()
         result = subprocess.run(
-            ["git", "--version"],
+            [git_cmd, "--version"],
             capture_output=True,
             text=True,
             timeout=5
@@ -100,9 +116,11 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         }
     
     try:
+        git_cmd = get_git_command()
+        
         # Проверяем, есть ли изменения
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
+            [git_cmd, "status", "--porcelain"],
             cwd=str(path),
             capture_output=True,
             text=True,
@@ -112,7 +130,7 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         
         # Получаем текущую ветку
         result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            [git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(path),
             capture_output=True,
             text=True,
@@ -137,7 +155,7 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         last_commit = None
         # Проверяем, есть ли коммиты
         result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD"],
+            [git_cmd, "rev-list", "--count", "HEAD"],
             cwd=str(path),
             capture_output=True,
             text=True,
@@ -147,7 +165,7 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         
         if has_commits:
             result = subprocess.run(
-                ["git", "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
+                [git_cmd, "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
                 cwd=str(path),
                 capture_output=True,
                 text=True,
@@ -166,14 +184,14 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         has_updates = False
         if get_git_remote(path):
             result = subprocess.run(
-                ["git", "fetch", "origin"],
+                [git_cmd, "fetch", "origin"],
                 cwd=str(path),
                 capture_output=True,
                 timeout=30
             )
             if result.returncode == 0:
                 result = subprocess.run(
-                    ["git", "rev-list", "--count", "HEAD..origin/" + (current_branch or "main")],
+                    [git_cmd, "rev-list", "--count", "HEAD..origin/" + (current_branch or "main")],
                     cwd=str(path),
                     capture_output=True,
                     text=True,
@@ -220,8 +238,9 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
             return True, "Already a Git repository"
         
         # Инициализируем репозиторий
+        git_cmd = get_git_command()
         result = subprocess.run(
-            ["git", "init"],
+            [git_cmd, "init"],
             cwd=str(path),
             capture_output=True,
             text=True,
@@ -235,64 +254,24 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
         env = os.environ.copy()
         
         # Проверяем, настроены ли git config
-        result = subprocess.run(
-            ["git", "config", "user.name"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        result = run_git_command(path, "config", "user.name", capture_output=True, text=True, timeout=5)
         if result.returncode != 0 or not result.stdout.strip():
             # Устанавливаем дефолтные значения
-            subprocess.run(
-                ["git", "config", "user.name", "Panel User"],
-                cwd=str(path),
-                capture_output=True,
-                timeout=5
-            )
+            run_git_command(path, "config", "user.name", "Panel User", capture_output=True, timeout=5)
         
-        result = subprocess.run(
-            ["git", "config", "user.email"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        result = run_git_command(path, "config", "user.email", capture_output=True, text=True, timeout=5)
         if result.returncode != 0 or not result.stdout.strip():
-            subprocess.run(
-                ["git", "config", "user.email", "panel@localhost"],
-                cwd=str(path),
-                capture_output=True,
-                timeout=5
-            )
+            run_git_command(path, "config", "user.email", "panel@localhost", capture_output=True, timeout=5)
         
         # Создаем начальный коммит, если есть файлы для коммита
-        result = subprocess.run(
-            ["git", "add", "."],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        result = run_git_command(path, "add", ".", capture_output=True, text=True, timeout=30)
         
         # Проверяем, есть ли что-то для коммита
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = run_git_command(path, "status", "--porcelain", capture_output=True, text=True, timeout=10)
         
         if result.stdout.strip():
             # Есть изменения для коммита
-            result = subprocess.run(
-                ["git", "commit", "-m", "Initial commit"],
-                cwd=str(path),
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+            result = run_git_command(path, "commit", "-m", "Initial commit", capture_output=True, text=True, timeout=30)
             # Не критично, если коммит не удался (может быть пустой репозиторий)
         
         # Если указан URL, добавляем remote
@@ -317,10 +296,11 @@ def update_panel_from_git() -> Tuple[bool, str]:
         
         # Используем SSH окружение для приватных репозиториев
         env = get_git_env_with_ssh()
+        git_cmd = get_git_command()
         
         # Сохраняем изменения перед обновлением
         result = subprocess.run(
-            ["git", "stash"],
+            [git_cmd, "stash"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -330,7 +310,7 @@ def update_panel_from_git() -> Tuple[bool, str]:
         
         # Получаем обновления
         result = subprocess.run(
-            ["git", "fetch", "origin"],
+            [git_cmd, "fetch", "origin"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -342,7 +322,7 @@ def update_panel_from_git() -> Tuple[bool, str]:
         
         # Определяем текущую ветку
         result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            [git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -353,7 +333,7 @@ def update_panel_from_git() -> Tuple[bool, str]:
         
         # Обновляем код
         result = subprocess.run(
-            ["git", "pull", "origin", branch],
+            [git_cmd, "pull", "origin", branch],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -397,9 +377,10 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
+            git_cmd = get_git_command()
             
             result = subprocess.run(
-                ["git", "clone", "-b", branch, clone_url, str(bot_dir)],
+                [git_cmd, "clone", "-b", branch, clone_url, str(bot_dir)],
                 capture_output=True,
                 text=True,
                 timeout=300,
@@ -413,10 +394,11 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
         # Если репозиторий уже существует, обновляем его
         # Используем SSH окружение для всех Git операций
         env = get_git_env_with_ssh()
+        git_cmd = get_git_command()
         
         # Сохраняем изменения
         result = subprocess.run(
-            ["git", "stash"],
+            [git_cmd, "stash"],
             cwd=str(bot_dir),
             capture_output=True,
             text=True,
@@ -434,7 +416,7 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
         
         # Получаем обновления (используем SSH окружение для приватных репозиториев)
         result = subprocess.run(
-            ["git", "fetch", "origin"],
+            [git_cmd, "fetch", "origin"],
             cwd=str(bot_dir),
             capture_output=True,
             text=True,
@@ -446,7 +428,7 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
         
         # Обновляем код (используем SSH окружение для приватных репозиториев)
         result = subprocess.run(
-            ["git", "pull", "origin", branch],
+            [git_cmd, "pull", "origin", branch],
             cwd=str(bot_dir),
             capture_output=True,
             text=True,

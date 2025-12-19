@@ -153,10 +153,12 @@ def setup_ssh_config_for_github():
     """Настройка SSH config для использования ключа панели с GitHub"""
     try:
         ensure_ssh_dir()
+        # Используем абсолютный путь для надежности на всех платформах
+        identity_file_path = str(SSH_PRIVATE_KEY.resolve())
         config_content = f"""Host github.com
     HostName github.com
     User git
-    IdentityFile {SSH_PRIVATE_KEY}
+    IdentityFile {identity_file_path}
     IdentitiesOnly yes
     StrictHostKeyChecking accept-new
 """
@@ -175,15 +177,22 @@ def get_git_env_with_ssh() -> dict:
     
     # Устанавливаем переменную SSH для использования нашего ключа
     if SSH_CONFIG_FILE.exists():
-        # На Windows используем переменную GIT_SSH_COMMAND
-        # На Unix используем переменную GIT_SSH
+        # Используем GIT_SSH_COMMAND для всех платформ (поддерживается в Git 2.3+)
+        # Это более надежный способ, чем GIT_SSH
+        ssh_config_path = str(SSH_CONFIG_FILE.resolve())
+        ssh_key_path = str(SSH_PRIVATE_KEY.resolve())
+        
+        # Экранируем пути для безопасности (на случай пробелов)
+        # На Unix используем одинарные кавычки, на Windows - двойные
         if os.name == 'nt':
             # Windows
-            ssh_cmd = f'ssh -F "{SSH_CONFIG_FILE}" -i "{SSH_PRIVATE_KEY}"'
-            env['GIT_SSH_COMMAND'] = ssh_cmd
+            ssh_cmd = f'ssh -F "{ssh_config_path}" -i "{ssh_key_path}"'
         else:
-            # Unix-like
-            env['GIT_SSH'] = f'ssh -F {SSH_CONFIG_FILE}'
+            # Unix-like (Linux, macOS)
+            # Используем одинарные кавычки для экранирования путей
+            ssh_cmd = f"ssh -F '{ssh_config_path}' -i '{ssh_key_path}'"
+        
+        env['GIT_SSH_COMMAND'] = ssh_cmd
     
     return env
 

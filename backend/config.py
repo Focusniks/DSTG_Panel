@@ -81,3 +81,7 @@ PANEL_PORT = int(os.getenv("PANEL_PORT", "8000"))
 DEFAULT_CPU_LIMIT = float(os.getenv("DEFAULT_CPU_LIMIT", "50.0"))  # Процент CPU
 DEFAULT_MEMORY_LIMIT = int(os.getenv("DEFAULT_MEMORY_LIMIT", "512"))  # MB RAM
 
+# URL репозитория панели (фиксированный)
+PANEL_REPO_URL = "https://github.com/Focusniks/DSTG_Panel"
+PANEL_REPO_BRANCH = "main"
+
