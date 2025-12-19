@@ -684,6 +684,12 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                 if clone_url.startswith('git@'):
                     return False, "SSH key not found. Please generate SSH key in panel settings first."
             
+            # Проверяем наличие SSH клиента перед использованием
+            from backend.ssh_manager import check_ssh_available
+            ssh_available, ssh_path = check_ssh_available()
+            if not ssh_available and clone_url.startswith('git@'):
+                return False, "SSH client is not installed. Please install OpenSSH client: sudo apt-get install openssh-client (Debian/Ubuntu) or sudo yum install openssh-clients (CentOS/RHEL)"
+            
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
             
@@ -722,13 +728,15 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                 logger.error(f"Git stdout: {stdout_text}")
             
             # Проверяем типичные ошибки SSH
-            if "Permission denied" in stderr_text or "Permission denied" in stdout_text:
+            if "ssh: not found" in stderr_text or "ssh: command not found" in stderr_text:
+                error_parts.append("SSH client is not installed. Please install OpenSSH client: sudo apt-get install openssh-client (Debian/Ubuntu) or sudo yum install openssh-clients (CentOS/RHEL)")
+            elif "Permission denied" in stderr_text or "Permission denied" in stdout_text:
                 error_parts.append("SSH authentication failed. Check if SSH key is added to your GitHub account.")
             elif "Host key verification failed" in stderr_text:
                 error_parts.append("SSH host key verification failed. Try accepting the host key manually.")
             elif "Could not resolve hostname" in stderr_text:
                 error_parts.append("Could not resolve hostname. Check your internet connection.")
-            elif "repository not found" in stderr_text.lower() or "not found" in stderr_text.lower():
+            elif "repository not found" in stderr_text.lower() or ("not found" in stderr_text.lower() and "ssh:" not in stderr_text.lower()):
                 error_parts.append("Repository not found. Check if the repository exists and you have access to it.")
             elif "fatal:" in stderr_text:
                 # Извлекаем сообщение после "fatal:"

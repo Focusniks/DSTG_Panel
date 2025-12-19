@@ -3,6 +3,7 @@
 """
 import subprocess
 import os
+import shutil
 from pathlib import Path
 from typing import Tuple, Optional
 from backend.config import DATA_DIR
@@ -169,15 +170,50 @@ def setup_ssh_config_for_github():
     except Exception:
         pass
 
+def check_ssh_available() -> Tuple[bool, Optional[str]]:
+    """
+    Проверяет, доступна ли команда ssh в системе
+    
+    Returns:
+        (is_available, ssh_path)
+    """
+    # Пробуем найти ssh в PATH
+    ssh_path = shutil.which("ssh")
+    if ssh_path:
+        return True, ssh_path
+    
+    # На Unix системах пробуем стандартные пути
+    if os.name != 'nt':
+        standard_paths = [
+            "/usr/bin/ssh",
+            "/usr/local/bin/ssh",
+            "/bin/ssh"
+        ]
+        for path in standard_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                return True, path
+    
+    return False, None
+
 def get_git_env_with_ssh() -> dict:
     """
     Возвращает переменные окружения для Git команд с SSH
     """
     env = os.environ.copy()
     
+    # Проверяем наличие SSH перед использованием
+    ssh_available, ssh_path = check_ssh_available()
+    if not ssh_available:
+        # Если SSH не найден, не устанавливаем GIT_SSH_COMMAND
+        # Git попробует использовать системный SSH, и мы получим понятную ошибку
+        return env
+    
     # Устанавливаем переменную SSH для использования нашего ключа
     if SSH_PRIVATE_KEY.exists():
         ssh_key_path = str(SSH_PRIVATE_KEY.resolve())
+        
+        # Используем найденный путь к ssh, если он не в PATH
+        ssh_cmd_base = ssh_path if ssh_path and ssh_path != "ssh" else "ssh"
         
         # Используем GIT_SSH_COMMAND для всех платформ (поддерживается в Git 2.3+)
         # Это более надежный способ, чем GIT_SSH
@@ -190,18 +226,18 @@ def get_git_env_with_ssh() -> dict:
                 # Windows - используем двойные кавычки и экранируем обратные слеши
                 ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
                 ssh_config_path_escaped = ssh_config_path.replace('\\', '\\\\')
-                ssh_cmd = f'ssh -F "{ssh_config_path_escaped}" -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
+                ssh_cmd = f'{ssh_cmd_base} -F "{ssh_config_path_escaped}" -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
             else:
                 # Unix-like (Linux, macOS)
                 # Используем одинарные кавычки для экранирования путей
-                ssh_cmd = f"ssh -F '{ssh_config_path}' -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
+                ssh_cmd = f"{ssh_cmd_base} -F '{ssh_config_path}' -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
         else:
             # Если config файла нет, используем только ключ
             if os.name == 'nt':
                 ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
-                ssh_cmd = f'ssh -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
+                ssh_cmd = f'{ssh_cmd_base} -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
             else:
-                ssh_cmd = f"ssh -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
+                ssh_cmd = f"{ssh_cmd_base} -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
         
         env['GIT_SSH_COMMAND'] = ssh_cmd
     
