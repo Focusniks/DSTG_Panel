@@ -176,21 +176,32 @@ def get_git_env_with_ssh() -> dict:
     env = os.environ.copy()
     
     # Устанавливаем переменную SSH для использования нашего ключа
-    if SSH_CONFIG_FILE.exists():
-        # Используем GIT_SSH_COMMAND для всех платформ (поддерживается в Git 2.3+)
-        # Это более надежный способ, чем GIT_SSH
-        ssh_config_path = str(SSH_CONFIG_FILE.resolve())
+    if SSH_PRIVATE_KEY.exists():
         ssh_key_path = str(SSH_PRIVATE_KEY.resolve())
         
-        # Экранируем пути для безопасности (на случай пробелов)
-        # На Unix используем одинарные кавычки, на Windows - двойные
-        if os.name == 'nt':
-            # Windows
-            ssh_cmd = f'ssh -F "{ssh_config_path}" -i "{ssh_key_path}"'
+        # Используем GIT_SSH_COMMAND для всех платформ (поддерживается в Git 2.3+)
+        # Это более надежный способ, чем GIT_SSH
+        if SSH_CONFIG_FILE.exists():
+            ssh_config_path = str(SSH_CONFIG_FILE.resolve())
+            
+            # Экранируем пути для безопасности (на случай пробелов)
+            # На Unix используем одинарные кавычки, на Windows - двойные
+            if os.name == 'nt':
+                # Windows - используем двойные кавычки и экранируем обратные слеши
+                ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
+                ssh_config_path_escaped = ssh_config_path.replace('\\', '\\\\')
+                ssh_cmd = f'ssh -F "{ssh_config_path_escaped}" -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
+            else:
+                # Unix-like (Linux, macOS)
+                # Используем одинарные кавычки для экранирования путей
+                ssh_cmd = f"ssh -F '{ssh_config_path}' -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
         else:
-            # Unix-like (Linux, macOS)
-            # Используем одинарные кавычки для экранирования путей
-            ssh_cmd = f"ssh -F '{ssh_config_path}' -i '{ssh_key_path}'"
+            # Если config файла нет, используем только ключ
+            if os.name == 'nt':
+                ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
+                ssh_cmd = f'ssh -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
+            else:
+                ssh_cmd = f"ssh -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
         
         env['GIT_SSH_COMMAND'] = ssh_cmd
     

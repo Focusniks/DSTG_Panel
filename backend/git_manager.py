@@ -4,10 +4,13 @@
 import subprocess
 import os
 import shutil
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any
 from backend.config import BASE_DIR
-from backend.ssh_manager import convert_https_to_ssh, get_git_env_with_ssh
+from backend.ssh_manager import convert_https_to_ssh, get_git_env_with_ssh, setup_ssh_config_for_github, get_ssh_key_exists
+
+logger = logging.getLogger(__name__)
 
 def get_git_command() -> str:
     """Получение команды git с учетом платформы"""
@@ -667,16 +670,27 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                     # Если не удалось удалить, попробуем клонировать в temp и переместить
                     logger.warning(f"Could not remove empty directory {bot_dir}: {str(e)}")
             
-            # Преобразуем HTTPS URL в SSH для приватных репозиториев (если нужно)
+            # Преобразуем HTTPS URL в SSH для приватных репозиториев
             clone_url = repo_url
-            if repo_url.startswith('https://') and 'github.com' in repo_url:
-                # Пользователь может использовать SSH URL напрямую
-                # Если используется HTTPS, можно автоматически конвертировать
-                # Но пока оставим как есть, чтобы пользователь сам выбирал
-                pass
+            if repo_url.startswith('https://'):
+                # Автоматически конвертируем HTTPS в SSH для приватных репозиториев
+                clone_url = convert_https_to_ssh(repo_url)
+            
+            # Убеждаемся, что SSH config настроен и ключ существует
+            if get_ssh_key_exists():
+                setup_ssh_config_for_github()
+            else:
+                # Если ключа нет, но используется SSH URL, предупреждаем
+                if clone_url.startswith('git@'):
+                    return False, "SSH key not found. Please generate SSH key in panel settings first."
             
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
+            
+            # Логируем информацию о клонировании
+            logger.info(f"Cloning repository: {clone_url} (branch: {branch}) to {bot_dir}")
+            logger.debug(f"SSH key exists: {get_ssh_key_exists()}")
+            logger.debug(f"GIT_SSH_COMMAND: {env.get('GIT_SSH_COMMAND', 'Not set')}")
             
             result = subprocess.run(
                 [git_cmd, "clone", "-b", branch, clone_url, str(bot_dir)],
@@ -686,19 +700,43 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                 env=env
             )
             
+            logger.debug(f"Git clone exit code: {result.returncode}")
+            if result.stderr:
+                logger.debug(f"Git clone stderr: {result.stderr}")
+            if result.stdout:
+                logger.debug(f"Git clone stdout: {result.stdout}")
+            
             if result.returncode == 0:
                 return True, "Repository cloned successfully"
             
             # Формируем детальное сообщение об ошибке
             error_parts = []
-            if result.stderr:
-                error_parts.append(f"stderr: {result.stderr.strip()}")
-            if result.stdout:
-                error_parts.append(f"stdout: {result.stdout.strip()}")
+            stderr_text = result.stderr.strip() if result.stderr else ""
+            stdout_text = result.stdout.strip() if result.stdout else ""
+            
+            # Проверяем типичные ошибки SSH
+            if "Permission denied" in stderr_text or "Permission denied" in stdout_text:
+                error_parts.append("SSH authentication failed. Check if SSH key is added to your GitHub account.")
+            elif "Host key verification failed" in stderr_text:
+                error_parts.append("SSH host key verification failed. Try accepting the host key manually.")
+            elif "Could not resolve hostname" in stderr_text:
+                error_parts.append("Could not resolve hostname. Check your internet connection.")
+            elif "fatal:" in stderr_text:
+                # Извлекаем сообщение после "fatal:"
+                fatal_msg = stderr_text.split("fatal:")[-1].strip()
+                if fatal_msg:
+                    error_parts.append(fatal_msg)
+            
+            if stderr_text and stderr_text not in " | ".join(error_parts):
+                error_parts.append(f"stderr: {stderr_text}")
+            if stdout_text and stdout_text not in " | ".join(error_parts):
+                error_parts.append(f"stdout: {stdout_text}")
+            
             if not error_parts:
                 error_parts.append("Unknown error (no output from git)")
             
             error_msg = " | ".join(error_parts)
+            logger.error(f"Git clone failed: {error_msg}")
             return False, f"Git clone failed (exit code {result.returncode}): {error_msg}"
         
         # Если репозиторий уже существует, обновляем его
@@ -750,13 +788,18 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
         return False, result.stderr or "Pull failed"
         
     except subprocess.TimeoutExpired as e:
-        return False, f"Timeout while executing git command: {str(e) if str(e) else 'Operation timed out'}"
+        error_msg = str(e) if str(e) else 'Operation timed out'
+        logger.error(f"Git command timeout: {error_msg}")
+        return False, f"Timeout while executing git command: {error_msg}"
     except FileNotFoundError as e:
+        logger.error(f"Git not found: {str(e)}")
         return False, "Git не установлен. Установите Git для работы с репозиториями."
     except Exception as e:
         error_type = type(e).__name__
         error_msg = str(e) if str(e) else repr(e)
         error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
+        
+        logger.error(f"Unexpected error in update_bot_from_git: {error_detail}", exc_info=True)
         
         if "No such file or directory" in error_detail or "git" in error_detail.lower():
             return False, "Git не установлен. Установите Git для работы с репозиториями."

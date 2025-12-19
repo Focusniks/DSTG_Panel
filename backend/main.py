@@ -963,8 +963,25 @@ async def clone_bot_repository(bot_id: int):
                 logger.warning(f"Failed to remove empty directory {bot_dir}: {str(e)}")
         
         # Клонируем репозиторий
-        logger.info(f"Cloning repository {repo_url} to {bot_dir}")
-        success, message = update_bot_from_git(bot_dir, repo_url, branch)
+        logger.info(f"Cloning repository {repo_url} (branch: {branch}) to {bot_dir}")
+        try:
+            success, message = update_bot_from_git(bot_dir, repo_url, branch)
+        except Exception as git_error:
+            # Ловим исключения из update_bot_from_git
+            error_type = type(git_error).__name__
+            error_msg = str(git_error) if str(git_error) else repr(git_error)
+            error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
+            logger.error(f"Exception in update_bot_from_git: {error_detail}", exc_info=True)
+            
+            # Восстанавливаем config.json при ошибке клонирования
+            if config_backup and os.path.exists(config_backup):
+                try:
+                    if not config_path.exists():
+                        bot_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(config_backup, config_path)
+                except Exception as e:
+                    logger.error(f"Failed to restore config.json: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error cloning repository: {error_detail}")
         
         if not success:
             # Восстанавливаем config.json при ошибке клонирования
@@ -975,7 +992,11 @@ async def clone_bot_repository(bot_id: int):
                     shutil.copy2(config_backup, config_path)
                 except Exception as e:
                     logger.error(f"Failed to restore config.json: {str(e)}")
-            raise HTTPException(status_code=500, detail=message)
+            
+            # Убеждаемся, что message не пустой
+            error_message = message if message and message.strip() else "Unknown error occurred during clone"
+            logger.error(f"Git clone failed: {error_message}")
+            raise HTTPException(status_code=500, detail=error_message)
         
         # Восстанавливаем config.json после успешного клонирования
         if config_backup and os.path.exists(config_backup):
