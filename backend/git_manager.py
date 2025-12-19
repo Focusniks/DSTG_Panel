@@ -69,8 +69,29 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, str(e)
 
+def check_git_installed() -> bool:
+    """Проверка, установлен ли Git"""
+    try:
+        result = subprocess.run(
+            ["git", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
 def get_git_status(path: Path) -> Dict[str, Any]:
     """Получение статуса Git репозитория"""
+    # Проверяем, установлен ли Git
+    if not check_git_installed():
+        return {
+            "is_repo": False,
+            "error": "Git не установлен. Установите Git для работы с репозиториями.",
+            "git_not_installed": True
+        }
+    
     # Сначала проверяем, является ли путь Git репозиторием
     if not is_git_repo(path):
         return {
@@ -168,15 +189,33 @@ def get_git_status(path: Path) -> Dict[str, Any]:
             "has_updates": has_updates,
             "remote": get_git_remote(path)
         }
-    except Exception as e:
+    except FileNotFoundError:
         return {
             "is_repo": False,
-            "error": str(e)
+            "error": "Git не установлен. Установите Git для работы с репозиториями.",
+            "git_not_installed": True
+        }
+    except Exception as e:
+        error_msg = str(e)
+        # Проверяем, является ли это ошибкой отсутствия Git
+        if "No such file or directory" in error_msg and "git" in error_msg.lower():
+            return {
+                "is_repo": False,
+                "error": "Git не установлен. Установите Git для работы с репозиториями.",
+                "git_not_installed": True
+            }
+        return {
+            "is_repo": False,
+            "error": error_msg
         }
 
 def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str]:
     """Инициализация Git репозитория"""
     try:
+        # Проверяем, установлен ли Git
+        if not check_git_installed():
+            return False, "Git не установлен. Установите Git для работы с репозиториями."
+        
         if is_git_repo(path):
             return True, "Already a Git repository"
         

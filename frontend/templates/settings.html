@@ -379,32 +379,50 @@
                     `;
                     document.getElementById('update-panel-btn').disabled = false;
                 } else {
-                    // Проверяем, есть ли ошибка
-                    const errorMsg = status.error ? `<p class="text-danger mb-2"><strong>Ошибка:</strong> ${escapeHtml(status.error)}</p>` : '';
-                    
-                    container.innerHTML = `
-                        <div class="alert alert-warning">
-                            <h6><i class="fas fa-exclamation-triangle"></i> Панель не является Git репозиторием</h6>
-                            ${errorMsg}
-                            <p class="mb-2">Для обновления панели из GitHub необходимо инициализировать Git репозиторий.</p>
-                            <p class="mb-2">Вы можете:</p>
-                            <ol class="mb-2">
-                                <li>Инициализировать новый репозиторий (если панель еще не в Git)</li>
-                                <li>Указать URL существующего репозитория для подключения</li>
-                            </ol>
-                            <div class="mt-3">
-                                <label for="git-repo-url" class="form-label">URL репозитория (необязательно):</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="git-repo-url" placeholder="git@github.com:username/repo.git или https://github.com/username/repo.git">
-                                    <button class="btn btn-primary" onclick="initPanelGitRepo()">
-                                        <i class="fas fa-code-branch"></i> Инициализировать
-                                    </button>
-                                </div>
-                                <small class="form-text text-muted">Если не указать URL, будет создан локальный репозиторий. URL можно добавить позже.</small>
+                    // Проверяем, установлен ли Git
+                    if (status.git_not_installed) {
+                        container.innerHTML = `
+                            <div class="alert alert-danger">
+                                <h6><i class="fas fa-exclamation-circle"></i> Git не установлен</h6>
+                                <p class="mb-2">${escapeHtml(status.error || 'Git не установлен в системе')}</p>
+                                <p class="mb-2"><strong>Для установки Git:</strong></p>
+                                <ul class="mb-2">
+                                    <li><strong>Windows:</strong> Скачайте и установите <a href="https://git-scm.com/download/win" target="_blank" class="alert-link">Git for Windows</a></li>
+                                    <li><strong>Linux:</strong> <code>sudo apt-get install git</code> (Ubuntu/Debian) или <code>sudo yum install git</code> (CentOS/RHEL)</li>
+                                    <li><strong>macOS:</strong> <code>brew install git</code> или установите Xcode Command Line Tools</li>
+                                </ul>
+                                <p class="mb-0">После установки Git перезагрузите панель.</p>
                             </div>
-                        </div>
-                    `;
-                    document.getElementById('update-panel-btn').disabled = true;
+                        `;
+                        document.getElementById('update-panel-btn').disabled = true;
+                    } else {
+                        // Проверяем, есть ли ошибка
+                        const errorMsg = status.error ? `<p class="text-danger mb-2"><strong>Ошибка:</strong> ${escapeHtml(status.error)}</p>` : '';
+                        
+                        container.innerHTML = `
+                            <div class="alert alert-warning">
+                                <h6><i class="fas fa-exclamation-triangle"></i> Панель не является Git репозиторием</h6>
+                                ${errorMsg}
+                                <p class="mb-2">Для обновления панели из GitHub необходимо инициализировать Git репозиторий.</p>
+                                <p class="mb-2">Вы можете:</p>
+                                <ol class="mb-2">
+                                    <li>Инициализировать новый репозиторий (если панель еще не в Git)</li>
+                                    <li>Указать URL существующего репозитория для подключения</li>
+                                </ol>
+                                <div class="mt-3">
+                                    <label for="git-repo-url" class="form-label">URL репозитория (необязательно):</label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="git-repo-url" placeholder="git@github.com:username/repo.git или https://github.com/username/repo.git">
+                                        <button class="btn btn-primary" onclick="initPanelGitRepo()">
+                                            <i class="fas fa-code-branch"></i> Инициализировать
+                                        </button>
+                                    </div>
+                                    <small class="form-text text-muted">Если не указать URL, будет создан локальный репозиторий. URL можно добавить позже.</small>
+                                </div>
+                            </div>
+                        `;
+                        document.getElementById('update-panel-btn').disabled = true;
+                    }
                 }
             } catch (error) {
                 console.error('Error loading panel git status:', error);
@@ -477,10 +495,10 @@
                         repoUrlInput.value = '';
                     }
                     
-                    // Перезагружаем статус с небольшой задержкой, чтобы БД успела обновиться
+                    // Перезагружаем статус с небольшой задержкой
                     setTimeout(() => {
                         loadPanelGitStatus();
-                    }, 1000);
+                    }, 1500);
                 } else {
                     console.log('Not in success branch');
                     console.log('response.ok:', response.ok);
