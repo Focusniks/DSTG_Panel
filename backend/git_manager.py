@@ -672,23 +672,32 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             # Преобразуем HTTPS URL в SSH для приватных репозиториев
             clone_url = repo_url
+            will_use_ssh = False
             if repo_url.startswith('https://'):
                 # Автоматически конвертируем HTTPS в SSH для приватных репозиториев
                 clone_url = convert_https_to_ssh(repo_url)
+                will_use_ssh = True
+            elif repo_url.startswith('git@'):
+                will_use_ssh = True
             
-            # Убеждаемся, что SSH config настроен и ключ существует
-            if get_ssh_key_exists():
-                setup_ssh_config_for_github()
-            else:
-                # Если ключа нет, но используется SSH URL, предупреждаем
-                if clone_url.startswith('git@'):
-                    return False, "SSH key not found. Please generate SSH key in panel settings first."
-            
-            # Проверяем наличие SSH клиента перед использованием
+            # Проверяем наличие SSH клиента ПЕРЕД использованием (это критично)
             from backend.ssh_manager import check_ssh_available
             ssh_available, ssh_path = check_ssh_available()
-            if not ssh_available and clone_url.startswith('git@'):
-                return False, "SSH client is not installed. Please install OpenSSH client: sudo apt-get install openssh-client (Debian/Ubuntu) or sudo yum install openssh-clients (CentOS/RHEL)"
+            if will_use_ssh and not ssh_available:
+                error_msg = "SSH client is not installed.\n"
+                error_msg += "Please install OpenSSH client:\n"
+                error_msg += "  - Debian/Ubuntu: sudo apt-get install openssh-client\n"
+                error_msg += "  - CentOS/RHEL: sudo yum install openssh-clients\n"
+                error_msg += "  - Alpine: apk add openssh-client"
+                return False, error_msg
+            
+            # Убеждаемся, что SSH config настроен и ключ существует
+            if will_use_ssh:
+                if get_ssh_key_exists():
+                    setup_ssh_config_for_github()
+                else:
+                    # Если ключа нет, но используется SSH URL, предупреждаем
+                    return False, "SSH key not found. Please generate SSH key in panel settings first."
             
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
@@ -720,6 +729,9 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             stderr_text = (result.stderr or "").strip()
             stdout_text = (result.stdout or "").strip()
             
+            # Объединяем stderr и stdout для проверки
+            combined_output = f"{stderr_text} {stdout_text}".strip()
+            
             # Логируем сырой вывод для отладки
             logger.error(f"Git clone failed with exit code {result.returncode}")
             if stderr_text:
@@ -727,35 +739,54 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             if stdout_text:
                 logger.error(f"Git stdout: {stdout_text}")
             
-            # Проверяем типичные ошибки SSH
-            if "ssh: not found" in stderr_text or "ssh: command not found" in stderr_text:
-                error_parts.append("SSH client is not installed. Please install OpenSSH client: sudo apt-get install openssh-client (Debian/Ubuntu) or sudo yum install openssh-clients (CentOS/RHEL)")
-            elif "Permission denied" in stderr_text or "Permission denied" in stdout_text:
+            # Проверяем типичные ошибки SSH в порядке приоритета
+            # Сначала проверяем критические ошибки (SSH не установлен)
+            if "ssh: not found" in combined_output or "ssh: command not found" in combined_output:
+                error_parts.append("SSH client is not installed. Please install OpenSSH client:")
+                error_parts.append("  - Debian/Ubuntu: sudo apt-get install openssh-client")
+                error_parts.append("  - CentOS/RHEL: sudo yum install openssh-clients")
+                error_parts.append("  - Alpine: apk add openssh-client")
+                # Не добавляем другие ошибки, если SSH не установлен - это основная проблема
+            elif "Permission denied" in combined_output:
                 error_parts.append("SSH authentication failed. Check if SSH key is added to your GitHub account.")
-            elif "Host key verification failed" in stderr_text:
+            elif "Host key verification failed" in combined_output:
                 error_parts.append("SSH host key verification failed. Try accepting the host key manually.")
-            elif "Could not resolve hostname" in stderr_text:
+            elif "Could not resolve hostname" in combined_output:
                 error_parts.append("Could not resolve hostname. Check your internet connection.")
-            elif "repository not found" in stderr_text.lower() or ("not found" in stderr_text.lower() and "ssh:" not in stderr_text.lower()):
-                error_parts.append("Repository not found. Check if the repository exists and you have access to it.")
+            elif "Could not read from remote repository" in combined_output:
+                # Эта ошибка может быть из-за разных причин, проверяем детали
+                if "ssh:" in combined_output:
+                    # Если есть упоминание ssh, это может быть проблема с SSH
+                    error_parts.append("Could not connect via SSH. Check SSH configuration and key permissions.")
+                else:
+                    error_parts.append("Could not read from remote repository. Check repository URL and access rights.")
+            elif "repository not found" in combined_output.lower():
+                # Проверяем, не является ли это маскировкой проблемы с SSH
+                if "ssh:" not in combined_output.lower():
+                    error_parts.append("Repository not found. Check if the repository exists and you have access to it.")
+                else:
+                    error_parts.append("Repository access failed. This might be due to SSH configuration issues.")
             elif "fatal:" in stderr_text:
                 # Извлекаем сообщение после "fatal:"
                 fatal_msg = stderr_text.split("fatal:")[-1].strip()
-                if fatal_msg:
+                if fatal_msg and "ssh:" not in fatal_msg.lower():
                     error_parts.append(fatal_msg)
             
-            # Добавляем stderr если его еще нет в сообщении
-            if stderr_text:
-                stderr_already_included = any(stderr_text in part for part in error_parts)
-                if not stderr_already_included:
-                    # Берем последние 500 символов, чтобы не перегружать сообщение
-                    stderr_short = stderr_text[-500:] if len(stderr_text) > 500 else stderr_text
-                    error_parts.append(f"Git error: {stderr_short}")
-            
-            # Добавляем stdout если есть и его еще нет
-            if stdout_text and stdout_text not in " | ".join(error_parts):
-                stdout_short = stdout_text[-200:] if len(stdout_text) > 200 else stdout_text
-                error_parts.append(f"Output: {stdout_short}")
+            # Добавляем детали из stderr только если это не критическая ошибка SSH
+            if error_parts and "SSH client is not installed" not in " ".join(error_parts):
+                # Если это не ошибка отсутствия SSH, добавляем детали
+                if stderr_text:
+                    stderr_already_included = any(stderr_text in part for part in error_parts)
+                    if not stderr_already_included:
+                        # Берем последние 300 символов, чтобы не перегружать сообщение
+                        stderr_short = stderr_text[-300:] if len(stderr_text) > 300 else stderr_text
+                        # Убираем дублирующиеся части
+                        if "fatal:" in stderr_short and "fatal:" not in " ".join(error_parts):
+                            fatal_part = stderr_short.split("fatal:")[-1].strip()
+                            if fatal_part:
+                                error_parts.append(f"Details: {fatal_part}")
+                        else:
+                            error_parts.append(f"Details: {stderr_short}")
             
             # Если все еще нет сообщения, создаем базовое
             if not error_parts:
@@ -765,7 +796,13 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                 else:
                     error_parts.append("No error message from git command")
             
-            error_msg = " | ".join(error_parts)
+            # Формируем финальное сообщение
+            # Если это многострочное сообщение (например, инструкции по установке), используем переносы строк
+            if len(error_parts) > 1 and any("sudo" in part or "apt-get" in part or "yum" in part for part in error_parts):
+                error_msg = "\n".join(error_parts)
+            else:
+                error_msg = " | ".join(error_parts)
+            
             logger.error(f"Git clone failed: {error_msg}")
             return False, error_msg
         
