@@ -987,8 +987,13 @@ async def clone_bot_repository(bot_id: int):
             
             error_detail = ": ".join(error_parts) if len(error_parts) > 1 else error_parts[0]
             
+            # Дополнительная проверка - если error_detail пустой или только пробелы
+            if not error_detail or not error_detail.strip():
+                error_detail = f"Unknown error (type: {type(git_error).__name__})"
+            
             logger.error(f"Exception in update_bot_from_git: {error_detail}", exc_info=True)
             logger.error(f"Exception type: {type(git_error)}, args: {git_error.args if hasattr(git_error, 'args') else 'N/A'}")
+            logger.error(f"Exception str: '{str(git_error)}', repr: '{repr(git_error)}'")
             
             # Восстанавливаем config.json при ошибке клонирования
             if config_backup and os.path.exists(config_backup):
@@ -999,8 +1004,27 @@ async def clone_bot_repository(bot_id: int):
                 except Exception as e:
                     logger.error(f"Failed to restore config.json: {str(e)}")
             
-            # Гарантируем, что detail не пустой
-            final_detail = f"Error cloning repository: {error_detail}" if error_detail else "Error cloning repository: Unknown error occurred"
+            # Гарантируем, что detail не пустой - используем strip() для проверки
+            error_detail_clean = error_detail.strip() if error_detail else "Unknown error occurred"
+            
+            # Проверяем, что error_detail_clean не пустой
+            if not error_detail_clean or not error_detail_clean.strip():
+                error_detail_clean = "Unknown error occurred"
+            
+            final_detail = f"Error cloning repository: {error_detail_clean}"
+            
+            # Финальная проверка - проверяем, что после префикса есть текст
+            prefix = "Error cloning repository: "
+            if final_detail.startswith(prefix):
+                suffix = final_detail[len(prefix):].strip()
+                if not suffix:
+                    final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
+            
+            # Еще одна проверка на всякий случай
+            if not final_detail or not final_detail.strip() or final_detail.strip() == "Error cloning repository:":
+                final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
+            
+            logger.error(f"Raising HTTPException with detail: '{final_detail}' (length: {len(final_detail)})")
             raise HTTPException(status_code=500, detail=final_detail)
         
         if not success:
@@ -1015,7 +1039,13 @@ async def clone_bot_repository(bot_id: int):
             
             # Убеждаемся, что message не пустой
             error_message = message if message and message.strip() else "Unknown error occurred during clone"
+            
+            # Дополнительная проверка
+            if not error_message or not error_message.strip():
+                error_message = "Unknown error occurred during clone. Check server logs for details."
+            
             logger.error(f"Git clone failed: {error_message}")
+            logger.error(f"Raising HTTPException with detail: '{error_message}'")
             raise HTTPException(status_code=500, detail=error_message)
         
         # Восстанавливаем config.json после успешного клонирования
@@ -1078,9 +1108,14 @@ async def clone_bot_repository(bot_id: int):
         
         error_detail = ": ".join(error_parts) if len(error_parts) > 1 else error_parts[0]
         
+        # Дополнительная проверка - если error_detail пустой или только пробелы
+        if not error_detail or not error_detail.strip():
+            error_detail = f"Unknown error (type: {error_type})"
+        
         # Логируем с полным traceback
         logger.error(f"Error cloning repository for bot {bot_id}: {error_detail}", exc_info=True)
         logger.error(f"Exception type: {type(e)}, args: {e.args if hasattr(e, 'args') else 'N/A'}")
+        logger.error(f"Exception str: '{str(e)}', repr: '{repr(e)}'")
         
         # Восстанавливаем config.json при ошибке
         if config_backup and os.path.exists(config_backup):
@@ -1092,8 +1127,27 @@ async def clone_bot_repository(bot_id: int):
             except Exception as restore_error:
                 logger.error(f"Failed to restore config.json after error: {str(restore_error)}")
         
-        # Гарантируем, что detail не пустой
-        final_detail = f"Error cloning repository: {error_detail}" if error_detail else "Error cloning repository: Unknown error occurred"
+        # Гарантируем, что detail не пустой - используем strip() для проверки
+        error_detail_clean = error_detail.strip() if error_detail else "Unknown error occurred"
+        
+        # Проверяем, что error_detail_clean не пустой
+        if not error_detail_clean or not error_detail_clean.strip():
+            error_detail_clean = "Unknown error occurred"
+        
+        final_detail = f"Error cloning repository: {error_detail_clean}"
+        
+        # Финальная проверка - проверяем, что после префикса есть текст
+        prefix = "Error cloning repository: "
+        if final_detail.startswith(prefix):
+            suffix = final_detail[len(prefix):].strip()
+            if not suffix:
+                final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
+        
+        # Еще одна проверка на всякий случай
+        if not final_detail or not final_detail.strip() or final_detail.strip() == "Error cloning repository:":
+            final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
+        
+        logger.error(f"Raising HTTPException with detail: '{final_detail}' (length: {len(final_detail)})")
         raise HTTPException(status_code=500, detail=final_detail)
 
 # Panel settings endpoints
