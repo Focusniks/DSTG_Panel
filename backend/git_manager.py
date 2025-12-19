@@ -71,6 +71,13 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
 
 def get_git_status(path: Path) -> Dict[str, Any]:
     """Получение статуса Git репозитория"""
+    # Сначала проверяем, является ли путь Git репозиторием
+    if not is_git_repo(path):
+        return {
+            "is_repo": False,
+            "error": "Not a Git repository"
+        }
+    
     try:
         # Проверяем, есть ли изменения
         result = subprocess.run(
@@ -142,6 +149,38 @@ def get_git_status(path: Path) -> Dict[str, Any]:
             "is_repo": False,
             "error": str(e)
         }
+
+def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str]:
+    """Инициализация Git репозитория"""
+    try:
+        if is_git_repo(path):
+            return True, "Already a Git repository"
+        
+        # Инициализируем репозиторий
+        result = subprocess.run(
+            ["git", "init"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            return False, f"Failed to initialize Git repository: {result.stderr}"
+        
+        # Если указан URL, добавляем remote
+        if repo_url:
+            success, msg = set_git_remote(path, repo_url)
+            if not success:
+                return False, f"Failed to set remote: {msg}"
+        
+        return True, "Git repository initialized successfully"
+    except subprocess.TimeoutExpired:
+        return False, "Timeout"
+    except FileNotFoundError:
+        return False, "Git not installed"
+    except Exception as e:
+        return False, str(e)
 
 def update_panel_from_git() -> Tuple[bool, str]:
     """Обновление панели из GitHub репозитория"""

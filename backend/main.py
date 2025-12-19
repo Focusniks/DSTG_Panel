@@ -23,7 +23,7 @@ from backend.db_manager import (
 )
 from backend.git_manager import (
     update_panel_from_git, update_bot_from_git,
-    get_git_status, get_git_remote, is_git_repo
+    get_git_status, get_git_remote, is_git_repo, init_git_repo
 )
 from backend.ssh_manager import (
     generate_ssh_key, get_public_key, get_ssh_key_exists,
@@ -889,6 +889,18 @@ async def get_panel_git_status():
 async def update_panel():
     """Обновление панели из Git репозитория"""
     success, message = update_panel_from_git()
+    if success:
+        return {"success": True, "message": message}
+    else:
+        raise HTTPException(status_code=500, detail=message)
+
+class InitGitRepoRequest(BaseModel):
+    repo_url: Optional[str] = None
+
+@app.post("/api/panel/init-git")
+async def init_panel_git_repo(request: InitGitRepoRequest):
+    """Инициализация Git репозитория для панели"""
+    success, message = init_git_repo(BASE_DIR, request.repo_url)
     if success:
         return {"success": True, "message": message}
     else:

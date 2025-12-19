@@ -62,6 +62,12 @@
                     <p class="mb-0">Этот ключ будет использоваться для всех ботов в панели.</p>
                 </div>
                 
+                <div class="alert alert-danger">
+                    <h6><i class="fas fa-exclamation-circle"></i> Ошибка "Key is already in use"?</h6>
+                    <p class="mb-2">Эта ошибка возникает, если вы пытаетесь добавить один и тот же SSH ключ как <strong>deploy key</strong> к нескольким репозиториям.</p>
+                    <p class="mb-0"><strong>Решение:</strong> Добавьте ключ к вашему аккаунту GitHub (Settings → SSH and GPG keys), а не к каждому репозиторию отдельно. Один ключ, добавленный к аккаунту, будет работать для всех ваших репозиториев.</p>
+                </div>
+                
                 <div id="ssh-key-container">
                     <p class="text-muted">Загрузка...</p>
                 </div>
@@ -197,8 +203,8 @@
                                 <li>Введите название ключа (например: "Bot Panel Deploy Key")</li>
                                 <li>Вставьте скопированный ключ в поле <strong>"Key"</strong></li>
                                 <li>Нажмите <strong>"Add SSH key"</strong></li>
-                                <li>Для каждого приватного репозитория: перейдите в <strong>Settings → Deploy keys</strong> и добавьте этот ключ с правами <strong>Read</strong></li>
                             </ol>
+                            <p class="mb-0 mt-2"><strong>Важно:</strong> Добавляйте ключ к вашему аккаунту GitHub (SSH and GPG keys), а не к каждому репозиторию отдельно. Один ключ нельзя использовать как deploy key для нескольких репозиториев. При добавлении к аккаунту ключ будет работать для всех ваших репозиториев.</p>
                         </div>
                         
                         <div class="alert alert-info">
@@ -294,8 +300,8 @@
                         <li>Введите название ключа (например: "Bot Panel Deploy Key")</li>
                         <li>Вставьте скопированный ключ в поле <strong>"Key"</strong></li>
                         <li>Нажмите <strong>"Add SSH key"</strong></li>
-                        <li>Для каждого приватного репозитория: перейдите в <strong>Settings → Deploy keys</strong> и добавьте этот ключ с правами <strong>Read</strong></li>
                     </ol>
+                    <p class="mb-0 mt-2"><strong>Важно:</strong> Добавляйте ключ к вашему аккаунту GitHub (SSH and GPG keys), а не к каждому репозиторию отдельно. Один ключ нельзя использовать как deploy key для нескольких репозиториев. При добавлении к аккаунту ключ будет работать для всех ваших репозиториев.</p>
                 </div>
                 
                 <div class="alert alert-info">
@@ -348,7 +354,25 @@
                     document.getElementById('update-panel-btn').disabled = false;
                 } else {
                     container.innerHTML = `
-                        <p class="text-muted">Панель не является Git репозиторием</p>
+                        <div class="alert alert-warning">
+                            <h6><i class="fas fa-exclamation-triangle"></i> Панель не является Git репозиторием</h6>
+                            <p class="mb-2">Для обновления панели из GitHub необходимо инициализировать Git репозиторий.</p>
+                            <p class="mb-2">Вы можете:</p>
+                            <ol class="mb-2">
+                                <li>Инициализировать новый репозиторий (если панель еще не в Git)</li>
+                                <li>Указать URL существующего репозитория для подключения</li>
+                            </ol>
+                            <div class="mt-3">
+                                <label for="git-repo-url" class="form-label">URL репозитория (необязательно):</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="git-repo-url" placeholder="git@github.com:username/repo.git или https://github.com/username/repo.git">
+                                    <button class="btn btn-primary" onclick="initPanelGitRepo()">
+                                        <i class="fas fa-code-branch"></i> Инициализировать
+                                    </button>
+                                </div>
+                                <small class="form-text text-muted">Если не указать URL, будет создан локальный репозиторий. URL можно добавить позже.</small>
+                            </div>
+                        </div>
                     `;
                     document.getElementById('update-panel-btn').disabled = true;
                 }
@@ -356,6 +380,49 @@
                 console.error('Error loading panel git status:', error);
                 document.getElementById('panel-git-status').innerHTML = 
                     '<p class="text-danger">Ошибка загрузки статуса</p>';
+            }
+        }
+
+        async function initPanelGitRepo() {
+            const repoUrlInput = document.getElementById('git-repo-url');
+            const repoUrl = repoUrlInput?.value.trim() || null;
+            
+            const btn = document.querySelector('button[onclick="initPanelGitRepo()"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Инициализация...';
+            }
+            
+            try {
+                const response = await fetch('/api/panel/init-git', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo_url: repoUrl
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    showAlert('Git репозиторий успешно инициализирован!', 'success');
+                    // Перезагружаем статус
+                    setTimeout(() => {
+                        loadPanelGitStatus();
+                    }, 500);
+                } else {
+                    const error = await response.json();
+                    showAlert('Ошибка: ' + (error.detail || 'Неизвестная ошибка'), 'danger');
+                }
+            } catch (error) {
+                console.error('Error initializing Git repo:', error);
+                showAlert('Ошибка инициализации Git репозитория', 'danger');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-code-branch"></i> Инициализировать';
+                }
             }
         }
 
