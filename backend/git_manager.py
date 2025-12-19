@@ -126,10 +126,10 @@ def _try_git_command(git_cmd: str) -> bool:
     try:
         result = subprocess.run(
             [git_cmd, "--version"],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # Игнорируем stderr
             text=True,
-            timeout=5,
-            stderr=subprocess.DEVNULL  # Игнорируем stderr
+            timeout=5
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -206,10 +206,10 @@ def get_git_status(path: Path) -> Dict[str, Any]:
             # Пробуем выполнить простую команду
             test_result = subprocess.run(
                 [candidate, "--version"],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
-                timeout=3,
-                stderr=subprocess.DEVNULL
+                timeout=3
             )
             if test_result.returncode == 0:
                 git_cmd = candidate
@@ -386,10 +386,10 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
             # Пробуем выполнить простую команду
             test_result = subprocess.run(
                 [candidate, "--version"],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
-                timeout=3,
-                stderr=subprocess.DEVNULL
+                timeout=3
             )
             if test_result.returncode == 0:
                 git_cmd = candidate
@@ -519,10 +519,10 @@ def update_panel_from_git() -> Tuple[bool, str]:
         try:
             test_result = subprocess.run(
                 [candidate, "--version"],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
-                timeout=3,
-                stderr=subprocess.DEVNULL
+                timeout=3
             )
             if test_result.returncode == 0:
                 git_cmd = candidate
@@ -617,10 +617,10 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
         try:
             test_result = subprocess.run(
                 [candidate, "--version"],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
-                timeout=3,
-                stderr=subprocess.DEVNULL
+                timeout=3
             )
             if test_result.returncode == 0:
                 git_cmd = candidate
