@@ -99,23 +99,47 @@ def get_git_status(path: Path) -> Dict[str, Any]:
         )
         current_branch = result.stdout.strip() if result.returncode == 0 else None
         
+        # Если ветка не определена (нет коммитов), пробуем получить имя ветки из .git/HEAD
+        if not current_branch:
+            try:
+                head_file = path / ".git" / "HEAD"
+                if head_file.exists():
+                    head_content = head_file.read_text().strip()
+                    if head_content.startswith("ref: refs/heads/"):
+                        current_branch = head_content.replace("ref: refs/heads/", "")
+                    elif not head_content:
+                        current_branch = "main"  # Дефолтная ветка
+            except Exception:
+                current_branch = "main"  # Дефолтная ветка
+        
         # Получаем последний коммит
+        last_commit = None
+        # Проверяем, есть ли коммиты
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
+            ["git", "rev-list", "--count", "HEAD"],
             cwd=str(path),
             capture_output=True,
             text=True,
             timeout=10
         )
-        last_commit = None
-        if result.returncode == 0 and result.stdout.strip():
-            parts = result.stdout.strip().split("|", 2)
-            if len(parts) == 3:
-                last_commit = {
-                    "hash": parts[0][:7],
-                    "message": parts[1],
-                    "date": parts[2]
-                }
+        has_commits = result.returncode == 0 and result.stdout.strip() and int(result.stdout.strip() or "0") > 0
+        
+        if has_commits:
+            result = subprocess.run(
+                ["git", "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split("|", 2)
+                if len(parts) == 3:
+                    last_commit = {
+                        "hash": parts[0][:7],
+                        "message": parts[1],
+                        "date": parts[2]
+                    }
         
         # Проверяем, есть ли обновления
         has_updates = False
@@ -167,6 +191,70 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
         
         if result.returncode != 0:
             return False, f"Failed to initialize Git repository: {result.stderr}"
+        
+        # Настраиваем имя пользователя и email для коммитов (если не настроено)
+        env = os.environ.copy()
+        
+        # Проверяем, настроены ли git config
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            # Устанавливаем дефолтные значения
+            subprocess.run(
+                ["git", "config", "user.name", "Panel User"],
+                cwd=str(path),
+                capture_output=True,
+                timeout=5
+            )
+        
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            subprocess.run(
+                ["git", "config", "user.email", "panel@localhost"],
+                cwd=str(path),
+                capture_output=True,
+                timeout=5
+            )
+        
+        # Создаем начальный коммит, если есть файлы для коммита
+        result = subprocess.run(
+            ["git", "add", "."],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        # Проверяем, есть ли что-то для коммита
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.stdout.strip():
+            # Есть изменения для коммита
+            result = subprocess.run(
+                ["git", "commit", "-m", "Initial commit"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            # Не критично, если коммит не удался (может быть пустой репозиторий)
         
         # Если указан URL, добавляем remote
         if repo_url:

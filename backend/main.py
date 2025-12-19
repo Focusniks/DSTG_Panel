@@ -900,11 +900,22 @@ class InitGitRepoRequest(BaseModel):
 @app.post("/api/panel/init-git")
 async def init_panel_git_repo(request: InitGitRepoRequest):
     """Инициализация Git репозитория для панели"""
-    success, message = init_git_repo(BASE_DIR, request.repo_url)
-    if success:
-        return {"success": True, "message": message}
-    else:
-        raise HTTPException(status_code=500, detail=message)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"Initializing Git repo at {BASE_DIR}, URL: {request.repo_url}")
+        success, message = init_git_repo(BASE_DIR, request.repo_url)
+        logger.info(f"Git init result: success={success}, message={message}")
+        
+        if success:
+            return {"success": True, "message": message}
+        else:
+            logger.error(f"Git init failed: {message}")
+            raise HTTPException(status_code=500, detail=message)
+    except Exception as e:
+        logger.error(f"Exception during Git init: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error initializing Git repository: {str(e)}")
 
 @app.get("/api/panel/ssh-key")
 async def get_panel_ssh_key():

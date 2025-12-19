@@ -384,8 +384,10 @@
         }
 
         async function initPanelGitRepo() {
+            console.log('initPanelGitRepo called');
             const repoUrlInput = document.getElementById('git-repo-url');
             const repoUrl = repoUrlInput?.value.trim() || null;
+            console.log('Repo URL:', repoUrl);
             
             const btn = document.querySelector('button[onclick="initPanelGitRepo()"]');
             if (btn) {
@@ -394,6 +396,7 @@
             }
             
             try {
+                console.log('Sending request to /api/panel/init-git');
                 const response = await fetch('/api/panel/init-git', {
                     method: 'POST',
                     headers: {
@@ -403,21 +406,28 @@
                         repo_url: repoUrl
                     })
                 });
+                console.log('Response status:', response.status);
+                
+                const result = await response.json();
                 
                 if (response.ok) {
-                    const result = await response.json();
-                    showAlert('Git репозиторий успешно инициализирован!', 'success');
+                    showAlert('Git репозиторий успешно инициализирован! ' + (result.message || ''), 'success');
+                    // Очищаем поле ввода
+                    if (repoUrlInput) {
+                        repoUrlInput.value = '';
+                    }
                     // Перезагружаем статус
                     setTimeout(() => {
                         loadPanelGitStatus();
                     }, 500);
                 } else {
-                    const error = await response.json();
-                    showAlert('Ошибка: ' + (error.detail || 'Неизвестная ошибка'), 'danger');
+                    const errorMsg = result.detail || result.message || 'Неизвестная ошибка';
+                    console.error('Git init error:', errorMsg);
+                    showAlert('Ошибка инициализации: ' + errorMsg, 'danger');
                 }
             } catch (error) {
                 console.error('Error initializing Git repo:', error);
-                showAlert('Ошибка инициализации Git репозитория', 'danger');
+                showAlert('Ошибка инициализации Git репозитория: ' + (error.message || 'Неизвестная ошибка'), 'danger');
             } finally {
                 if (btn) {
                     btn.disabled = false;
