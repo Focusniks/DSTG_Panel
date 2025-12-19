@@ -969,9 +969,26 @@ async def clone_bot_repository(bot_id: int):
         except Exception as git_error:
             # Ловим исключения из update_bot_from_git
             error_type = type(git_error).__name__
-            error_msg = str(git_error) if str(git_error) else repr(git_error)
-            error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
+            error_msg = str(git_error) if str(git_error) else ""
+            error_repr = repr(git_error) if not error_msg else ""
+            
+            # Формируем детальное сообщение
+            error_parts = []
+            if error_type:
+                error_parts.append(error_type)
+            if error_msg and error_msg.strip():
+                error_parts.append(error_msg.strip())
+            elif error_repr and error_repr.strip():
+                error_parts.append(error_repr.strip())
+            
+            # Если все еще пусто, используем fallback
+            if not error_parts:
+                error_parts.append("Unknown error occurred")
+            
+            error_detail = ": ".join(error_parts) if len(error_parts) > 1 else error_parts[0]
+            
             logger.error(f"Exception in update_bot_from_git: {error_detail}", exc_info=True)
+            logger.error(f"Exception type: {type(git_error)}, args: {git_error.args if hasattr(git_error, 'args') else 'N/A'}")
             
             # Восстанавливаем config.json при ошибке клонирования
             if config_backup and os.path.exists(config_backup):
@@ -981,7 +998,10 @@ async def clone_bot_repository(bot_id: int):
                     shutil.copy2(config_backup, config_path)
                 except Exception as e:
                     logger.error(f"Failed to restore config.json: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error cloning repository: {error_detail}")
+            
+            # Гарантируем, что detail не пустой
+            final_detail = f"Error cloning repository: {error_detail}" if error_detail else "Error cloning repository: Unknown error occurred"
+            raise HTTPException(status_code=500, detail=final_detail)
         
         if not success:
             # Восстанавливаем config.json при ошибке клонирования
@@ -1040,10 +1060,27 @@ async def clone_bot_repository(bot_id: int):
     except Exception as e:
         # Получаем детальную информацию об ошибке
         error_type = type(e).__name__
-        error_msg = str(e) if str(e) else repr(e)
-        error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
+        error_msg = str(e) if str(e) else ""
+        error_repr = repr(e) if not error_msg else ""
         
+        # Формируем детальное сообщение
+        error_parts = []
+        if error_type:
+            error_parts.append(error_type)
+        if error_msg and error_msg.strip():
+            error_parts.append(error_msg.strip())
+        elif error_repr and error_repr.strip():
+            error_parts.append(error_repr.strip())
+        
+        # Если все еще пусто, используем fallback
+        if not error_parts:
+            error_parts.append("Unknown error occurred")
+        
+        error_detail = ": ".join(error_parts) if len(error_parts) > 1 else error_parts[0]
+        
+        # Логируем с полным traceback
         logger.error(f"Error cloning repository for bot {bot_id}: {error_detail}", exc_info=True)
+        logger.error(f"Exception type: {type(e)}, args: {e.args if hasattr(e, 'args') else 'N/A'}")
         
         # Восстанавливаем config.json при ошибке
         if config_backup and os.path.exists(config_backup):
@@ -1055,7 +1092,9 @@ async def clone_bot_repository(bot_id: int):
             except Exception as restore_error:
                 logger.error(f"Failed to restore config.json after error: {str(restore_error)}")
         
-        raise HTTPException(status_code=500, detail=f"Error cloning repository: {error_detail}")
+        # Гарантируем, что detail не пустой
+        final_detail = f"Error cloning repository: {error_detail}" if error_detail else "Error cloning repository: Unknown error occurred"
+        raise HTTPException(status_code=500, detail=final_detail)
 
 # Panel settings endpoints
 @app.get("/api/panel/git-status")

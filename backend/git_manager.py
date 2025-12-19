@@ -711,8 +711,15 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             # Формируем детальное сообщение об ошибке
             error_parts = []
-            stderr_text = result.stderr.strip() if result.stderr else ""
-            stdout_text = result.stdout.strip() if result.stdout else ""
+            stderr_text = (result.stderr or "").strip()
+            stdout_text = (result.stdout or "").strip()
+            
+            # Логируем сырой вывод для отладки
+            logger.error(f"Git clone failed with exit code {result.returncode}")
+            if stderr_text:
+                logger.error(f"Git stderr: {stderr_text}")
+            if stdout_text:
+                logger.error(f"Git stdout: {stdout_text}")
             
             # Проверяем типичные ошибки SSH
             if "Permission denied" in stderr_text or "Permission denied" in stdout_text:
@@ -721,23 +728,38 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
                 error_parts.append("SSH host key verification failed. Try accepting the host key manually.")
             elif "Could not resolve hostname" in stderr_text:
                 error_parts.append("Could not resolve hostname. Check your internet connection.")
+            elif "repository not found" in stderr_text.lower() or "not found" in stderr_text.lower():
+                error_parts.append("Repository not found. Check if the repository exists and you have access to it.")
             elif "fatal:" in stderr_text:
                 # Извлекаем сообщение после "fatal:"
                 fatal_msg = stderr_text.split("fatal:")[-1].strip()
                 if fatal_msg:
                     error_parts.append(fatal_msg)
             
-            if stderr_text and stderr_text not in " | ".join(error_parts):
-                error_parts.append(f"stderr: {stderr_text}")
-            if stdout_text and stdout_text not in " | ".join(error_parts):
-                error_parts.append(f"stdout: {stdout_text}")
+            # Добавляем stderr если его еще нет в сообщении
+            if stderr_text:
+                stderr_already_included = any(stderr_text in part for part in error_parts)
+                if not stderr_already_included:
+                    # Берем последние 500 символов, чтобы не перегружать сообщение
+                    stderr_short = stderr_text[-500:] if len(stderr_text) > 500 else stderr_text
+                    error_parts.append(f"Git error: {stderr_short}")
             
+            # Добавляем stdout если есть и его еще нет
+            if stdout_text and stdout_text not in " | ".join(error_parts):
+                stdout_short = stdout_text[-200:] if len(stdout_text) > 200 else stdout_text
+                error_parts.append(f"Output: {stdout_short}")
+            
+            # Если все еще нет сообщения, создаем базовое
             if not error_parts:
-                error_parts.append("Unknown error (no output from git)")
+                error_parts.append(f"Git clone failed with exit code {result.returncode}")
+                if stderr_text:
+                    error_parts.append(f"Error: {stderr_text[:200]}")
+                else:
+                    error_parts.append("No error message from git command")
             
             error_msg = " | ".join(error_parts)
             logger.error(f"Git clone failed: {error_msg}")
-            return False, f"Git clone failed (exit code {result.returncode}): {error_msg}"
+            return False, error_msg
         
         # Если репозиторий уже существует, обновляем его
         # Используем SSH окружение для всех Git операций
