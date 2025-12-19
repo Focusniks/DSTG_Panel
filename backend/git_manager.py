@@ -175,14 +175,6 @@ def _try_git_via_shell() -> bool:
 
 def get_git_status(path: Path) -> Dict[str, Any]:
     """Получение статуса Git репозитория"""
-    # Проверяем, установлен ли Git
-    if not check_git_installed():
-        return {
-            "is_repo": False,
-            "error": "Git не установлен. Установите Git для работы с репозиториями.",
-            "git_not_installed": True
-        }
-    
     # Сначала проверяем, является ли путь Git репозиторием
     if not is_git_repo(path):
         return {
@@ -190,9 +182,51 @@ def get_git_status(path: Path) -> Dict[str, Any]:
             "error": "Not a Git repository"
         }
     
+    # Пробуем выполнить git команду напрямую, без предварительной проверки
+    git_cmd = None
+    git_found = False
+    
+    # Пробуем несколько способов найти git
+    candidates = [
+        get_git_command(),  # Через нашу функцию
+        "git",  # Прямо через PATH
+    ]
+    
+    # Добавляем стандартные пути для Unix
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    # Пробуем найти рабочий git
+    for candidate in candidates:
+        try:
+            # Пробуем выполнить простую команду
+            test_result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                stderr=subprocess.DEVNULL
+            )
+            if test_result.returncode == 0:
+                git_cmd = candidate
+                git_found = True
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
+    # Если git не найден, возвращаем ошибку
+    if not git_found:
+        return {
+            "is_repo": False,
+            "error": "Git не установлен. Установите Git для работы с репозиториями.",
+            "git_not_installed": True
+        }
+    
     try:
-        git_cmd = get_git_command()
-        
         # Проверяем, есть ли изменения
         result = subprocess.run(
             [git_cmd, "status", "--porcelain"],
@@ -291,7 +325,7 @@ def get_git_status(path: Path) -> Dict[str, Any]:
     except Exception as e:
         error_msg = str(e)
         # Проверяем, является ли это ошибкой отсутствия Git
-        if "No such file or directory" in error_msg and "git" in error_msg.lower():
+        if "No such file or directory" in error_msg or "git" in error_msg.lower():
             return {
                 "is_repo": False,
                 "error": "Git не установлен. Установите Git для работы с репозиториями.",
@@ -304,16 +338,51 @@ def get_git_status(path: Path) -> Dict[str, Any]:
 
 def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str]:
     """Инициализация Git репозитория"""
+    if is_git_repo(path):
+        return True, "Already a Git repository"
+    
+    # Пробуем найти git напрямую, без предварительной проверки
+    git_cmd = None
+    git_found = False
+    
+    # Пробуем несколько способов найти git
+    candidates = [
+        get_git_command(),  # Через нашу функцию
+        "git",  # Прямо через PATH
+    ]
+    
+    # Добавляем стандартные пути для Unix
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    # Пробуем найти рабочий git
+    for candidate in candidates:
+        try:
+            # Пробуем выполнить простую команду
+            test_result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                stderr=subprocess.DEVNULL
+            )
+            if test_result.returncode == 0:
+                git_cmd = candidate
+                git_found = True
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
+    # Если git не найден, возвращаем ошибку
+    if not git_found:
+        return False, "Git не установлен. Установите Git для работы с репозиториями."
+    
     try:
-        # Проверяем, установлен ли Git
-        if not check_git_installed():
-            return False, "Git не установлен. Установите Git для работы с репозиториями."
-        
-        if is_git_repo(path):
-            return True, "Already a Git repository"
-        
         # Инициализируем репозиторий
-        git_cmd = get_git_command()
         result = subprocess.run(
             [git_cmd, "init"],
             cwd=str(path),
@@ -326,27 +395,65 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
             return False, f"Failed to initialize Git repository: {result.stderr}"
         
         # Настраиваем имя пользователя и email для коммитов (если не настроено)
-        env = os.environ.copy()
-        
         # Проверяем, настроены ли git config
-        result = run_git_command(path, "config", "user.name", capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            [git_cmd, "config", "user.name"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
         if result.returncode != 0 or not result.stdout.strip():
             # Устанавливаем дефолтные значения
-            run_git_command(path, "config", "user.name", "Panel User", capture_output=True, timeout=5)
+            subprocess.run(
+                [git_cmd, "config", "user.name", "Panel User"],
+                cwd=str(path),
+                capture_output=True,
+                timeout=5
+            )
         
-        result = run_git_command(path, "config", "user.email", capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            [git_cmd, "config", "user.email"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
         if result.returncode != 0 or not result.stdout.strip():
-            run_git_command(path, "config", "user.email", "panel@localhost", capture_output=True, timeout=5)
+            subprocess.run(
+                [git_cmd, "config", "user.email", "panel@localhost"],
+                cwd=str(path),
+                capture_output=True,
+                timeout=5
+            )
         
         # Создаем начальный коммит, если есть файлы для коммита
-        result = run_git_command(path, "add", ".", capture_output=True, text=True, timeout=30)
+        subprocess.run(
+            [git_cmd, "add", "."],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
         
         # Проверяем, есть ли что-то для коммита
-        result = run_git_command(path, "status", "--porcelain", capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            [git_cmd, "status", "--porcelain"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
         
         if result.stdout.strip():
             # Есть изменения для коммита
-            result = run_git_command(path, "commit", "-m", "Initial commit", capture_output=True, text=True, timeout=30)
+            subprocess.run(
+                [git_cmd, "commit", "-m", "Initial commit"],
+                cwd=str(path),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
             # Не критично, если коммит не удался (может быть пустой репозиторий)
         
         # Если указан URL, добавляем remote
@@ -359,19 +466,56 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
     except subprocess.TimeoutExpired:
         return False, "Timeout"
     except FileNotFoundError:
-        return False, "Git not installed"
+        return False, "Git не установлен. Установите Git для работы с репозиториями."
     except Exception as e:
+        error_msg = str(e)
+        if "No such file or directory" in error_msg or "git" in error_msg.lower():
+            return False, "Git не установлен. Установите Git для работы с репозиториями."
         return False, str(e)
 
 def update_panel_from_git() -> Tuple[bool, str]:
     """Обновление панели из GitHub репозитория"""
+    if not is_git_repo(BASE_DIR):
+        return False, "Not a Git repository"
+    
+    # Пробуем найти git напрямую
+    git_cmd = None
+    git_found = False
+    
+    candidates = [
+        get_git_command(),
+        "git",
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
+        try:
+            test_result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                stderr=subprocess.DEVNULL
+            )
+            if test_result.returncode == 0:
+                git_cmd = candidate
+                git_found = True
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
+    if not git_found:
+        return False, "Git не установлен. Установите Git для работы с репозиториями."
+    
     try:
-        if not is_git_repo(BASE_DIR):
-            return False, "Not a Git repository"
-        
         # Используем SSH окружение для приватных репозиториев
         env = get_git_env_with_ssh()
-        git_cmd = get_git_command()
         
         # Сохраняем изменения перед обновлением
         result = subprocess.run(
@@ -423,12 +567,50 @@ def update_panel_from_git() -> Tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, "Timeout"
     except FileNotFoundError:
-        return False, "Git not installed"
+        return False, "Git не установлен. Установите Git для работы с репозиториями."
     except Exception as e:
+        error_msg = str(e)
+        if "No such file or directory" in error_msg or "git" in error_msg.lower():
+            return False, "Git не установлен. Установите Git для работы с репозиториями."
         return False, str(e)
 
 def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: str = "main") -> Tuple[bool, str]:
     """Обновление файлов бота из GitHub репозитория"""
+    # Пробуем найти git напрямую
+    git_cmd = None
+    git_found = False
+    
+    candidates = [
+        get_git_command(),
+        "git",
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
+        try:
+            test_result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                stderr=subprocess.DEVNULL
+            )
+            if test_result.returncode == 0:
+                git_cmd = candidate
+                git_found = True
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
+    if not git_found:
+        return False, "Git не установлен. Установите Git для работы с репозиториями."
+    
     try:
         # Если репозиторий не инициализирован
         if not is_git_repo(bot_dir):
@@ -452,7 +634,6 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
             
             # Используем SSH окружение для Git команд
             env = get_git_env_with_ssh()
-            git_cmd = get_git_command()
             
             result = subprocess.run(
                 [git_cmd, "clone", "-b", branch, clone_url, str(bot_dir)],
@@ -469,7 +650,6 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
         # Если репозиторий уже существует, обновляем его
         # Используем SSH окружение для всех Git операций
         env = get_git_env_with_ssh()
-        git_cmd = get_git_command()
         
         # Сохраняем изменения
         result = subprocess.run(
@@ -518,7 +698,10 @@ def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: s
     except subprocess.TimeoutExpired:
         return False, "Timeout"
     except FileNotFoundError:
-        return False, "Git not installed"
+        return False, "Git не установлен. Установите Git для работы с репозиториями."
     except Exception as e:
+        error_msg = str(e)
+        if "No such file or directory" in error_msg or "git" in error_msg.lower():
+            return False, "Git не установлен. Установите Git для работы с репозиториями."
         return False, str(e)
 
