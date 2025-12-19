@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление ботом</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="bot-sidebar">
+        <div class="px-4 mb-4">
+            <h4 class="text-white mb-0" id="bot-name-sidebar">Загрузка...</h4>
+            <small class="text-muted" id="bot-type-sidebar"></small>
+        </div>
+        <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+                <a href="#" class="sidebar-menu-link active" data-section="dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Мониторинг</span>
+                </a>
+            </li>
+            <li class="sidebar-menu-item">
+                <a href="#" class="sidebar-menu-link" data-section="settings">
+                    <i class="fas fa-cog"></i>
+                    <span>Настройки</span>
+                </a>
+            </li>
+            <li class="sidebar-menu-item">
+                <a href="#" class="sidebar-menu-link" data-section="files">
+                    <i class="fas fa-folder"></i>
+                    <span>Файлы</span>
+                </a>
+            </li>
+            <li class="sidebar-menu-item">
+                <a href="#" class="sidebar-menu-link" data-section="database">
+                    <i class="fas fa-database"></i>
+                    <span>База данных</span>
+                </a>
+            </li>
+            <li class="sidebar-menu-item">
+                <a href="#" class="sidebar-menu-link" data-section="logs">
+                    <i class="fas fa-file-alt"></i>
+                    <span>Логи</span>
+                </a>
+            </li>
+            <li class="sidebar-menu-item mt-4">
+                <a href="/" class="sidebar-menu-link">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Вернуться к списку</span>
+                </a>
+            </li>
+        </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="bot-content">
+
+        <!-- Dashboard Section -->
+        <section id="section-dashboard" class="content-section" style="display: block;">
+            <div class="mb-4">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-line"></i>
+                    Мониторинг бота
+                </h2>
+            </div>
+
+            <div class="bot-dashboard">
+                <div class="dashboard-section">
+                    <h5 class="mb-3">Статус</h5>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div>
+                            <span class="bot-status" id="bot-status-indicator"></span>
+                            <span id="bot-status-text">Остановлен</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-success btn-sm" id="start-bot-btn">
+                                <i class="fas fa-play"></i> Запустить
+                            </button>
+                            <button class="btn btn-warning btn-sm" id="stop-bot-btn" style="display: none;">
+                                <i class="fas fa-stop"></i> Остановить
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <small class="text-muted">PID:</small> <span id="bot-pid">-</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-section">
+                    <h5 class="mb-3">Использование CPU</h5>
+                    <div class="metric-value" id="cpu-usage">-</div>
+                    <div class="metric-label">%</div>
+                </div>
+
+                <div class="dashboard-section">
+                    <h5 class="mb-3">Использование памяти</h5>
+                    <div class="metric-value" id="memory-usage">-</div>
+                    <div class="metric-label">MB</div>
+                </div>
+            </div>
+
+            <div class="dashboard-section mt-4">
+                <h5 class="mb-3">Информация о боте</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Тип:</strong> <span id="bot-type-info"></span></p>
+                        <p><strong>Стартовый файл:</strong> <span id="start-file-info"></span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Лимит CPU:</strong> <span id="cpu-limit-info"></span>%</p>
+                        <p><strong>Лимит памяти:</strong> <span id="memory-limit-info"></span> MB</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="section-settings" class="content-section d-none">
+            <div class="mb-4">
+                <h2 class="section-title">
+                    <i class="fas fa-cog"></i>
+                    Настройки бота
+                </h2>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <form id="bot-settings-form">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="bot-name" class="form-label">Название</label>
+                                    <input type="text" class="form-control" id="bot-name" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="bot-type" class="form-label">Тип бота</label>
+                                    <select class="form-select" id="bot-type" required>
+                                        <option value="discord">Discord</option>
+                                        <option value="telegram">Telegram</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="start-file" class="form-label">Стартовый файл</label>
+                            <input type="text" class="form-control" id="start-file" placeholder="main.py">
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="cpu-limit" class="form-label">Лимит CPU (%)</label>
+                                    <input type="number" class="form-control" id="cpu-limit" min="1" max="100" value="50" step="0.1">
+                                    <small class="text-muted">Максимальное использование CPU процессором бота</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="memory-limit" class="form-label">Лимит памяти (MB)</label>
+                                    <input type="number" class="form-control" id="memory-limit" min="64" value="512" step="64">
+                                    <small class="text-muted">Максимальное использование оперативной памяти</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        <h6 class="mb-3">Дополнительные настройки</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="restart-on-crash">
+                                        <label class="form-check-label" for="restart-on-crash">
+                                            Автоматический перезапуск при сбое
+                                        </label>
+                                    </div>
+                                    <small class="text-muted d-block">Бот будет автоматически перезапускаться при ошибке</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="auto-start">
+                                        <label class="form-check-label" for="auto-start">
+                                            Автозапуск при старте панели
+                                        </label>
+                                    </div>
+                                    <small class="text-muted d-block">Бот запустится автоматически при запуске панели</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="environment-vars" class="form-label">Переменные окружения (JSON)</label>
+                            <textarea class="form-control" id="environment-vars" rows="4" placeholder='{"KEY": "value", "ANOTHER_KEY": "another_value"}'></textarea>
+                            <small class="text-muted">JSON объект с переменными окружения для бота</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="working-directory" class="form-label">Рабочая директория</label>
+                            <input type="text" class="form-control" id="working-directory" placeholder="Оставьте пустым для корня бота">
+                            <small class="text-muted">Относительный путь от корня директории бота</small>
+                        </div>
+
+                        <hr>
+                        <h6 class="mb-3">GitHub репозиторий <small class="text-muted">(опционально)</small></h6>
+                        
+                        <div class="mb-3">
+                            <label for="git-repo-url" class="form-label">URL репозитория</label>
+                            <input type="text" class="form-control" id="git-repo-url" placeholder="https://github.com/user/repo.git">
+                            <small class="form-text text-muted">Оставьте пустым, если не хотите использовать Git репозиторий</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="git-branch" class="form-label">Ветка</label>
+                            <input type="text" class="form-control" id="git-branch" value="main" placeholder="main">
+                        </div>
+                        
+                        <div id="git-status-info" class="mb-3"></div>
+                        
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-secondary" id="update-git-btn">
+                                <i class="fab fa-github"></i> Обновить из GitHub
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Сохранить настройки
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- Files Section -->
+        <section id="section-files" class="content-section d-none">
+            <div class="mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h2 class="section-title mb-0">
+                    <i class="fas fa-folder"></i>
+                    Файлы бота
+                </h2>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" id="upload-file-btn">
+                        <i class="fas fa-upload"></i> Загрузить файл
+                    </button>
+                    <button class="btn btn-secondary" id="create-folder-btn">
+                        <i class="fas fa-folder-plus"></i> Создать папку
+                    </button>
+                    <button class="btn btn-success" id="create-file-btn">
+                        <i class="fas fa-plus"></i> Создать файл
+                    </button>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5>Файловая структура</h5>
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-danger" id="delete-file-btn" style="display: none;">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                <button class="btn btn-sm btn-secondary" id="refresh-files-btn">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="file-tree" class="file-tree"></div>
+                        <div class="card-body p-2">
+                            <small class="text-muted" id="current-path">Корневая директория</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 id="editor-title">Редактор кода</h5>
+                            <div>
+                                <button class="btn btn-sm btn-secondary me-2" id="rename-file-btn" style="display: none;">
+                                    <i class="fas fa-edit"></i> Переименовать
+                                </button>
+                                <button class="btn btn-sm btn-danger me-2" id="delete-file-btn-header" style="display: none;">
+                                    <i class="fas fa-trash"></i> Удалить
+                                </button>
+                                <button class="btn btn-sm btn-success" id="save-btn" disabled>
+                                    <i class="fas fa-save"></i> Сохранить
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="editor-placeholder" class="text-center p-5 text-muted">
+                                <i class="fas fa-file-code fa-3x mb-3"></i>
+                                <p>Выберите файл для редактирования</p>
+                            </div>
+                            <div id="editor-wrapper" style="display: none;">
+                                <textarea id="code-editor" class="code-editor-container"></textarea>
+                            </div>
+                            <div id="media-wrapper" style="display: none;">
+                                <div id="image-container" style="text-align: center; padding: 20px;">
+                                    <img id="media-image" style="max-width: 100%; max-height: 70vh; border-radius: 8px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);" alt="Изображение">
+                                </div>
+                                <div id="video-container" style="text-align: center; padding: 20px;">
+                                    <video id="media-video" controls style="max-width: 100%; max-height: 70vh; border-radius: 8px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);">
+                                        Ваш браузер не поддерживает воспроизведение видео.
+                                    </video>
+                                </div>
+                                <div id="audio-container" style="text-align: center; padding: 20px;">
+                                    <audio id="media-audio" controls style="width: 100%; max-width: 600px;">
+                                        Ваш браузер не поддерживает воспроизведение аудио.
+                                    </audio>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Database Section -->
+        <section id="section-database" class="content-section d-none">
+            <div class="mb-4">
+                <h2 class="section-title">
+                    <i class="fas fa-database"></i>
+                    База данных
+                </h2>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5>Информация о базе данных</h5>
+                </div>
+                <div class="card-body">
+                    <div id="db-info">
+                        <p>База данных не создана</p>
+                        <button class="btn btn-primary" id="create-db-btn">
+                            <i class="fas fa-plus"></i> Создать базу данных
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>SQL редактор</h5>
+                    <button class="btn btn-sm btn-secondary" id="phpmyadmin-btn">
+                        <i class="fas fa-external-link-alt"></i> phpMyAdmin
+                    </button>
+                </div>
+                <div class="card-body">
+                    <textarea id="sql-query" class="form-control" rows="5" placeholder="Введите SQL запрос..."></textarea>
+                    <button class="btn btn-primary mt-2" id="execute-query-btn">
+                        <i class="fas fa-play"></i> Выполнить
+                    </button>
+                    <div id="query-result" class="mt-3"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Logs Section -->
+        <section id="section-logs" class="content-section d-none">
+            <div class="mb-4 d-flex justify-content-between align-items-center">
+                <h2 class="section-title mb-0">
+                    <i class="fas fa-file-alt"></i>
+                    Логи бота
+                </h2>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-secondary" id="refresh-logs-btn">
+                        <i class="fas fa-sync-alt"></i> Обновить
+                    </button>
+                    <button class="btn btn-sm btn-primary" id="auto-refresh-logs-btn">
+                        <i class="fas fa-play"></i> Автообновление
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body p-0">
+                    <div id="bot-logs" class="logs-container">
+                        <div class="text-center p-5 text-muted">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                            <p>Загрузка логов...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal для переименования файла -->
+    <div class="modal fade" id="renameFileModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Переименовать файл</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new-file-name-rename" class="form-label">Новое имя файла</label>
+                        <input type="text" class="form-control" id="new-file-name-rename" placeholder="Введите новое имя">
+                        <input type="hidden" id="current-file-name">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="confirm-rename-file-btn">Переименовать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для подтверждения действий -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmModalTitle">Подтверждение</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmModalMessage">Вы уверены?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-danger" id="confirmModalBtn">Подтвердить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для создания файла -->
+    <div class="modal fade" id="createFileModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Создать файл</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Путь к файлу</label>
+                        <input type="text" class="form-control" id="new-file-path" placeholder="filename.py или folder/filename.py">
+                        <small class="text-muted">Можно указать путь относительно корня бота</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="confirm-create-file-btn">Создать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для создания папки -->
+    <div class="modal fade" id="createFolderModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Создать папку</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Путь к папке</label>
+                        <input type="text" class="form-control" id="new-folder-path" placeholder="folder_name или path/to/folder">
+                        <small class="text-muted">Можно указать путь относительно корня бота</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="confirm-create-folder-btn">Создать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для загрузки файла -->
+    <div class="modal fade" id="uploadFileModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Загрузить файл</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Выберите файл</label>
+                        <input type="file" class="form-control" id="file-upload-input" multiple>
+                        <small class="text-muted">Можно выбрать несколько файлов</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Путь назначения (опционально)</label>
+                        <input type="text" class="form-control" id="upload-destination-path" placeholder="Например: folder/subfolder или logs">
+                        <small class="text-muted">Относительный путь к папке, куда будут загружены файлы. Примеры: <code>logs</code>, <code>data/config</code>, <code>src/utils</code>. Оставьте пустым для загрузки в корень директории бота.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="confirm-upload-file-btn">Загрузить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
+    <script src="/static/js/bot-manage.js"></script>
+</body>
+</html>
+
