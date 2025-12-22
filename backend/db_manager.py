@@ -2,18 +2,22 @@
 Управление MySQL базами данных для ботов
 """
 import pymysql
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from backend.config import (
     MYSQL_HOST, MYSQL_PORT, MYSQL_ROOT_USER, 
     MYSQL_ROOT_PASSWORD, MYSQL_PREFIX
 )
-from backend.database import get_bot, update_bot
+from backend.database import get_bot, update_bot, get_db_connection
 import secrets
 import string
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_mysql_connection(db_name: Optional[str] = None) -> pymysql.Connection:
     """Получение соединения с MySQL"""
     try:
+        logger.info(f"Connecting to MySQL: host={MYSQL_HOST}, port={MYSQL_PORT}, user={MYSQL_ROOT_USER}, database={db_name}")
         connection = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
@@ -23,12 +27,18 @@ def get_mysql_connection(db_name: Optional[str] = None) -> pymysql.Connection:
             charset='utf8mb4',
             cursorclass=pymysql.cursors.DictCursor
         )
+        logger.info(f"Successfully connected to MySQL")
         return connection
     except Exception as e:
+        logger.error(f"Failed to connect to MySQL: {str(e)}", exc_info=True)
         raise Exception(f"Failed to connect to MySQL: {str(e)}")
 
-def generate_db_name(bot_id: int) -> str:
+def generate_db_name(bot_id: int, custom_name: Optional[str] = None) -> str:
     """Генерация имени базы данных для бота"""
+    if custom_name:
+        # Очищаем имя от недопустимых символов
+        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in custom_name.lower().replace(' ', '_'))
+        return f"{MYSQL_PREFIX}{bot_id}_{safe_name}"
     return f"{MYSQL_PREFIX}{bot_id}"
 
 def generate_db_password(length: int = 16) -> str:
@@ -36,40 +46,59 @@ def generate_db_password(length: int = 16) -> str:
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
-def create_bot_database(bot_id: int) -> Dict[str, str]:
+def create_bot_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str, str]:
     """Создание базы данных для бота"""
+    logger.info(f"Starting database creation for bot {bot_id}")
+    
     bot = get_bot(bot_id)
     if not bot:
+        logger.error(f"Bot {bot_id} not found")
         raise ValueError("Bot not found")
     
-    db_name = generate_db_name(bot_id)
+    if not db_name:
+        db_name = generate_db_name(bot_id)
+    else:
+        # Очищаем имя от недопустимых символов
+        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in db_name.lower().replace(' ', '_'))
+        db_name = f"{MYSQL_PREFIX}{bot_id}_{safe_name}"
     db_user = f"bot_{bot_id}_user"
     db_password = generate_db_password()
+    
+    logger.info(f"Generated database name: {db_name}, user: {db_user}")
     
     conn = None
     try:
         # Подключаемся к MySQL без выбора БД (чтобы создать новую)
         try:
+            logger.info(f"Attempting to connect to MySQL server...")
             conn = get_mysql_connection()
+            logger.info(f"Successfully connected to MySQL server")
         except Exception as e:
+            logger.error(f"Failed to connect to MySQL: {str(e)}", exc_info=True)
             raise Exception(f"Не удалось подключиться к MySQL серверу. Проверьте настройки подключения в config.py. Ошибка: {str(e)}")
         
         try:
             with conn.cursor() as cursor:
                 # Создаем базу данных
                 try:
+                    logger.info(f"Creating database '{db_name}'...")
                     cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
                     conn.commit()
+                    logger.info(f"Database '{db_name}' created successfully")
                 except Exception as e:
+                    logger.error(f"Failed to create database '{db_name}': {str(e)}", exc_info=True)
                     raise Exception(f"Не удалось создать базу данных '{db_name}': {str(e)}")
                 
                 # Создаем пользователя (если поддерживается)
                 try:
+                    logger.info(f"Creating user '{db_user}'...")
                     cursor.execute(f"CREATE USER IF NOT EXISTS '{db_user}'@'localhost' IDENTIFIED BY '{db_password}'")
                     cursor.execute(f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{db_user}'@'localhost'")
                     cursor.execute("FLUSH PRIVILEGES")
                     conn.commit()
-                except Exception:
+                    logger.info(f"User '{db_user}' created and granted privileges")
+                except Exception as user_error:
+                    logger.warning(f"Failed to create user '{db_user}', using root user instead: {str(user_error)}")
                     db_user = MYSQL_ROOT_USER
                     db_password = MYSQL_ROOT_PASSWORD
         except Exception as e:
@@ -86,31 +115,25 @@ def create_bot_database(bot_id: int) -> Dict[str, str]:
             if conn:
                 conn.close()
         
+        # Сохраняем информацию о базе данных в таблицу bot_databases
         try:
-            update_bot(bot_id, db_name=db_name)
-        except Exception:
-            pass
+            conn_panel = get_db_connection()
+            cursor_panel = conn_panel.cursor()
+            cursor_panel.execute("""
+                INSERT OR REPLACE INTO bot_databases (bot_id, db_name, db_user, db_password, db_host, db_port)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (bot_id, db_name, db_user, db_password, MYSQL_HOST, MYSQL_PORT))
+            conn_panel.commit()
+            conn_panel.close()
+            logger.info(f"Database info saved to bot_databases table for bot {bot_id}")
+        except Exception as e:
+            logger.warning(f"Failed to save database info to panel DB: {e}")
         
-        # Сохраняем credentials в config.json бота
+        # Если это первая база данных, обновляем db_name в таблице bots (для обратной совместимости)
         try:
-            from pathlib import Path
-            import json
-            
-            config_path = Path(bot['bot_dir']) / "config.json"
-            if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                
-                config['database'] = {
-                    'host': MYSQL_HOST,
-                    'port': MYSQL_PORT,
-                    'database': db_name,
-                    'user': db_user,
-                    'password': db_password
-                }
-                
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, ensure_ascii=False, indent=2)
+            bot = get_bot(bot_id)
+            if not bot.get('db_name'):
+                update_bot(bot_id, db_name=db_name)
         except Exception:
             pass
         
@@ -129,6 +152,88 @@ def create_bot_database(bot_id: int) -> Dict[str, str]:
             except:
                 pass
         raise Exception(f"Ошибка при создании базы данных: {str(e)}")
+
+def get_bot_databases(bot_id: int) -> List[Dict[str, Any]]:
+    """Получение списка всех баз данных бота"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, db_name, db_user, db_host, db_port, created_at
+            FROM bot_databases
+            WHERE bot_id = ?
+            ORDER BY created_at DESC
+        """, (bot_id,))
+        
+        rows = cursor.fetchall()
+        databases = []
+        for row in rows:
+            db_name = row['db_name']
+            # Получаем дополнительную информацию о БД
+            try:
+                db_info = get_database_info(db_name)
+                databases.append({
+                    'id': row['id'],
+                    'db_name': db_name,
+                    'db_user': row['db_user'],
+                    'db_host': row['db_host'],
+                    'db_port': row['db_port'],
+                    'created_at': row['created_at'],
+                    'tables': db_info.get('tables', []),
+                    'table_count': db_info.get('table_count', 0),
+                    'size_mb': db_info.get('size_mb', 0)
+                })
+            except Exception as e:
+                databases.append({
+                    'id': row['id'],
+                    'db_name': db_name,
+                    'db_user': row['db_user'],
+                    'db_host': row['db_host'],
+                    'db_port': row['db_port'],
+                    'created_at': row['created_at'],
+                    'error': str(e)
+                })
+        
+        conn.close()
+        return databases
+    except Exception as e:
+        logger.error(f"Error getting bot databases: {e}", exc_info=True)
+        return []
+
+def get_database_info(db_name: str) -> Dict[str, Any]:
+    """Получение информации о конкретной базе данных"""
+    try:
+        conn = get_mysql_connection(db_name)
+        
+        with conn.cursor() as cursor:
+            # Получаем список таблиц
+            cursor.execute("SHOW TABLES")
+            tables = [list(row.values())[0] for row in cursor.fetchall()]
+            
+            # Получаем размер БД
+            cursor.execute("""
+                SELECT 
+                    ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+                FROM information_schema.tables 
+                WHERE table_schema = %s
+            """, (db_name,))
+            size_result = cursor.fetchone()
+            size_mb = size_result['size_mb'] if size_result else 0
+        
+        conn.close()
+        
+        return {
+            "db_name": db_name,
+            "tables": tables,
+            "size_mb": size_mb,
+            "table_count": len(tables)
+        }
+    except Exception as e:
+        logger.error(f"Error getting database info for {db_name}: {e}", exc_info=True)
+        return {
+            "db_name": db_name,
+            "error": str(e)
+        }
 
 def get_bot_database_info(bot_id: int) -> Optional[Dict[str, Any]]:
     """Получение информации о базе данных бота"""
@@ -170,13 +275,63 @@ def get_bot_database_info(bot_id: int) -> Optional[Dict[str, Any]]:
             "error": str(e)
         }
 
-def execute_sql_query(bot_id: int, query: str) -> Dict[str, Any]:
-    """Выполнение SQL запроса в базе данных бота"""
-    bot = get_bot(bot_id)
-    if not bot or not bot.get('db_name'):
-        raise ValueError("Bot database not found")
+def delete_bot_database(bot_id: int, db_name: str) -> Tuple[bool, str]:
+    """Удаление базы данных бота"""
+    logger.info(f"Deleting database '{db_name}' for bot {bot_id}")
     
-    db_name = bot['db_name']
+    try:
+        # Получаем информацию о БД из таблицы
+        conn_panel = get_db_connection()
+        cursor_panel = conn_panel.cursor()
+        cursor_panel.execute("""
+            SELECT id FROM bot_databases
+            WHERE bot_id = ? AND db_name = ?
+        """, (bot_id, db_name))
+        db_row = cursor_panel.fetchone()
+        
+        if not db_row:
+            conn_panel.close()
+            return (False, "База данных не найдена в списке баз данных бота")
+        
+        # Удаляем БД из MySQL
+        try:
+            mysql_conn = get_mysql_connection()
+            with mysql_conn.cursor() as cursor:
+                cursor.execute(f"DROP DATABASE IF EXISTS `{db_name}`")
+                mysql_conn.commit()
+            mysql_conn.close()
+            logger.info(f"Database '{db_name}' dropped from MySQL")
+        except Exception as e:
+            logger.warning(f"Failed to drop database '{db_name}' from MySQL: {e}")
+            # Продолжаем удаление из таблицы даже если не удалось удалить из MySQL
+        
+        # Удаляем запись из таблицы bot_databases
+        cursor_panel.execute("""
+            DELETE FROM bot_databases
+            WHERE bot_id = ? AND db_name = ?
+        """, (bot_id, db_name))
+        conn_panel.commit()
+        conn_panel.close()
+        
+        logger.info(f"Database '{db_name}' deleted successfully")
+        return (True, "База данных успешно удалена")
+    except Exception as e:
+        logger.error(f"Error deleting database '{db_name}': {e}", exc_info=True)
+        return (False, f"Ошибка при удалении базы данных: {str(e)}")
+
+def execute_sql_query(bot_id: int, query: str, db_name: Optional[str] = None) -> Dict[str, Any]:
+    """Выполнение SQL запроса в базе данных бота"""
+    # Если db_name не указан, используем первую БД из списка или старую логику
+    if not db_name:
+        databases = get_bot_databases(bot_id)
+        if databases:
+            db_name = databases[0]['db_name']
+        else:
+            # Обратная совместимость: используем db_name из таблицы bots
+            bot = get_bot(bot_id)
+            if not bot or not bot.get('db_name'):
+                raise ValueError("Bot database not found")
+            db_name = bot['db_name']
     
     try:
         conn = get_mysql_connection(db_name)
@@ -217,34 +372,47 @@ def execute_sql_query(bot_id: int, query: str) -> Dict[str, Any]:
             "error": str(e)
         }
 
-def get_phpmyadmin_url(bot_id: int) -> str:
+def get_phpmyadmin_url(bot_id: int, db_name: Optional[str] = None) -> str:
     """Генерация URL для phpMyAdmin с автологином"""
     from backend.config import PHPMYADMIN_URL
     from urllib.parse import quote
     
-    bot = get_bot(bot_id)
-    if not bot or not bot.get('db_name'):
-        return PHPMYADMIN_URL
+    # Если db_name не указан, используем первую БД из списка
+    if not db_name:
+        databases = get_bot_databases(bot_id)
+        if databases:
+            db_name = databases[0]['db_name']
+        else:
+            # Обратная совместимость
+            bot = get_bot(bot_id)
+            if not bot or not bot.get('db_name'):
+                return PHPMYADMIN_URL
+            db_name = bot['db_name']
     
-    db_name = bot['db_name']
-    
-    # Читаем credentials из config.json
-    from pathlib import Path
-    import json
-    
-    config_path = Path(bot['bot_dir']) / "config.json"
-    if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+    # Получаем credentials из таблицы bot_databases
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT db_user, db_password
+            FROM bot_databases
+            WHERE bot_id = ? AND db_name = ?
+        """, (bot_id, db_name))
+        row = cursor.fetchone()
+        conn.close()
         
-        db_config = config.get('database', {})
-        db_user = db_config.get('user', MYSQL_ROOT_USER)
-        db_password = db_config.get('password', MYSQL_ROOT_PASSWORD)
-        
-        # Формируем URL для phpMyAdmin с параметрами автологина
-        # Формат: http://phpmyadmin/?pma_username=user&pma_password=pass&server=1&db=database
-        url = f"{PHPMYADMIN_URL}/?pma_username={quote(db_user)}&pma_password={quote(db_password)}&server=1&db={quote(db_name)}"
-        return url
+        if row:
+            db_user = row['db_user']
+            db_password = row['db_password']
+        else:
+            # Fallback на root credentials
+            db_user = MYSQL_ROOT_USER
+            db_password = MYSQL_ROOT_PASSWORD
+    except Exception:
+        db_user = MYSQL_ROOT_USER
+        db_password = MYSQL_ROOT_PASSWORD
     
-    return PHPMYADMIN_URL
+    # Формируем URL для phpMyAdmin с параметрами автологина
+    url = f"{PHPMYADMIN_URL}/?pma_username={quote(db_user)}&pma_password={quote(db_password)}&server=1&db={quote(db_name)}"
+    return url
 

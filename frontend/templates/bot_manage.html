@@ -359,37 +359,66 @@
             <div class="mb-4">
                 <h2 class="section-title">
                     <i class="fas fa-database"></i>
-                    База данных
+                    Базы данных
                 </h2>
-                <p class="text-muted mb-4">Управление MySQL базой данных бота: создание таблиц, выполнение SQL запросов, интеграция с phpMyAdmin</p>
+                <p class="text-muted mb-4">Управление MySQL базами данных бота: создание, удаление, выполнение SQL запросов, интеграция с phpMyAdmin</p>
             </div>
 
-            <div class="card mb-3">
-                <div class="card-header">
-                    <h5>Информация о базе данных</h5>
+            <!-- Форма создания новой базы данных -->
+            <div class="database-create-form mb-4">
+                <div class="database-create-header">
+                    <h5><i class="fas fa-plus-circle"></i> Создать новую базу данных</h5>
                 </div>
-                <div class="card-body">
-                    <div id="db-info">
-                        <p>База данных не создана</p>
-                        <button class="btn btn-primary" id="create-db-btn">
-                            <i class="fas fa-plus"></i> Создать базу данных
-                        </button>
+                <div class="database-create-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label for="new-db-name" class="form-label">Имя базы данных (опционально)</label>
+                            <input type="text" class="form-control" id="new-db-name" placeholder="Оставьте пустым для автоматического имени">
+                            <small class="form-text text-muted">Если не указано, будет создано автоматическое имя</small>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button class="btn btn-primary w-100" id="create-db-btn">
+                                <i class="fas fa-plus"></i> Создать базу данных
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5>SQL редактор</h5>
-                    <button class="btn btn-sm btn-secondary" id="phpmyadmin-btn">
-                        <i class="fas fa-external-link-alt"></i> phpMyAdmin
-                    </button>
+            <!-- Список баз данных -->
+            <div class="databases-list mb-4">
+                <div class="databases-list-header">
+                    <h5><i class="fas fa-list"></i> Список баз данных</h5>
                 </div>
-                <div class="card-body">
-                    <textarea id="sql-query" class="form-control" rows="5" placeholder="Введите SQL запрос..."></textarea>
-                    <button class="btn btn-primary mt-2" id="execute-query-btn">
-                        <i class="fas fa-play"></i> Выполнить
-                    </button>
+                <div id="databases-list-container" class="databases-list-container">
+                    <div class="text-center p-4 text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                        <p>Загрузка баз данных...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SQL редактор -->
+            <div class="database-sql-editor">
+                <div class="database-sql-header">
+                    <h5><i class="fas fa-code"></i> SQL редактор</h5>
+                </div>
+                <div class="database-sql-body">
+                    <div class="mb-3">
+                        <label for="sql-db-select" class="form-label">База данных для запроса</label>
+                        <select class="form-select" id="sql-db-select">
+                            <option value="">Выберите базу данных...</option>
+                        </select>
+                    </div>
+                    <textarea id="sql-query" class="form-control" rows="8" placeholder="Введите SQL запрос..."></textarea>
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-primary" id="execute-query-btn">
+                            <i class="fas fa-play"></i> Выполнить запрос
+                        </button>
+                        <button class="btn btn-secondary" id="phpmyadmin-btn">
+                            <i class="fas fa-external-link-alt"></i> Открыть в phpMyAdmin
+                        </button>
+                    </div>
                     <div id="query-result" class="mt-3"></div>
                 </div>
             </div>

@@ -1050,8 +1050,10 @@ body::before {
     padding: 0.75rem 1rem;
     border: none;
     border-radius: 8px;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     font-weight: 600;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    letter-spacing: 0.3px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1059,6 +1061,9 @@ body::before {
     gap: 0.5rem;
     transition: all var(--anim-normal) ease;
     color: var(--text-primary);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .bot-card-new-btn:disabled {
@@ -1234,6 +1239,9 @@ body::before {
 .btn {
     border-radius: 8px;
     font-weight: 600;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    font-size: 0.875rem;
+    letter-spacing: 0.3px;
     transition: all var(--anim-normal) ease;
     border: none;
     padding: 0.75rem 1.5rem;
@@ -1241,6 +1249,9 @@ body::before {
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .btn-primary {
@@ -2121,4 +2132,149 @@ body::before {
     .stats-grid {
         grid-template-columns: 1fr;
     }
+    
+    .databases-list-container {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Database Section Styles */
+.database-create-form,
+.databases-list,
+.database-sql-editor {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: all var(--anim-normal) ease;
+}
+
+.database-create-form:hover,
+.databases-list:hover,
+.database-sql-editor:hover {
+    border-color: var(--neon-cyan);
+    box-shadow: 0 8px 16px rgba(0, 243, 255, 0.2);
+}
+
+.database-create-header,
+.databases-list-header,
+.database-sql-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.database-create-header h5,
+.databases-list-header h5,
+.database-sql-header h5 {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.database-create-header h5 i,
+.databases-list-header h5 i,
+.database-sql-header h5 i {
+    color: var(--neon-cyan);
+}
+
+.databases-list-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.database-item {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.25rem;
+    transition: all var(--anim-normal) ease;
+    position: relative;
+}
+
+.database-item:hover {
+    border-color: var(--neon-cyan);
+    box-shadow: 0 4px 12px rgba(0, 243, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+.database-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.database-item-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.database-item-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.database-item-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all var(--anim-normal) ease;
+    font-size: 0.875rem;
+}
+
+.database-item-btn:hover {
+    border-color: var(--neon-cyan);
+    color: var(--neon-cyan);
+    background: rgba(0, 243, 255, 0.1);
+}
+
+.database-item-btn.btn-delete:hover {
+    border-color: var(--neon-pink);
+    color: var(--neon-pink);
+    background: rgba(255, 0, 150, 0.1);
+}
+
+.database-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.database-item-info-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.database-item-info-label {
+    font-weight: 500;
+}
+
+.database-item-info-value {
+    color: var(--neon-cyan);
+}
+
+.database-item-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-secondary);
+}
+
+.database-item-empty i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
 }

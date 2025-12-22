@@ -20,7 +20,8 @@ from backend.database import (
 from backend.bot_manager import start_bot, stop_bot, get_bot_process_info, is_process_running
 from backend.db_manager import (
     create_bot_database, get_bot_database_info, 
-    execute_sql_query, get_phpmyadmin_url
+    execute_sql_query, get_phpmyadmin_url,
+    get_bot_databases, get_database_info, delete_bot_database
 )
 from backend.git_manager import (
     update_panel_from_git, update_bot_from_git,
@@ -1004,19 +1005,96 @@ async def get_bot_status(bot_id: int):
 
 # Database management endpoints
 @app.post("/api/bots/{bot_id}/db")
-async def create_bot_database_endpoint(bot_id: int):
+async def create_bot_database_endpoint(bot_id: int, request: Request):
+    """Создание базы данных для бота"""
+    import traceback
+    
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        logger.error(f"Bot {bot_id} not found for database creation")
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "Bot not found",
+                "bot_id": bot_id
+            }
+        )
     
     try:
-        db_info = create_bot_database(bot_id)
+        # Получаем опциональное имя БД из тела запроса
+        body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+        db_name = body.get("db_name") if body else None
+        
+        logger.info(f"Creating database for bot {bot_id}, custom name: {db_name}")
+        db_info = create_bot_database(bot_id, db_name=db_name)
+        logger.info(f"Database created successfully for bot {bot_id}: {db_info.get('db_name')}")
         return {"success": True, **db_info}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
+        tb_info = ''.join(tb_lines)
+        
+        logger.error(f"Error creating database for bot {bot_id}: {error_msg}", exc_info=True)
+        
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "bot_id": bot_id,
+                "traceback": tb_info
+            }
+        )
+
+@app.get("/api/bots/{bot_id}/databases")
+async def get_bot_databases_endpoint(bot_id: int):
+    """Получение списка всех баз данных бота"""
+    bot = get_bot(bot_id)
+    if not bot:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Bot not found"}
+        )
+    
+    databases = get_bot_databases(bot_id)
+    return {"success": True, "databases": databases}
+
+@app.get("/api/bots/{bot_id}/databases/{db_name:path}")
+async def get_database_info_endpoint(bot_id: int, db_name: str):
+    """Получение информации о конкретной базе данных"""
+    bot = get_bot(bot_id)
+    if not bot:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Bot not found"}
+        )
+    
+    db_info = get_database_info(db_name)
+    return {"success": True, **db_info}
+
+@app.delete("/api/bots/{bot_id}/databases/{db_name:path}")
+async def delete_bot_database_endpoint(bot_id: int, db_name: str):
+    """Удаление базы данных бота"""
+    bot = get_bot(bot_id)
+    if not bot:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Bot not found"}
+        )
+    
+    success, message = delete_bot_database(bot_id, db_name)
+    if success:
+        return {"success": True, "message": message}
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": message}
+        )
 
 @app.get("/api/bots/{bot_id}/db")
 async def get_bot_database_endpoint(bot_id: int):
+    """Получение информации о базе данных бота (обратная совместимость)"""
     bot = get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
@@ -1035,26 +1113,24 @@ async def execute_sql_endpoint(bot_id: int, request: Request):
     
     data = await request.json()
     query = data.get("query")
+    db_name = data.get("db_name")  # Опциональное имя БД
     
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
     
-    result = execute_sql_query(bot_id, query)
+    result = execute_sql_query(bot_id, query, db_name=db_name)
     if result.get("success"):
         return result
     else:
         raise HTTPException(status_code=500, detail=result.get("error", "Query failed"))
 
 @app.get("/api/bots/{bot_id}/db/phpmyadmin")
-async def get_phpmyadmin_url_endpoint(bot_id: int):
+async def get_phpmyadmin_url_endpoint(bot_id: int, db_name: Optional[str] = Query(None)):
     bot = get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
     
-    if not bot.get('db_name'):
-        raise HTTPException(status_code=404, detail="Database not created")
-    
-    url = get_phpmyadmin_url(bot_id)
+    url = get_phpmyadmin_url(bot_id, db_name=db_name)
     return {"url": url}
 
 # Bot Git endpoints
@@ -1306,8 +1382,50 @@ async def get_panel_git_status():
 @app.post("/api/panel/update")
 async def update_panel():
     """Обновление панели из Git репозитория"""
+    import subprocess
+    import platform
+    
     success, message = update_panel_from_git()
     if success:
+        # Пытаемся перезапустить systemd сервис после успешного обновления
+        try:
+            # Проверяем, что мы на Linux системе
+            if platform.system() == 'Linux':
+                # Сначала пробуем без sudo (если панель запущена от root)
+                result = subprocess.run(
+                    ['systemctl', 'restart', 'bot-panel'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                # Если не получилось, пробуем с sudo
+                if result.returncode != 0:
+                    logger.debug("Trying to restart service with sudo...")
+                    result = subprocess.run(
+                        ['sudo', 'systemctl', 'restart', 'bot-panel'],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                
+                if result.returncode == 0:
+                    logger.info("Panel service restarted successfully via systemctl")
+                    message += " Сервис панели перезапущен."
+                else:
+                    # Если не удалось (возможно, нет прав или сервис не настроен), просто логируем
+                    logger.warning(f"Could not restart panel service via systemctl: {result.stderr}")
+                    logger.info("Note: To enable automatic service restart, configure sudoers to allow 'systemctl restart bot-panel' without password")
+                    # Не считаем это критической ошибкой, обновление прошло успешно
+        except subprocess.TimeoutExpired:
+            logger.warning("Timeout while trying to restart panel service")
+        except FileNotFoundError:
+            # systemctl не найден (не Linux или не установлен)
+            logger.debug("systemctl not found, skipping service restart")
+        except Exception as e:
+            # Любая другая ошибка не должна прерывать процесс
+            logger.warning(f"Error trying to restart panel service: {e}")
+        
         return {"success": True, "message": message}
     else:
         raise HTTPException(status_code=500, detail=message)

@@ -82,8 +82,11 @@
         
         // Кнопки базы данных
         const createDbBtn = document.getElementById('create-db-btn');
+        const newDbNameInput = document.getElementById('new-db-name');
         if (createDbBtn) {
-            createDbBtn.addEventListener('click', handleCreateDatabase);
+            if (createDbBtn) {
+                createDbBtn.addEventListener('click', handleCreateDatabase);
+            }
         }
         
         const phpmyadminBtn = document.getElementById('phpmyadmin-btn');
@@ -338,18 +341,44 @@
             const isBusy = ['starting', 'restarting', 'installing'].includes(botStatus);
             
             if (startBtn) {
-                startBtn.disabled = status.running || isBusy;
-                startBtn.style.display = (status.running || isBusy) ? 'none' : 'inline-block';
+                const shouldShow = !status.running && !isBusy;
+                const currentDisplay = startBtn.style.display || window.getComputedStyle(startBtn).display;
+                const isCurrentlyVisible = currentDisplay !== 'none';
+                
+                // Меняем только если состояние действительно изменилось
+                if (shouldShow !== isCurrentlyVisible) {
+                    startBtn.disabled = status.running || isBusy;
+                    startBtn.style.display = shouldShow ? 'inline-block' : 'none';
+                } else {
+                    // Обновляем только disabled, не меняя display
+                    startBtn.disabled = status.running || isBusy;
+                }
             }
             
             if (restartBtn) {
-                restartBtn.disabled = !status.running || isBusy;
-                restartBtn.style.display = (status.running && !isBusy) ? 'inline-block' : 'none';
+                const shouldShow = status.running && !isBusy;
+                const currentDisplay = restartBtn.style.display || window.getComputedStyle(restartBtn).display;
+                const isCurrentlyVisible = currentDisplay !== 'none';
+                
+                if (shouldShow !== isCurrentlyVisible) {
+                    restartBtn.disabled = !status.running || isBusy;
+                    restartBtn.style.display = shouldShow ? 'inline-block' : 'none';
+                } else {
+                    restartBtn.disabled = !status.running || isBusy;
+                }
             }
             
             if (stopBtn) {
-                stopBtn.disabled = !status.running || isBusy;
-                stopBtn.style.display = (status.running && !isBusy) ? 'inline-block' : 'none';
+                const shouldShow = status.running && !isBusy;
+                const currentDisplay = stopBtn.style.display || window.getComputedStyle(stopBtn).display;
+                const isCurrentlyVisible = currentDisplay !== 'none';
+                
+                if (shouldShow !== isCurrentlyVisible) {
+                    stopBtn.disabled = !status.running || isBusy;
+                    stopBtn.style.display = shouldShow ? 'inline-block' : 'none';
+                } else {
+                    stopBtn.disabled = !status.running || isBusy;
+                }
             }
             
             // Метрики
@@ -1329,74 +1358,123 @@
             return;
         }
         
-        const container = document.getElementById('db-info');
+        const container = document.getElementById('databases-list-container');
         if (!container) {
-            console.error('Database info container not found');
+            console.error('Databases list container not found');
             return;
         }
         
-        container.innerHTML = '<div class="text-muted">Загрузка информации о базе данных...</div>';
+        container.innerHTML = '<div class="text-center p-4 text-muted"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><p>Загрузка баз данных...</p></div>';
         
         try {
-            const response = await fetch('/api/bots/' + botId + '/db');
+            const response = await fetch('/api/bots/' + botId + '/databases');
             if (!response.ok) {
-                console.error('Failed to load database info:', response.status);
-                container.innerHTML = '<div class="alert alert-danger">Ошибка загрузки информации о базе данных</div>';
+                console.error('Failed to load databases:', response.status);
+                container.innerHTML = '<div class="database-item-empty"><i class="fas fa-exclamation-triangle"></i><p>Ошибка загрузки списка баз данных</p></div>';
                 return;
             }
             
-            const dbInfo = await response.json();
+            const result = await response.json();
+            const databases = result.databases || [];
             
-            if (dbInfo.exists) {
-                let html = '<div class="alert alert-success">';
-                html += '<strong>База данных:</strong> ' + escapeHtml(dbInfo.db_name) + '<br>';
-                html += '<strong>Пользователь:</strong> ' + escapeHtml(dbInfo.db_user) + '<br>';
-                html += '<strong>Пароль:</strong> ' + escapeHtml(dbInfo.db_password);
-                html += '</div>';
-                container.innerHTML = html;
-            } else {
-                container.innerHTML = '<div class="alert alert-secondary">База данных не создана<br><button class="btn btn-primary mt-2" id="create-db-btn"><i class="fas fa-plus"></i> Создать базу данных</button></div>';
-                // Переподключаем обработчик для кнопки в сообщении
-                const btn = document.getElementById('create-db-btn');
-                if (btn) {
-                    btn.addEventListener('click', handleCreateDatabase);
-                }
+            // Обновляем список БД в SQL редакторе
+            updateSqlDbSelect(databases);
+            
+            if (databases.length === 0) {
+                container.innerHTML = '<div class="database-item-empty"><i class="fas fa-database"></i><p>Базы данных не созданы</p><p class="text-muted">Создайте первую базу данных используя форму выше</p></div>';
+                return;
             }
+            
+            let html = '';
+            databases.forEach(db => {
+                html += `
+                    <div class="database-item">
+                        <div class="database-item-header">
+                            <div class="database-item-name">
+                                <i class="fas fa-database"></i> ${escapeHtml(db.db_name)}
+                            </div>
+                            <div class="database-item-actions">
+                                <button class="database-item-btn" onclick="openPhpMyAdminForDb('${escapeHtml(db.db_name)}')" title="Открыть в phpMyAdmin">
+                                    <i class="fas fa-external-link-alt"></i>
+                                </button>
+                                <button class="database-item-btn btn-delete" onclick="deleteDatabase('${escapeHtml(db.db_name)}')" title="Удалить базу данных">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="database-item-info">
+                            <div class="database-item-info-item">
+                                <span class="database-item-info-label">Пользователь:</span>
+                                <span class="database-item-info-value">${escapeHtml(db.db_user)}</span>
+                            </div>
+                            <div class="database-item-info-item">
+                                <span class="database-item-info-label">Таблиц:</span>
+                                <span class="database-item-info-value">${db.table_count || 0}</span>
+                            </div>
+                            <div class="database-item-info-item">
+                                <span class="database-item-info-label">Размер:</span>
+                                <span class="database-item-info-value">${db.size_mb || 0} MB</span>
+                            </div>
+                            ${db.error ? `<div class="database-item-info-item"><span class="text-danger">Ошибка: ${escapeHtml(db.error)}</span></div>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
         } catch (error) {
-            console.error('Error loading database:', error);
-            container.innerHTML = '<div class="alert alert-danger">Ошибка загрузки информации о базе данных: ' + escapeHtml(error.message) + '</div>';
+            console.error('Error loading databases:', error);
+            container.innerHTML = '<div class="database-item-empty"><i class="fas fa-exclamation-triangle"></i><p>Ошибка загрузки списка баз данных: ' + escapeHtml(error.message) + '</p></div>';
         }
     }
     
-    // Создание базы данных
-    async function handleCreateDatabase() {
-        if (!botId) return;
+    function updateSqlDbSelect(databases) {
+        const select = document.getElementById('sql-db-select');
+        if (!select) return;
+        
+        // Очищаем список
+        select.innerHTML = '<option value="">Выберите базу данных...</option>';
+        
+        // Добавляем базы данных
+        databases.forEach(db => {
+            const option = document.createElement('option');
+            option.value = db.db_name;
+            option.textContent = db.db_name + (db.table_count ? ` (${db.table_count} таблиц)` : '');
+            select.appendChild(option);
+        });
+    }
+    
+    window.deleteDatabase = async function(dbName) {
+        if (!botId || !dbName) return;
+        
+        if (!confirm(`Вы уверены, что хотите удалить базу данных "${dbName}"?\n\nЭто действие нельзя отменить!`)) {
+            return;
+        }
         
         try {
-            const response = await fetch('/api/bots/' + botId + '/db', {
-                method: 'POST'
+            const response = await fetch(`/api/bots/${botId}/databases/${encodeURIComponent(dbName)}`, {
+                method: 'DELETE'
             });
             
             const result = await response.json();
             
             if (result.success) {
-                showSuccess('База данных создана', 'База данных успешно создана');
+                showSuccess('База данных удалена', `База данных "${dbName}" успешно удалена`);
                 loadDatabase();
             } else {
-                showError('Ошибка создания', result.error || 'Неизвестная ошибка', result.error);
+                showError('Ошибка удаления', result.error || 'Неизвестная ошибка');
             }
         } catch (error) {
-            console.error('Create database error:', error);
-            showError('Ошибка создания', 'Не удалось создать базу данных. См. консоль (F12).', error.message);
+            console.error('Error deleting database:', error);
+            showError('Ошибка удаления', 'Не удалось удалить базу данных. См. консоль (F12).', error.message);
         }
     }
     
-    // Открытие phpMyAdmin
-    async function handleOpenPhpMyAdmin() {
-        if (!botId) return;
+    window.openPhpMyAdminForDb = async function(dbName) {
+        if (!botId || !dbName) return;
         
         try {
-            const response = await fetch('/api/bots/' + botId + '/db/phpmyadmin');
+            const response = await fetch(`/api/bots/${botId}/db/phpmyadmin?db_name=${encodeURIComponent(dbName)}`);
             if (!response.ok) return;
             
             const result = await response.json();
@@ -1406,6 +1484,97 @@
         } catch (error) {
             console.error('Error opening phpMyAdmin:', error);
         }
+    }
+    
+    // Создание базы данных
+    async function handleCreateDatabase() {
+        if (!botId) return;
+        
+        const dbNameInput = document.getElementById('new-db-name');
+        const dbName = dbNameInput ? dbNameInput.value.trim() : null;
+        
+        // Отключаем кнопку на время создания
+        const btn = document.getElementById('create-db-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Создание...';
+        }
+        
+        try {
+            const response = await fetch('/api/bots/' + botId + '/db', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    db_name: dbName || null
+                })
+            });
+            
+            // Проверяем Content-Type перед парсингом JSON
+            const contentType = response.headers.get('content-type');
+            let result;
+            
+            if (contentType && contentType.includes('application/json')) {
+                result = await response.json();
+            } else {
+                // Если ответ не JSON, читаем как текст
+                const text = await response.text();
+                console.error('Non-JSON response from server:', text);
+                console.error('Status:', response.status, response.statusText);
+                showError('Ошибка создания', 'Сервер вернул не-JSON ответ. Проверьте консоль (F12).', text);
+                return;
+            }
+            
+            if (result.success) {
+                showSuccess('База данных создана', 'База данных успешно создана');
+                // Очищаем поле ввода
+                if (dbNameInput) {
+                    dbNameInput.value = '';
+                }
+                loadDatabase();
+            } else {
+                // Логируем детальную информацию об ошибке
+                console.group('%c❌ ОШИБКА СОЗДАНИЯ БАЗЫ ДАННЫХ', 'color: red; font-weight: bold; font-size: 14px;');
+                console.error('Ошибка:', result.error);
+                console.error('Статус:', response.status);
+                if (result.traceback) {
+                    console.error('Traceback:', result.traceback);
+                }
+                console.groupEnd();
+                
+                showError('Ошибка создания', result.error || 'Неизвестная ошибка', result.traceback || result.error);
+            }
+        } catch (error) {
+            console.group('%c❌ ОШИБКА СОЗДАНИЯ БАЗЫ ДАННЫХ', 'color: red; font-weight: bold; font-size: 14px;');
+            console.error('Exception:', error);
+            console.error('Message:', error.message);
+            console.error('Stack:', error.stack);
+            console.groupEnd();
+            
+            showError('Ошибка создания', 'Не удалось создать базу данных. См. консоль (F12).', error.message);
+        } finally {
+            // Включаем кнопку обратно
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-plus"></i> Создать базу данных';
+            }
+        }
+    }
+    
+    // Открытие phpMyAdmin
+    async function handleOpenPhpMyAdmin() {
+        if (!botId) return;
+        
+        const dbSelect = document.getElementById('sql-db-select');
+        const dbName = dbSelect ? dbSelect.value : null;
+        
+        if (!dbName) {
+            showWarning('Внимание', 'Выберите базу данных для открытия в phpMyAdmin');
+            return;
+        }
+        
+        await openPhpMyAdminForDb(dbName);
     }
     
     // Выполнение SQL запроса
@@ -1418,11 +1587,22 @@
             return;
         }
         
+        const dbSelect = document.getElementById('sql-db-select');
+        const dbName = dbSelect ? dbSelect.value : null;
+        
+        if (!dbName) {
+            showWarning('Внимание', 'Выберите базу данных для выполнения запроса');
+            return;
+        }
+        
         try {
             const response = await fetch('/api/bots/' + botId + '/db/query', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({query: query})
+                body: JSON.stringify({
+                    query: query,
+                    db_name: dbName
+                })
             });
             
             const result = await response.json();

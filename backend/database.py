@@ -45,6 +45,22 @@ def init_database():
             )
         """)
         
+        # Таблица баз данных ботов (для поддержки нескольких БД на бота)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_databases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_id INTEGER NOT NULL,
+                db_name TEXT NOT NULL,
+                db_user TEXT NOT NULL,
+                db_password TEXT NOT NULL,
+                db_host TEXT NOT NULL,
+                db_port INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+                UNIQUE(bot_id, db_name)
+            )
+        """)
+        
         conn.commit()
         conn.close()
     except Exception as e:
