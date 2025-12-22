@@ -138,25 +138,20 @@ function renderBotsList(bots) {
                     <div class="bot-card-new-footer" onclick="event.stopPropagation()">
                         <button class="bot-card-new-btn btn-manage" onclick="editBot(${bot.id})" title="Управление">
                             <i class="fas fa-cog"></i>
-                            <span>Управление</span>
                         </button>
                         ${bot.status === 'running' 
                             ? `<button class="bot-card-new-btn btn-restart" onclick="restartBot(${bot.id})" title="Перезагрузить">
                                  <i class="fas fa-redo"></i>
-                                 <span>Перезагрузить</span>
                                </button>
                                <button class="bot-card-new-btn btn-stop" onclick="stopBot(${bot.id})" title="Остановить">
                                  <i class="fas fa-stop"></i>
-                                 <span>Остановить</span>
                                </button>`
                             : ['starting', 'restarting', 'installing'].includes(bot.status)
                                 ? `<button class="bot-card-new-btn btn-installing" disabled title="${getStatusText(bot.status)}">
                                      <i class="fas fa-spinner fa-spin"></i>
-                                     <span>${getStatusText(bot.status)}</span>
                                    </button>`
                                 : `<button class="bot-card-new-btn btn-start" onclick="startBot(${bot.id})" title="Запустить">
                                      <i class="fas fa-play"></i>
-                                     <span>Запустить</span>
                                    </button>`
                         }
                         <button class="bot-card-new-btn btn-delete" onclick="deleteBot(${bot.id})" title="Удалить">
@@ -614,14 +609,14 @@ function updateBotStatusOnly(botId, status) {
                 restartBtn.className = 'bot-card-new-btn btn-restart';
                 restartBtn.setAttribute('onclick', `restartBot(${botId})`);
                 restartBtn.setAttribute('title', 'Перезагрузить');
-                restartBtn.innerHTML = '<i class="fas fa-redo"></i><span>Перезагрузить</span>';
+                restartBtn.innerHTML = '<i class="fas fa-redo"></i>';
                 restartBtn.style.opacity = '0';
                 
                 const stopBtn = document.createElement('button');
                 stopBtn.className = 'bot-card-new-btn btn-stop';
                 stopBtn.setAttribute('onclick', `stopBot(${botId})`);
                 stopBtn.setAttribute('title', 'Остановить');
-                stopBtn.innerHTML = '<i class="fas fa-stop"></i><span>Остановить</span>';
+                stopBtn.innerHTML = '<i class="fas fa-stop"></i>';
                 stopBtn.style.opacity = '0';
                 
                 if (manageBtn && manageBtn.nextSibling) {
@@ -643,7 +638,7 @@ function updateBotStatusOnly(botId, status) {
                 installingBtn.className = 'bot-card-new-btn btn-installing';
                 installingBtn.disabled = true;
                 installingBtn.setAttribute('title', getStatusText(status));
-                installingBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>${getStatusText(status)}</span>`;
+                installingBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
                 installingBtn.style.opacity = '0';
                 
                 if (manageBtn && manageBtn.nextSibling) {
@@ -661,7 +656,7 @@ function updateBotStatusOnly(botId, status) {
                 startBtn.className = 'bot-card-new-btn btn-start';
                 startBtn.setAttribute('onclick', `startBot(${botId})`);
                 startBtn.setAttribute('title', 'Запустить');
-                startBtn.innerHTML = '<i class="fas fa-play"></i><span>Запустить</span>';
+                startBtn.innerHTML = '<i class="fas fa-play"></i>';
                 startBtn.style.opacity = '0';
                 
                 if (manageBtn && manageBtn.nextSibling) {
