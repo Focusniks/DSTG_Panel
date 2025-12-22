@@ -155,6 +155,9 @@ def create_bot_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str,
             if conn:
                 conn.close()
         
+        # Получаем настройки MySQL для сохранения в базу данных панели
+        mysql_config = _get_mysql_config()
+        
         # Сохраняем информацию о базе данных в таблицу bot_databases
         try:
             conn_panel = get_db_connection()
@@ -177,14 +180,13 @@ def create_bot_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str,
         except Exception:
             pass
         
-                mysql_config = _get_mysql_config()
-                return {
-                    "db_name": db_name,
-                    "db_user": db_user,
-                    "db_password": db_password,
-                    "host": mysql_config['host'],
-                    "port": mysql_config['port']
-                }
+        return {
+            "db_name": db_name,
+            "db_user": db_user,
+            "db_password": db_password,
+            "host": mysql_config['host'],
+            "port": mysql_config['port']
+        }
         
     except Exception as e:
         if conn:
