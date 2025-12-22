@@ -643,36 +643,79 @@
         }
 
         async function updatePanel() {
+            console.log('[updatePanel] Начало обновления панели');
+            
             const confirmed = await showConfirm(
                 'Обновление панели',
                 'Обновить панель из GitHub? Панель может перезапуститься.',
                 'btn-primary'
             );
-            if (!confirmed) return;
+            
+            console.log('[updatePanel] Подтверждение пользователя:', confirmed);
+            if (!confirmed) {
+                console.log('[updatePanel] Обновление отменено пользователем');
+                return;
+            }
             
             const btn = document.getElementById('update-panel-btn');
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Обновление...';
             
+            console.log('[updatePanel] Отправка запроса на /api/panel/update');
+            
             try {
+                const startTime = Date.now();
                 const response = await fetch('/api/panel/update', {
                     method: 'POST'
                 });
-                const result = await response.json();
+                
+                const responseTime = Date.now() - startTime;
+                console.log('[updatePanel] Получен ответ от сервера:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    ok: response.ok,
+                    responseTime: responseTime + 'ms',
+                    headers: Object.fromEntries(response.headers.entries())
+                });
+                
+                let result;
+                try {
+                    result = await response.json();
+                    console.log('[updatePanel] Результат обновления:', result);
+                } catch (jsonError) {
+                    console.error('[updatePanel] Ошибка парсинга JSON:', jsonError);
+                    const text = await response.text();
+                    console.error('[updatePanel] Текст ответа:', text);
+                    throw new Error('Не удалось распарсить ответ сервера: ' + text);
+                }
                 
                 if (result.success) {
+                    console.log('[updatePanel] Обновление успешно завершено');
+                    console.log('[updatePanel] Сообщение:', result.message);
                     showAlert('Панель успешно обновлена! Перезагрузите страницу.', 'success');
                     setTimeout(() => {
+                        console.log('[updatePanel] Перезагрузка страницы...');
                         window.location.reload();
                     }, 2000);
                 } else {
+                    console.error('[updatePanel] Обновление завершилось с ошибкой');
+                    console.error('[updatePanel] Сообщение об ошибке:', result.message);
+                    console.error('[updatePanel] Полный результат:', result);
                     showAlert('Ошибка обновления: ' + (result.message || 'Unknown error'), 'danger');
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-sync"></i> Обновить панель из GitHub';
                 }
             } catch (error) {
-                console.error('Error updating panel:', error);
-                showAlert('Ошибка обновления панели', 'danger');
+                console.error('[updatePanel] Критическая ошибка при обновлении панели:', error);
+                console.error('[updatePanel] Тип ошибки:', error.constructor.name);
+                console.error('[updatePanel] Сообщение ошибки:', error.message);
+                console.error('[updatePanel] Стек ошибки:', error.stack);
+                
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    console.error('[updatePanel] Ошибка сети - возможно, сервер недоступен');
+                }
+                
+                showAlert('Ошибка обновления панели: ' + (error.message || 'Неизвестная ошибка'), 'danger');
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-sync"></i> Обновить панель из GitHub';
             }
