@@ -66,7 +66,7 @@ def find_ssh_keygen_aggressive() -> Optional[str]:
     """
     import platform
     
-    # Метод 1: shutil.which
+    # Метод 1: shutil.which (самый надежный)
     path = shutil.which("ssh-keygen")
     if path:
         logger.info(f"ssh-keygen найден через shutil.which: {path}")
@@ -78,17 +78,76 @@ def find_ssh_keygen_aggressive() -> Optional[str]:
             ["ssh-keygen", "-V"],
             capture_output=True,
             text=True,
-            timeout=3,
-            shell=(os.name == 'nt')
+            timeout=5,
+            shell=False  # На Linux не используем shell
         )
-        if result.returncode == 0 or "OpenSSH" in (result.stderr or result.stdout or ""):
-            logger.info("ssh-keygen найден через прямую проверку команды")
+        # OpenSSH выводит версию в stderr
+        if "OpenSSH" in (result.stderr or result.stdout or ""):
+            logger.info("ssh-keygen найден через прямую проверку команды (работает из PATH)")
             return "ssh-keygen"
-    except:
+    except FileNotFoundError:
         pass
+    except Exception as e:
+        logger.debug(f"Прямая проверка ssh-keygen вызвала исключение: {e}")
+        # Если команда не FileNotFoundError, возможно она найдена, но что-то не так
+        # Пробуем использовать "ssh-keygen" как есть
+        logger.info("ssh-keygen возможно найден (исключение не FileNotFoundError)")
+        return "ssh-keygen"
     
-    # Метод 3: Стандартные пути
-    if platform.system() == 'Windows':
+    # Метод 3: Стандартные пути для Linux/Unix
+    if platform.system() != 'Windows':
+        paths = [
+            "/usr/bin/ssh-keygen",           # Стандартный путь на Ubuntu/Debian
+            "/usr/local/bin/ssh-keygen",      # Альтернативный путь
+            "/bin/ssh-keygen",                # Минимальный путь
+            "/opt/local/bin/ssh-keygen",      # MacPorts
+            "/usr/sbin/ssh-keygen",           # Некоторые системы
+        ]
+        
+        for path in paths:
+            if os.path.exists(path):
+                # Проверяем права на выполнение
+                if os.access(path, os.X_OK):
+                    logger.info(f"ssh-keygen найден в стандартном пути: {path}")
+                    return path
+                else:
+                    logger.warning(f"ssh-keygen найден в {path}, но нет прав на выполнение")
+        
+        # Метод 4: Linux - через which
+        try:
+            result = subprocess.run(
+                ["which", "ssh-keygen"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                found_path = result.stdout.strip()
+                if os.path.exists(found_path):
+                    logger.info(f"ssh-keygen найден через which: {found_path}")
+                    return found_path
+        except:
+            pass
+        
+        # Метод 5: Linux - через dpkg/apt (Ubuntu/Debian)
+        try:
+            result = subprocess.run(
+                ["dpkg", "-L", "openssh-client"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'ssh-keygen' in line and os.path.exists(line.strip()):
+                        found_path = line.strip()
+                        logger.info(f"ssh-keygen найден через dpkg: {found_path}")
+                        return found_path
+        except:
+            pass
+    
+    # Метод 6: Windows пути
+    else:
         paths = [
             r"C:\Windows\System32\OpenSSH\ssh-keygen.exe",
             r"C:\Program Files\Git\usr\bin\ssh-keygen.exe",
@@ -107,21 +166,13 @@ def find_ssh_keygen_aggressive() -> Optional[str]:
             os.path.join(program_files_x86, 'Git', 'usr', 'bin', 'ssh-keygen.exe'),
             os.path.join(local_appdata, 'Programs', 'Git', 'usr', 'bin', 'ssh-keygen.exe'),
         ])
-    else:
-        paths = [
-            "/usr/bin/ssh-keygen",
-            "/usr/local/bin/ssh-keygen",
-            "/bin/ssh-keygen",
-            "/opt/local/bin/ssh-keygen",
-        ]
-    
-    for path in paths:
-        if os.path.exists(path):
-            logger.info(f"ssh-keygen найден в стандартном пути: {path}")
-            return path
-    
-    # Метод 4: Windows - через where
-    if platform.system() == 'Windows':
+        
+        for path in paths:
+            if os.path.exists(path):
+                logger.info(f"ssh-keygen найден в стандартном пути: {path}")
+                return path
+        
+        # Windows - через where
         try:
             result = subprocess.run(
                 ["where", "ssh-keygen"],
@@ -136,9 +187,8 @@ def find_ssh_keygen_aggressive() -> Optional[str]:
                 return found_path
         except:
             pass
-    
-    # Метод 5: PowerShell Get-Command
-    if platform.system() == 'Windows':
+        
+        # Windows - через PowerShell
         try:
             result = subprocess.run(
                 ["powershell", "-Command", "Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source"],
@@ -196,10 +246,10 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
             # Метод 1: через which/where
             logger.info("Поиск ssh-keygen: метод 1 - shutil.which")
             ssh_keygen_path = shutil.which("ssh-keygen")
-        if ssh_keygen_path:
-            logger.info(f"Найден через shutil.which: {ssh_keygen_path}")
-        else:
-            search_log.append("shutil.which: не найден")
+            if ssh_keygen_path:
+                logger.info(f"Найден через shutil.which: {ssh_keygen_path}")
+            else:
+                search_log.append("shutil.which: не найден")
         
         # Метод 2: пробуем стандартные пути
         if not ssh_keygen_path:
@@ -318,6 +368,30 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
             except Exception as e:
                 search_log.append(f"Ошибка при выполнении which: {e}")
         
+        # Метод 7: Ubuntu/Debian - через dpkg (показывает где установлен openssh-client)
+        if not ssh_keygen_path and os.name != 'nt':
+            logger.info("Поиск ssh-keygen: метод 7 - dpkg (Ubuntu/Debian)")
+            try:
+                result = subprocess.run(
+                    ["dpkg", "-L", "openssh-client"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        line = line.strip()
+                        if '/ssh-keygen' in line and os.path.exists(line):
+                            ssh_keygen_path = line
+                            logger.info(f"Найден через dpkg: {ssh_keygen_path}")
+                            break
+                else:
+                    search_log.append("dpkg openssh-client: пакет не установлен или не найден")
+            except FileNotFoundError:
+                search_log.append("dpkg: команда не найдена (не Debian/Ubuntu?)")
+            except Exception as e:
+                search_log.append(f"Ошибка при выполнении dpkg: {e}")
+        
         # Метод 6: на Windows пробуем через PowerShell Get-Command
         if not ssh_keygen_path and os.name == 'nt':
             logger.info("Поиск ssh-keygen: метод 6 - PowerShell Get-Command")
@@ -338,12 +412,47 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
         
         if not ssh_keygen_path:
             error_msg = "ssh-keygen не найден. "
-            error_msg += f"\nПопытки поиска:\n" + "\n".join(f"  - {log}" for log in search_log[:10])
+            error_msg += f"\n\nПопытки поиска:\n" + "\n".join(f"  - {log}" for log in search_log[:15])
+            
             if os.name == 'nt':
                 error_msg += "\n\nУстановите Git for Windows (включает OpenSSH) или OpenSSH для Windows."
                 error_msg += "\nПосле установки перезапустите сервер."
             else:
-                error_msg += "\n\nУстановите OpenSSH: sudo apt-get install openssh-client (Debian/Ubuntu) или sudo yum install openssh-clients (CentOS/RHEL)"
+                # Проверяем, установлен ли openssh-client на Ubuntu/Debian
+                try:
+                    check_result = subprocess.run(
+                        ["dpkg", "-l", "openssh-client"],
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    if check_result.returncode != 0 or "openssh-client" not in check_result.stdout:
+                        error_msg += "\n\n⚠️ Пакет openssh-client не установлен!"
+                        error_msg += "\n\nУстановите OpenSSH:"
+                        error_msg += "\n  sudo apt-get update"
+                        error_msg += "\n  sudo apt-get install -y openssh-client"
+                        error_msg += "\n\nПосле установки перезапустите сервер панели:"
+                        error_msg += "\n  sudo systemctl restart bot-panel"
+                    else:
+                        error_msg += "\n\n⚠️ openssh-client установлен, но ssh-keygen не найден в PATH."
+                        error_msg += "\n\nПопробуйте:"
+                        error_msg += "\n  1. Проверить PATH: echo $PATH"
+                        error_msg += "\n  2. Найти ssh-keygen: dpkg -L openssh-client | grep ssh-keygen"
+                        error_msg += "\n  3. Перезапустить сервер: sudo systemctl restart bot-panel"
+                except FileNotFoundError:
+                    # Не Ubuntu/Debian, пробуем другие методы
+                    error_msg += "\n\nУстановите OpenSSH:"
+                    error_msg += "\n  • Ubuntu/Debian: sudo apt-get install -y openssh-client"
+                    error_msg += "\n  • CentOS/RHEL: sudo yum install -y openssh-clients"
+                    error_msg += "\n  • Fedora: sudo dnf install -y openssh-clients"
+                    error_msg += "\n\nПосле установки перезапустите сервер панели."
+                except Exception:
+                    error_msg += "\n\nУстановите OpenSSH:"
+                    error_msg += "\n  • Ubuntu/Debian: sudo apt-get install -y openssh-client"
+                    error_msg += "\n  • CentOS/RHEL: sudo yum install -y openssh-clients"
+                    error_msg += "\n  • Fedora: sudo dnf install -y openssh-clients"
+                    error_msg += "\n\nПосле установки перезапустите сервер панели."
+            
             logger.error(error_msg)
             return False, error_msg
         
@@ -364,14 +473,26 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
                     "-C", "dstg-panel-deploy-key"
                 ] + extra_args
                 
+                logger.info(f"Выполняю команду генерации ключа: {' '.join(cmd)}")
+                
                 # На Windows используем shell=True для правильной работы с путями
+                # На Linux не используем shell, чтобы избежать проблем с путями
+                use_shell = (os.name == 'nt' and not os.path.isabs(ssh_keygen_path))
+                
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     timeout=30,
-                    shell=(os.name == 'nt' and not os.path.isabs(ssh_keygen_path))
+                    shell=use_shell,
+                    check=False  # Не выбрасываем исключение при ошибке
                 )
+                
+                logger.debug(f"ssh-keygen вернул код: {result.returncode}")
+                if result.stdout:
+                    logger.debug(f"stdout: {result.stdout[:200]}")
+                if result.stderr:
+                    logger.debug(f"stderr: {result.stderr[:200]}")
                 
                 if result.returncode == 0:
                     # Устанавливаем правильные права доступа

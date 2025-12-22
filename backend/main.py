@@ -1371,13 +1371,16 @@ async def generate_panel_ssh_key():
     import logging
     logger = logging.getLogger(__name__)
     
+    # Обертываем ВСЁ в try-except, чтобы гарантировать JSON ответ
     try:
         logger.info("=== SSH KEY GENERATION START ===")
         logger.info("Starting SSH key generation...")
         
         # Генерируем ключ
         try:
+            logger.info("Calling generate_ssh_key(force=True)...")
             success, message = generate_ssh_key(force=True)
+            logger.info(f"generate_ssh_key returned: success={success}, message={message[:100] if message else 'None'}")
         except Exception as gen_error:
             error_trace = traceback.format_exc()
             logger.error(f"Exception in generate_ssh_key: {gen_error}\n{error_trace}")
