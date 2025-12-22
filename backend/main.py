@@ -1374,19 +1374,30 @@ async def insert_sqlite_row_endpoint(bot_id: int, table_name: str, request: Requ
     if not bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
     
-    data = await request.json()
-    row_data = data.get("data", {})
-    db_name = data.get("db_name", "bot.db")
-    
     try:
+        data = await request.json()
+        # Поддерживаем оба варианта: "data" и "row_data" для совместимости
+        row_data = data.get("row_data") or data.get("data", {})
+        db_name = data.get("db_name", "bot.db")
+        
+        if not row_data:
+            raise HTTPException(status_code=400, detail="Данные строки не предоставлены")
+        
+        logger.info(f"Inserting row into table {table_name} in db {db_name}, columns: {list(row_data.keys())}")
+        
         result = insert_row(bot_id, table_name, row_data, db_name)
-        if result['success']:
+        if result.get('success'):
             return result
         else:
-            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+            error_msg = result.get('error', 'Неизвестная ошибка')
+            logger.error(f"Failed to insert row: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error inserting row: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        error_detail = str(e) if str(e) else "Неизвестная ошибка при добавлении строки"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @app.put("/api/bots/{bot_id}/sqlite/tables/{table_name}/rows/{row_id}")
 async def update_sqlite_row_endpoint(bot_id: int, table_name: str, row_id: int, request: Request):

@@ -342,11 +342,35 @@ def insert_row(bot_id: int, table_name: str, data: Dict[str, Any],
                db_name: str = "bot.db") -> Dict[str, Any]:
     """Вставка новой строки"""
     try:
-        columns = list(data.keys())
-        values = list(data.values())
-        placeholders = ', '.join(['?' for _ in values])
+        if not data:
+            return {'success': False, 'error': 'Данные для вставки не предоставлены'}
         
+        # Валидация имени таблицы
+        import re
+        if not table_name or not re.match(r'^[a-zA-Z_][a-zA-Z0-9_\-]*$', table_name):
+            return {'success': False, 'error': 'Недопустимое имя таблицы'}
+        
+        # Валидация имен столбцов
+        columns = []
+        values = []
+        for col_name, value in data.items():
+            if not col_name or not re.match(r'^[a-zA-Z_][a-zA-Z0-9_\-]*$', col_name):
+                logger.warning(f"Invalid column name skipped: {col_name}")
+                continue
+            columns.append(col_name)
+            # Преобразуем None в NULL для SQL
+            if value is None or value == '':
+                values.append(None)
+            else:
+                values.append(str(value) if not isinstance(value, (int, float)) else value)
+        
+        if not columns:
+            return {'success': False, 'error': 'Нет допустимых столбцов для вставки'}
+        
+        placeholders = ', '.join(['?' for _ in values])
         sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+        
+        logger.debug(f"Inserting row SQL: {sql}, values: {values}")
         
         conn = get_sqlite_connection(bot_id, db_name)
         cursor = conn.cursor()
@@ -358,11 +382,30 @@ def insert_row(bot_id: int, table_name: str, data: Dict[str, Any],
         return {
             'success': True,
             'row_id': row_id,
-            'message': 'Row inserted successfully'
+            'message': 'Строка успешно добавлена'
         }
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Integrity error inserting row: {e}", exc_info=True)
+        error_msg = str(e)
+        if "UNIQUE constraint" in error_msg:
+            return {'success': False, 'error': 'Нарушение уникальности: такая запись уже существует'}
+        elif "NOT NULL constraint" in error_msg:
+            return {'success': False, 'error': 'Ошибка: обязательное поле не заполнено'}
+        else:
+            return {'success': False, 'error': f'Ошибка целостности данных: {error_msg}'}
+    except sqlite3.OperationalError as e:
+        logger.error(f"Operational error inserting row: {e}", exc_info=True)
+        error_msg = str(e)
+        if "no such column" in error_msg.lower():
+            return {'success': False, 'error': 'Ошибка: указанный столбец не существует в таблице'}
+        else:
+            return {'success': False, 'error': f'Ошибка базы данных: {error_msg}'}
     except Exception as e:
         logger.error(f"Error inserting row: {e}", exc_info=True)
-        return {'success': False, 'error': str(e)}
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Traceback: {error_trace}")
+        return {'success': False, 'error': f'Ошибка добавления строки: {str(e)}'}
 
 def update_row(bot_id: int, table_name: str, row_id: int, data: Dict[str, Any],
                primary_key: str = "id", db_name: str = "bot.db") -> Dict[str, Any]:

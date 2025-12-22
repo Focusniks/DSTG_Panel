@@ -437,7 +437,22 @@ async function saveNewRow() {
             }
         );
         
-        const result = await response.json();
+        let result;
+        try {
+            result = await response.json();
+        } catch (e) {
+            console.error('Error parsing response:', e);
+            showError('Ошибка', `Ошибка сервера: ${response.status} ${response.statusText}`);
+            return;
+        }
+        
+        if (!response.ok) {
+            // Если response.ok = false, проверяем result.detail или result.error
+            const errorMessage = result.detail || result.error || `Ошибка ${response.status}: ${response.statusText}`;
+            showError('Ошибка', errorMessage);
+            return;
+        }
+        
         if (result.success) {
             showSuccess('Успех', 'Строка успешно добавлена');
             hideAddRowForm();
@@ -447,7 +462,7 @@ async function saveNewRow() {
         }
     } catch (error) {
         console.error('Error saving new row:', error);
-        showError('Ошибка', 'Не удалось добавить строку');
+        showError('Ошибка', `Не удалось добавить строку: ${error.message || 'Неизвестная ошибка'}`);
     }
 }
 
