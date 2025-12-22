@@ -248,10 +248,23 @@
         const memoryLimitInput = document.getElementById('memory-limit');
         if (memoryLimitInput) memoryLimitInput.value = bot.memory_limit || 512;
         
+        // Git репозиторий
+        const useGitCheckbox = document.getElementById('use-git');
+        const gitFields = document.getElementById('edit-git-fields');
         const gitRepoInput = document.getElementById('git-repo-url');
-        if (gitRepoInput) gitRepoInput.value = bot.git_repo_url || '';
-        
         const gitBranchInput = document.getElementById('git-branch');
+        
+        if (useGitCheckbox && gitFields) {
+            const hasGitRepo = bot.git_repo_url && bot.git_repo_url.trim() !== '';
+            useGitCheckbox.checked = hasGitRepo;
+            if (hasGitRepo) {
+                gitFields.style.display = 'block';
+            } else {
+                gitFields.style.display = 'none';
+            }
+        }
+        
+        if (gitRepoInput) gitRepoInput.value = bot.git_repo_url || '';
         if (gitBranchInput) gitBranchInput.value = bot.git_branch || 'main';
         
         const autoStartCheckbox = document.getElementById('auto-start');
@@ -941,8 +954,8 @@
             start_file: document.getElementById('start-file').value || null,
             cpu_limit: parseFloat(document.getElementById('cpu-limit').value) || 50,
             memory_limit: parseInt(document.getElementById('memory-limit').value) || 512,
-            git_repo_url: document.getElementById('git-repo-url').value || null,
-            git_branch: document.getElementById('git-branch').value || 'main',
+            git_repo_url: document.getElementById('use-git').checked ? (document.getElementById('git-repo-url').value || null) : null,
+            git_branch: document.getElementById('use-git').checked ? (document.getElementById('git-branch').value || 'main') : 'main',
             auto_start: autoStartCheckbox ? autoStartCheckbox.checked : false
         };
         

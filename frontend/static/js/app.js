@@ -503,30 +503,61 @@ function editBot(botId) {
 }
 
 // Показ сообщений
-function showAlert(message, type) {
-    const container = document.getElementById('alerts-container');
+// Показ toast-уведомлений (как в панели управления ботом)
+function showToast(title, message, type = 'info') {
+    let container = document.getElementById('toast-container');
     if (!container) {
-        const newContainer = document.createElement('div');
-        newContainer.id = 'alerts-container';
-        newContainer.className = 'mb-3';
-        document.querySelector('.container.mt-5').insertBefore(newContainer, document.querySelector('.container.mt-5').firstChild);
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
     }
     
-    const alert = document.createElement('div');
-    alert.className = `alert alert-${type} alert-dismissible fade show`;
-    alert.role = 'alert';
-    alert.innerHTML = `
-        ${escapeHtml(message)}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification ' + type;
+    
+    const icons = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        warning: 'fa-exclamation-triangle',
+        info: 'fa-info-circle',
+        danger: 'fa-exclamation-circle'
+    };
+    
+    const icon = icons[type] || icons.info;
+    
+    toast.innerHTML = `
+        <div class="toast-icon">
+            <i class="fas ${icon}"></i>
+        </div>
+        <div class="toast-content">
+            <div class="toast-title">${escapeHtml(title)}</div>
+            ${message ? '<div class="toast-message">' + escapeHtml(message) + '</div>' : ''}
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
     `;
     
-    document.getElementById('alerts-container').appendChild(alert);
+    container.appendChild(toast);
     
-    setTimeout(() => {
-        if (alert.parentNode) {
-            alert.remove();
+    // Автоматическое удаление через 5 секунд
+    setTimeout(function() {
+        if (toast.parentNode) {
+            toast.classList.add('hiding');
+            setTimeout(function() {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300);
         }
     }, 5000);
+}
+
+// Обертка для обратной совместимости
+function showAlert(message, type) {
+    // Преобразуем тип для toast
+    const toastType = type === 'danger' ? 'error' : type;
+    showToast(message, '', toastType);
 }
 
 // Экранирование HTML

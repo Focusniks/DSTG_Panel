@@ -302,23 +302,29 @@
                         </div>
 
                         <hr>
-                        <h6 class="mb-3">
-                            <i class="fab fa-github"></i> Git репозиторий <small class="text-muted">(опционально)</small>
-                        </h6>
-                        
                         <div class="mb-3">
-                            <label for="git-repo-url" class="form-label">URL репозитория</label>
-                            <input type="text" class="form-control" id="git-repo-url" placeholder="https://github.com/user/repo.git или git@github.com:user/repo.git">
-                            <small class="form-text text-muted">
-                                Поддерживаются: GitHub, GitLab, Bitbucket. Можно использовать HTTPS или SSH URL.<br>
-                                Оставьте пустым, если бот не использует Git репозиторий.
-                            </small>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="use-git" onchange="toggleGitFields('edit')">
+                                <label class="form-check-label" for="use-git">
+                                    <i class="fab fa-github"></i> Использовать Git репозиторий
+                                </label>
+                            </div>
                         </div>
                         
-                        <div class="mb-3">
-                            <label for="git-branch" class="form-label">Ветка репозитория</label>
-                            <input type="text" class="form-control" id="git-branch" value="main" placeholder="main">
-                            <small class="form-text text-muted">Ветка для клонирования и обновления (по умолчанию: main)</small>
+                        <div id="edit-git-fields" style="display: none;">
+                            <div class="mb-3">
+                                <label for="git-repo-url" class="form-label">URL репозитория</label>
+                                <input type="text" class="form-control" id="git-repo-url" placeholder="https://github.com/user/repo.git или git@github.com:user/repo.git">
+                                <small class="form-text text-muted">
+                                    Поддерживаются: GitHub, GitLab, Bitbucket. Можно использовать HTTPS или SSH URL.
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="git-branch" class="form-label">Ветка репозитория</label>
+                                <input type="text" class="form-control" id="git-branch" value="main" placeholder="main">
+                                <small class="form-text text-muted">Ветка для клонирования и обновления (по умолчанию: main)</small>
+                            </div>
                         </div>
                         
                         <div class="alert alert-info mb-3">
@@ -674,6 +680,33 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
     <script src="/static/js/theme-manager.js"></script>
     <script src="/static/js/bot-manage.js"></script>
+    <script>
+        // Функция для показа/скрытия полей Git
+        function toggleGitFields(type) {
+            const checkbox = document.getElementById(type === 'create' ? 'create-use-git' : 'use-git');
+            const fields = document.getElementById(type === 'create' ? 'create-git-fields' : 'edit-git-fields');
+            
+            if (checkbox && fields) {
+                if (checkbox.checked) {
+                    fields.style.display = 'block';
+                } else {
+                    fields.style.display = 'none';
+                    // Очищаем поля при скрытии
+                    if (type === 'create') {
+                        const repoInput = document.getElementById('create-git-repo-url');
+                        const branchInput = document.getElementById('create-git-branch');
+                        if (repoInput) repoInput.value = '';
+                        if (branchInput) branchInput.value = 'main';
+                    } else {
+                        const repoInput = document.getElementById('git-repo-url');
+                        const branchInput = document.getElementById('git-branch');
+                        if (repoInput) repoInput.value = '';
+                        if (branchInput) branchInput.value = 'main';
+                    }
+                }
+            }
+        }
+    </script>
 </body>
 </html>
 

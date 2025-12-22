@@ -871,7 +871,86 @@
             });
         }
         
-        function showAlert(message, type) {
+        // Показ toast-уведомлений (как в панели управления ботом)
+        function showToast(title, message, type = 'info') {
+            let container = document.getElementById('toast-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toast-container';
+                document.body.appendChild(container);
+            }
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification ' + type;
+            
+            const icons = {
+                success: 'fa-check-circle',
+                error: 'fa-exclamation-circle',
+                warning: 'fa-exclamation-triangle',
+                info: 'fa-info-circle',
+                danger: 'fa-exclamation-circle'
+            };
+            
+            const icon = icons[type] || icons.info;
+            
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            toast.innerHTML = `
+                <div class="toast-icon">
+                    <i class="fas ${icon}"></i>
+                </div>
+                <div class="toast-content">
+                    <div class="toast-title">${escapeHtml(title)}</div>
+                    ${message ? '<div class="toast-message">' + escapeHtml(message) + '</div>' : ''}
+                </div>
+                <button class="toast-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Автоматическое удаление через 5 секунд
+            setTimeout(function() {
+                if (toast.parentNode) {
+                    toast.classList.add('hiding');
+                    setTimeout(function() {
+                        if (toast.parentNode) {
+                            toast.remove();
+                        }
+                    }, 300);
+                }
+            }, 5000);
+        }
+        
+        // Обертка для обратной совместимости
+        function showAlert(param1, param2, param3 = undefined) {
+            // Преобразуем тип для toast
+            let title, message, type;
+            
+            // Определяем формат вызова
+            if (param3 !== undefined) {
+                // Формат: showAlert(title, message, type)
+                title = param1;
+                message = param2;
+                type = param3;
+            } else {
+                // Формат: showAlert(message, type)
+                title = param1;
+                message = '';
+                type = param2;
+            }
+            
+            const toastType = type === 'danger' ? 'error' : type;
+            showToast(title, message, toastType);
+        }
+        
+        // Старая функция (для обратной совместимости)
+        function showAlertOld(message, type) {
             const container = document.getElementById('alerts-container');
             if (!container) {
                 const newContainer = document.createElement('div');

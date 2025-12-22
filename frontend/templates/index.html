@@ -166,22 +166,30 @@
                         
                         <hr class="my-4" style="border-color: var(--border-color);">
                         
-                        <h6 class="mb-3">
-                            <i class="fab fa-github"></i> Git репозиторий <small class="text-muted">(опционально)</small>
-                        </h6>
                         <div class="mb-3">
-                            <label for="create-git-repo-url" class="form-label">URL репозитория</label>
-                            <input type="text" class="form-control" id="create-git-repo-url" placeholder="https://github.com/user/repo.git или git@github.com:user/repo.git">
-                            <small class="form-text text-muted">
-                                Поддерживаются: GitHub, GitLab, Bitbucket и другие Git хостинги.<br>
-                                Можно использовать HTTPS или SSH URL. Для приватных репозиториев система автоматически использует SSH (если настроен SSH ключ в настройках панели).
-                            </small>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="create-use-git" onchange="toggleGitFields('create')">
+                                <label class="form-check-label" for="create-use-git">
+                                    <i class="fab fa-github"></i> Использовать Git репозиторий
+                                </label>
+                            </div>
                         </div>
                         
-                        <div class="mb-3">
-                            <label for="create-git-branch" class="form-label">Ветка</label>
-                            <input type="text" class="form-control" id="create-git-branch" value="main" placeholder="main">
-                            <small class="form-text text-muted">Ветка репозитория для клонирования (по умолчанию: main)</small>
+                        <div id="create-git-fields" style="display: none;">
+                            <div class="mb-3">
+                                <label for="create-git-repo-url" class="form-label">URL репозитория</label>
+                                <input type="text" class="form-control" id="create-git-repo-url" placeholder="https://github.com/user/repo.git или git@github.com:user/repo.git">
+                                <small class="form-text text-muted">
+                                    Поддерживаются: GitHub, GitLab, Bitbucket и другие Git хостинги.<br>
+                                    Можно использовать HTTPS или SSH URL. Для приватных репозиториев система автоматически использует SSH (если настроен SSH ключ в настройках панели).
+                                </small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="create-git-branch" class="form-label">Ветка</label>
+                                <input type="text" class="form-control" id="create-git-branch" value="main" placeholder="main">
+                                <small class="form-text text-muted">Ветка репозитория для клонирования (по умолчанию: main)</small>
+                            </div>
                         </div>
                         
                         <div class="alert alert-info">
@@ -264,8 +272,9 @@
             const startFile = document.getElementById('create-start-file').value;
             const cpuLimit = parseFloat(document.getElementById('create-cpu-limit').value) || 50;
             const memoryLimit = parseInt(document.getElementById('create-memory-limit').value) || 512;
-            const gitRepoUrl = document.getElementById('create-git-repo-url').value.trim() || null;
-            const gitBranch = document.getElementById('create-git-branch').value.trim() || 'main';
+            const useGit = document.getElementById('create-use-git').checked;
+            const gitRepoUrl = useGit ? (document.getElementById('create-git-repo-url').value.trim() || null) : null;
+            const gitBranch = useGit ? (document.getElementById('create-git-branch').value.trim() || 'main') : 'main';
             
             if (!name.trim()) {
                 showAlert('Пожалуйста, введите название бота', 'warning');
