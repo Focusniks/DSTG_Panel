@@ -233,6 +233,34 @@
     <script src="/static/js/app.js"></script>
     <script>
         // Создание бота
+        // Улучшенная функция для логирования ошибок в консоль F12
+        function logErrorToConsole(errorData, context = '') {
+            console.group(`%c❌ ОШИБКА ${context}`, 'color: red; font-weight: bold; font-size: 14px;');
+            console.error('Детали ошибки:', errorData);
+            
+            if (errorData.detail) {
+                console.error('Сообщение:', errorData.detail);
+            }
+            if (errorData.error_type) {
+                console.error('Тип ошибки:', errorData.error_type);
+            }
+            if (errorData.traceback) {
+                console.group('📋 Traceback (полный стек вызовов):');
+                console.error(errorData.traceback);
+                console.groupEnd();
+            }
+            if (errorData.message) {
+                console.error('Сообщение:', errorData.message);
+            }
+            if (errorData.handler_error) {
+                console.error('Ошибка в обработчике:', errorData.handler_error);
+            }
+            if (errorData.original_error) {
+                console.error('Исходная ошибка:', errorData.original_error);
+            }
+            console.groupEnd();
+        }
+
         async function createBot() {
             const name = document.getElementById('create-bot-name').value;
             const botType = document.getElementById('create-bot-type').value;
@@ -268,17 +296,29 @@
                 if (contentType && contentType.includes('application/json')) {
                     try {
                         result = await response.json();
+                        
+                        // Если это ошибка, логируем в консоль F12
+                        if (!response.ok && result) {
+                            logErrorToConsole(result, `HTTP ${response.status} при создании бота`);
+                        }
                     } catch (jsonError) {
-                        console.error('JSON parse error:', jsonError);
+                        console.group('%c❌ ОШИБКА ПАРСИНГА JSON', 'color: red; font-weight: bold; font-size: 14px;');
+                        console.error('Ошибка парсинга JSON:', jsonError);
                         const text = await response.text();
-                        console.error('Response text:', text);
+                        console.error('Ответ сервера (текст):', text);
+                        console.error('Статус ответа:', response.status, response.statusText);
+                        console.groupEnd();
                         showAlert('Ошибка создания бота: Сервер вернул некорректный ответ. Проверьте консоль (F12).', 'danger');
                         return;
                     }
                 } else {
-                    // Если ответ не JSON, читаем как текст
+                    // Если ответ не JSON, читаем как текст и логируем
                     const text = await response.text();
-                    console.error('Non-JSON response:', text);
+                    console.group('%c❌ НЕ-JSON ОТВЕТ ОТ СЕРВЕРА', 'color: red; font-weight: bold; font-size: 14px;');
+                    console.error('Ответ сервера:', text);
+                    console.error('Статус:', response.status, response.statusText);
+                    console.error('Заголовки:', Object.fromEntries(response.headers.entries()));
+                    console.groupEnd();
                     showAlert('Ошибка создания бота: Сервер вернул ошибку. Проверьте консоль (F12).', 'danger');
                     return;
                 }
@@ -299,6 +339,9 @@
                         window.location.href = `/bot/${result.id}`;
                     }
                 } else {
+                    // Логируем ошибку в консоль F12 с полными деталями
+                    logErrorToConsole(result, 'при создании бота');
+                    
                     let errorMsg = result.detail || result.message || 'Неизвестная ошибка';
                     if (errorMsg.includes('already exists') || errorMsg.includes('уже существует')) {
                         errorMsg = 'Бот с таким именем уже существует. Выберите другое имя.';
@@ -306,7 +349,12 @@
                     showAlert('Ошибка создания бота: ' + errorMsg, 'danger');
                 }
             } catch (error) {
-                console.error('Error creating bot:', error);
+                // Логируем ошибку в консоль F12
+                console.group('%c❌ КРИТИЧЕСКАЯ ОШИБКА при создании бота', 'color: red; font-weight: bold; font-size: 14px;');
+                console.error('Ошибка:', error);
+                console.error('Stack:', error.stack);
+                console.groupEnd();
+                
                 let errorMsg = 'Неизвестная ошибка';
                 if (error.message) {
                     if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {

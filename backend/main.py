@@ -33,6 +33,26 @@ from backend.ssh_manager import (
     extract_host_from_url, convert_https_to_ssh
 )
 
+# Настройка логирования
+import logging
+try:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(BASE_DIR / 'panel.log', encoding='utf-8')
+        ]
+    )
+except Exception:
+    # Если не удалось настроить логирование в файл, используем только консоль
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Bot Admin Panel")
 
 # Глобальный обработчик исключений для возврата JSON вместо HTML
@@ -40,41 +60,114 @@ app = FastAPI(title="Bot Admin Panel")
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Обработчик для HTTPException - всегда возвращаем JSON"""
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"HTTPException: {exc.status_code} - {exc.detail}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail if isinstance(exc.detail, str) else str(exc.detail)}
-    )
+    try:
+        import traceback
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail) if exc.detail else "Unknown error"
+        
+        # Получаем traceback если есть
+        tb_info = None
+        if hasattr(exc, '__traceback__') and exc.__traceback__:
+            tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
+            tb_info = ''.join(tb_lines)
+        
+        logger.warning(f"HTTPException: {exc.status_code} - {detail}")
+        
+        response_content = {
+            "detail": detail,
+            "status_code": exc.status_code,
+            "error_type": type(exc).__name__
+        }
+        
+        if tb_info:
+            response_content["traceback"] = tb_info
+        
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=response_content
+        )
+    except Exception as e:
+        # Если обработчик сам вызывает ошибку, возвращаем простой ответ
+        try:
+            import traceback
+            logger.error(f"Error in http_exception_handler: {e}", exc_info=True)
+            tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
+            tb_info = ''.join(tb_lines)
+        except:
+            tb_info = None
+        
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": "Internal server error in exception handler",
+                "handler_error": str(e),
+                "traceback": tb_info
+            }
+        )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Глобальный обработчик для всех необработанных исключений"""
-    import logging
-    import traceback
-    logger = logging.getLogger(__name__)
-    
-    # Логируем полную ошибку
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
-    # Если это HTTPException (FastAPI), возвращаем как JSON
-    if isinstance(exc, HTTPException):
+    try:
+        import traceback
+        
+        # Получаем полный traceback для отображения в консоли браузера
+        tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
+        full_traceback = ''.join(tb_lines)
+        
+        # Логируем полную ошибку
+        logger.error(f"Unhandled exception: {type(exc).__name__}: {exc}", exc_info=True)
+        
+        # Если это HTTPException (FastAPI), возвращаем как JSON
+        if isinstance(exc, HTTPException):
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail) if exc.detail else "Unknown error"
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "detail": detail,
+                    "error_type": type(exc).__name__,
+                    "traceback": full_traceback  # Добавляем traceback для F12
+                }
+            )
+        
+        # Для всех остальных исключений возвращаем 500 с деталями
+        error_detail = str(exc) if str(exc) else "Внутренняя ошибка сервера"
+        
         return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail if isinstance(exc.detail, str) else str(exc.detail)}
+            status_code=500,
+            content={
+                "detail": error_detail,
+                "error_type": type(exc).__name__,
+                "traceback": full_traceback,  # Полный traceback для отладки в F12
+                "message": f"{type(exc).__name__}: {error_detail}"
+            }
         )
-    
-    # Для всех остальных исключений возвращаем 500 с деталями
-    error_detail = str(exc) if str(exc) else "Внутренняя ошибка сервера"
-    
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": error_detail,
-            "error_type": type(exc).__name__
-        }
-    )
+    except Exception as handler_error:
+        # Если обработчик сам вызывает ошибку, возвращаем простой ответ
+        try:
+            import sys
+            import traceback
+            tb_lines = traceback.format_exception(type(handler_error), handler_error, handler_error.__traceback__)
+            full_traceback = ''.join(tb_lines)
+            sys.stderr.write(f"CRITICAL: Error in global_exception_handler: {handler_error}\n")
+            sys.stderr.write(f"Original exception: {exc}\n")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "detail": "Internal server error in exception handler",
+                    "error_type": "HandlerError",
+                    "handler_error": str(handler_error),
+                    "original_error": str(exc),
+                    "traceback": full_traceback
+                }
+            )
+        except:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "detail": "Critical error in exception handler",
+                    "error_type": "CriticalHandlerError"
+                }
+            )
 
 # Подключение статических файлов и шаблонов
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "frontend" / "static")), name="static")
@@ -104,6 +197,26 @@ class BotUpdate(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+# Middleware для логирования всех запросов и ошибок
+@app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+    """Логирование всех запросов и ответов для отладки в F12"""
+    import time
+    start_time = time.time()
+    
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        
+        # Логируем запрос и ответ
+        logger.info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.3f}s")
+        
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(f"{request.method} {request.url.path} - Exception after {process_time:.3f}s: {e}", exc_info=True)
+        raise
 
 # Middleware для проверки авторизации
 @app.middleware("http")
