@@ -971,6 +971,7 @@ body::before {
     font-weight: 700;
     color: var(--neon-cyan);
     line-height: 1.2;
+    transition: opacity 0.2s ease, color 0.2s ease;
 }
 
 .metric-value-small {
@@ -978,6 +979,7 @@ body::before {
     font-weight: 600;
     color: var(--text-secondary);
     line-height: 1.2;
+    transition: opacity 0.2s ease;
 }
 
 .metric-label {
@@ -1008,6 +1010,7 @@ body::before {
 
 .progress-bar-fill {
     height: 100%;
+    transition: width 0.5s ease;
     background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple));
     border-radius: 10px;
     transition: width var(--anim-normal) ease;

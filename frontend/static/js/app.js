@@ -51,9 +51,6 @@ function renderBotsList(bots) {
     const container = document.getElementById('bots-list');
     if (!container) return;
 
-    // Обновляем статистику
-    updateStats(bots);
-
     if (bots.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -186,26 +183,6 @@ function renderBotsList(bots) {
     });
 }
 
-// Обновление статистики
-function updateStats(bots) {
-    const statsContainer = document.getElementById('stats-overview');
-    if (!statsContainer) return;
-    
-    const total = bots.length;
-    const running = bots.filter(b => b.status === 'running').length;
-    const stopped = bots.filter(b => b.status === 'stopped').length;
-    const errors = bots.filter(b => b.status === 'error').length;
-    
-    document.getElementById('total-bots').textContent = total;
-    document.getElementById('running-bots').textContent = running;
-    document.getElementById('stopped-bots').textContent = stopped;
-    document.getElementById('error-bots').textContent = errors;
-    
-    if (total > 0) {
-        statsContainer.style.display = 'block';
-    }
-}
-
 // Загрузка метрик бота
 async function loadBotMetrics(botId) {
     try {
@@ -216,36 +193,88 @@ async function loadBotMetrics(botId) {
         const cpuEl = document.getElementById(`cpu-${botId}`);
         if (cpuEl) {
             if (status.running && status.cpu_percent !== null && status.cpu_percent !== undefined) {
-                cpuEl.textContent = status.cpu_percent.toFixed(1) + '%';
-                cpuEl.className = 'stat-value';
-                if (status.cpu_percent > 80) {
-                    cpuEl.style.color = 'var(--neon-pink)';
-                } else if (status.cpu_percent > 50) {
-                    cpuEl.style.color = 'var(--neon-orange)';
-                } else {
-                    cpuEl.style.color = 'var(--neon-cyan)';
+                const newValue = status.cpu_percent.toFixed(1) + '%';
+                // Плавное обновление только если значение изменилось
+                if (cpuEl.textContent !== newValue) {
+                    cpuEl.style.transition = 'opacity 0.2s ease';
+                    cpuEl.style.opacity = '0.6';
+                    setTimeout(() => {
+                        cpuEl.textContent = newValue;
+                        cpuEl.className = 'metric-value';
+                        if (status.cpu_percent > 80) {
+                            cpuEl.style.color = 'var(--neon-pink)';
+                        } else if (status.cpu_percent > 50) {
+                            cpuEl.style.color = 'var(--neon-orange)';
+                        } else {
+                            cpuEl.style.color = 'var(--neon-cyan)';
+                        }
+                        cpuEl.style.opacity = '1';
+                    }, 100);
                 }
                 
-                // Обновляем прогресс-бар
+                // Плавное обновление прогресс-бара
                 const progressBar = document.getElementById(`cpu-progress-${botId}`);
                 if (progressBar) {
-                    progressBar.style.width = Math.min(status.cpu_percent, 100) + '%';
+                    const newWidth = Math.min(status.cpu_percent, 100) + '%';
+                    if (progressBar.style.width !== newWidth) {
+                        progressBar.style.transition = 'width 0.5s ease';
+                        progressBar.style.width = newWidth;
+                    }
                 }
             } else {
-                cpuEl.textContent = '-';
-                cpuEl.className = 'stat-value text-muted';
+                if (cpuEl.textContent !== '-') {
+                    cpuEl.style.transition = 'opacity 0.2s ease';
+                    cpuEl.style.opacity = '0.6';
+                    setTimeout(() => {
+                        cpuEl.textContent = '-';
+                        cpuEl.className = 'metric-value';
+                        cpuEl.style.color = '';
+                        cpuEl.style.opacity = '1';
+                    }, 100);
+                }
             }
         }
         
         const ramEl = document.getElementById(`ram-${botId}`);
         if (ramEl) {
             if (status.running && status.memory_mb !== null && status.memory_mb !== undefined) {
-                ramEl.textContent = Math.round(status.memory_mb) + ' MB';
-                ramEl.className = 'stat-value';
-                ramEl.style.color = 'var(--neon-cyan)';
+                const newValue = Math.round(status.memory_mb) + ' MB';
+                // Плавное обновление только если значение изменилось
+                if (ramEl.textContent !== newValue) {
+                    ramEl.style.transition = 'opacity 0.2s ease';
+                    ramEl.style.opacity = '0.6';
+                    setTimeout(() => {
+                        ramEl.textContent = newValue;
+                        ramEl.className = 'metric-value';
+                        ramEl.style.color = 'var(--neon-cyan)';
+                        ramEl.style.opacity = '1';
+                    }, 100);
+                }
             } else {
-                ramEl.textContent = '-';
-                ramEl.className = 'stat-value text-muted';
+                if (ramEl.textContent !== '-') {
+                    ramEl.style.transition = 'opacity 0.2s ease';
+                    ramEl.style.opacity = '0.6';
+                    setTimeout(() => {
+                        ramEl.textContent = '-';
+                        ramEl.className = 'metric-value';
+                        ramEl.style.color = '';
+                        ramEl.style.opacity = '1';
+                    }, 100);
+                }
+            }
+        }
+        
+        // Обновляем PID если он изменился
+        const pidEl = document.querySelector(`.bot-card-new[data-bot-id="${botId}"] .metric-value-small`);
+        if (pidEl && status.pid) {
+            const newPid = status.pid.toString();
+            if (pidEl.textContent !== newPid && pidEl.textContent !== '-') {
+                pidEl.style.transition = 'opacity 0.2s ease';
+                pidEl.style.opacity = '0.6';
+                setTimeout(() => {
+                    pidEl.textContent = newPid;
+                    pidEl.style.opacity = '1';
+                }, 100);
             }
         }
     } catch (error) {
@@ -483,16 +512,168 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Обновление метрик для всех запущенных ботов
+// Обновление только метрик без перерисовки карточек
 function startMetricsUpdate() {
     setInterval(async () => {
-        const bots = await loadBots();
-        bots.forEach(bot => {
-            if (bot.status === 'running') {
-                loadBotMetrics(bot.id);
-            }
-        });
+        // Получаем список ботов без перерисовки
+        try {
+            const response = await fetch(`${API_BASE}/bots`);
+            if (!response.ok) return;
+            const bots = await response.json();
+            
+            // Обновляем только метрики для запущенных ботов
+            bots.forEach(bot => {
+                if (bot.status === 'running') {
+                    loadBotMetrics(bot.id);
+                }
+            });
+            
+            // Обновляем только статусы ботов без перерисовки карточек
+            bots.forEach(bot => {
+                updateBotStatusOnly(bot.id, bot.status);
+            });
+        } catch (error) {
+            console.error('Error updating metrics:', error);
+        }
     }, 5000);
+}
+
+// Обновление только статуса бота без перерисовки карточки
+function updateBotStatusOnly(botId, status) {
+    const botCard = document.querySelector(`.bot-card-new[data-bot-id="${botId}"]`);
+    if (!botCard) return;
+    
+    // Обновляем индикатор статуса
+    const statusIndicator = botCard.querySelector('.bot-card-new-status-indicator');
+    if (statusIndicator) {
+        statusIndicator.className = `bot-card-new-status-indicator ${status}`;
+    }
+    
+    // Обновляем текст статуса с плавным переходом
+    const statusText = botCard.querySelector('.status-text');
+    if (statusText) {
+        const newStatusText = getStatusText(status || 'stopped');
+        if (statusText.textContent !== newStatusText) {
+            statusText.style.transition = 'opacity 0.2s ease';
+            statusText.style.opacity = '0.6';
+            setTimeout(() => {
+                statusText.textContent = newStatusText;
+                statusText.style.opacity = '1';
+            }, 100);
+        }
+    }
+    
+    // Обновляем точку статуса
+    const statusDot = botCard.querySelector('.status-indicator-dot');
+    if (statusDot) {
+        statusDot.className = `status-indicator-dot ${status}`;
+    }
+    
+    // Обновляем кнопки в зависимости от статуса
+    const footer = botCard.querySelector('.bot-card-new-footer');
+    if (footer) {
+        // Сохраняем текущие обработчики событий
+        const manageBtn = footer.querySelector('.btn-manage');
+        const deleteBtn = footer.querySelector('.btn-delete');
+        
+        // Удаляем все кнопки кроме manage и delete с плавным исчезновением
+        const actionButtons = footer.querySelectorAll('.bot-card-new-btn:not(.btn-manage):not(.btn-delete)');
+        actionButtons.forEach(btn => {
+            btn.style.transition = 'opacity 0.2s ease';
+            btn.style.opacity = '0';
+            setTimeout(() => btn.remove(), 200);
+        });
+        
+        // Добавляем нужные кнопки в зависимости от статуса с плавным появлением
+        setTimeout(() => {
+            if (status === 'running') {
+                const restartBtn = document.createElement('button');
+                restartBtn.className = 'bot-card-new-btn btn-restart';
+                restartBtn.setAttribute('onclick', `restartBot(${botId})`);
+                restartBtn.setAttribute('title', 'Перезагрузить');
+                restartBtn.innerHTML = '<i class="fas fa-redo"></i><span>Перезагрузить</span>';
+                restartBtn.style.opacity = '0';
+                
+                const stopBtn = document.createElement('button');
+                stopBtn.className = 'bot-card-new-btn btn-stop';
+                stopBtn.setAttribute('onclick', `stopBot(${botId})`);
+                stopBtn.setAttribute('title', 'Остановить');
+                stopBtn.innerHTML = '<i class="fas fa-stop"></i><span>Остановить</span>';
+                stopBtn.style.opacity = '0';
+                
+                if (manageBtn && manageBtn.nextSibling) {
+                    footer.insertBefore(restartBtn, manageBtn.nextSibling);
+                    footer.insertBefore(stopBtn, restartBtn.nextSibling);
+                } else {
+                    footer.insertBefore(restartBtn, deleteBtn);
+                    footer.insertBefore(stopBtn, restartBtn);
+                }
+                
+                setTimeout(() => {
+                    restartBtn.style.transition = 'opacity 0.3s ease';
+                    stopBtn.style.transition = 'opacity 0.3s ease';
+                    restartBtn.style.opacity = '1';
+                    stopBtn.style.opacity = '1';
+                }, 50);
+            } else if (['starting', 'restarting', 'installing'].includes(status)) {
+                const installingBtn = document.createElement('button');
+                installingBtn.className = 'bot-card-new-btn btn-installing';
+                installingBtn.disabled = true;
+                installingBtn.setAttribute('title', getStatusText(status));
+                installingBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>${getStatusText(status)}</span>`;
+                installingBtn.style.opacity = '0';
+                
+                if (manageBtn && manageBtn.nextSibling) {
+                    footer.insertBefore(installingBtn, manageBtn.nextSibling);
+                } else {
+                    footer.insertBefore(installingBtn, deleteBtn);
+                }
+                
+                setTimeout(() => {
+                    installingBtn.style.transition = 'opacity 0.3s ease';
+                    installingBtn.style.opacity = '1';
+                }, 50);
+            } else {
+                const startBtn = document.createElement('button');
+                startBtn.className = 'bot-card-new-btn btn-start';
+                startBtn.setAttribute('onclick', `startBot(${botId})`);
+                startBtn.setAttribute('title', 'Запустить');
+                startBtn.innerHTML = '<i class="fas fa-play"></i><span>Запустить</span>';
+                startBtn.style.opacity = '0';
+                
+                if (manageBtn && manageBtn.nextSibling) {
+                    footer.insertBefore(startBtn, manageBtn.nextSibling);
+                } else {
+                    footer.insertBefore(startBtn, deleteBtn);
+                }
+                
+                setTimeout(() => {
+                    startBtn.style.transition = 'opacity 0.3s ease';
+                    startBtn.style.opacity = '1';
+                }, 50);
+            }
+        }, 200);
+    }
+    
+    // Показываем/скрываем прогресс-бар в зависимости от статуса с плавным переходом
+    const progressBar = botCard.querySelector('.bot-card-new-progress');
+    if (progressBar) {
+        if (status === 'running') {
+            progressBar.style.display = 'block';
+            progressBar.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => {
+                progressBar.style.opacity = '1';
+            }, 50);
+        } else {
+            progressBar.style.transition = 'opacity 0.3s ease';
+            progressBar.style.opacity = '0';
+            setTimeout(() => {
+                if (progressBar.style.opacity === '0') {
+                    progressBar.style.display = 'none';
+                }
+            }, 300);
+        }
+    }
 }
 
 // Инициализация при загрузке страницы
