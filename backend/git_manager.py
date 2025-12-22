@@ -247,6 +247,94 @@ class GitRepository:
             )
             has_changes = bool(status_result.stdout.strip())
             
+            # Информация о последнем коммите
+            last_commit_message = None
+            last_commit_date = None
+            last_commit_hash = None
+            if commit:
+                try:
+                    # Получаем сообщение последнего коммита
+                    log_result = subprocess.run(
+                        [self.git_cmd, "log", "-1", "--pretty=format:%s", "HEAD"],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if log_result.returncode == 0:
+                        last_commit_message = log_result.stdout.strip()
+                    
+                    # Получаем дату последнего коммита
+                    date_result = subprocess.run(
+                        [self.git_cmd, "log", "-1", "--pretty=format:%cd", "--date=format:%Y-%m-%d %H:%M:%S", "HEAD"],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if date_result.returncode == 0:
+                        last_commit_date = date_result.stdout.strip()
+                    
+                    # Получаем полный хеш коммита
+                    hash_result = subprocess.run(
+                        [self.git_cmd, "rev-parse", "HEAD"],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if hash_result.returncode == 0:
+                        last_commit_hash = hash_result.stdout.strip()[:7]
+                except Exception as e:
+                    logger.warning(f"Error getting commit info: {e}")
+            
+            # Проверка наличия обновлений (fetch и сравнение с удаленной веткой)
+            has_updates = False
+            if remote and branch:
+                try:
+                    # Выполняем fetch для получения информации об удаленных изменениях
+                    fetch_result = subprocess.run(
+                        [self.git_cmd, "fetch", "origin", branch],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    # Сравниваем локальный и удаленный коммиты
+                    if fetch_result.returncode == 0:
+                        # Получаем хеш локального коммита
+                        local_commit_result = subprocess.run(
+                            [self.git_cmd, "rev-parse", "HEAD"],
+                            cwd=self.path,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        local_commit = local_commit_result.stdout.strip() if local_commit_result.returncode == 0 else None
+                        
+                        # Получаем хеш удаленного коммита
+                        remote_commit_result = subprocess.run(
+                            [self.git_cmd, "rev-parse", f"origin/{branch}"],
+                            cwd=self.path,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        remote_commit = remote_commit_result.stdout.strip() if remote_commit_result.returncode == 0 else None
+                        
+                        # Если коммиты разные, есть обновления
+                        if local_commit and remote_commit and local_commit != remote_commit:
+                            has_updates = True
+                except Exception as e:
+                    logger.warning(f"Error checking for updates: {e}")
+            
             return {
                 "is_repo": True,
                 "branch": branch,
@@ -254,7 +342,13 @@ class GitRepository:
                 "commit": commit,
                 "remote": remote,
                 "has_changes": has_changes,
-                "status": "modified" if has_changes else "clean"
+                "has_updates": has_updates,
+                "status": "modified" if has_changes else "clean",
+                "last_commit": {
+                    "hash": last_commit_hash or commit,
+                    "message": last_commit_message,
+                    "date": last_commit_date
+                } if last_commit_message or last_commit_date else None
             }
         except Exception as e:
             logger.error(f"Error getting git status: {e}", exc_info=True)
