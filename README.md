@@ -43,7 +43,7 @@ ssh root@ваш_IP_адрес
 2. **Клонируйте репозиторий или загрузите файлы:**
 ```bash
 cd ~
-git clone https://github.com/ваш_username/DSTG_Panel.git
+git clone https://github.com/Focusniks/DSTG_Panel.git
 cd DSTG_Panel
 ```
 
