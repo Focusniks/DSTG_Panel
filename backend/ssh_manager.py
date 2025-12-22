@@ -227,11 +227,45 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
         # Удаляем существующие ключи если force=True
         if force:
             try:
+                # Удаляем приватный ключ
                 if SSH_PRIVATE_KEY.exists():
+                    logger.info(f"Удаление существующего приватного ключа: {SSH_PRIVATE_KEY}")
                     SSH_PRIVATE_KEY.unlink()
+                    # Проверяем, что файл действительно удален
+                    if SSH_PRIVATE_KEY.exists():
+                        logger.warning(f"Приватный ключ все еще существует после удаления, пробуем принудительное удаление")
+                        try:
+                            os.remove(str(SSH_PRIVATE_KEY))
+                        except Exception:
+                            pass
+                
+                # Удаляем публичный ключ
                 if SSH_PUBLIC_KEY.exists():
+                    logger.info(f"Удаление существующего публичного ключа: {SSH_PUBLIC_KEY}")
                     SSH_PUBLIC_KEY.unlink()
+                    # Проверяем, что файл действительно удален
+                    if SSH_PUBLIC_KEY.exists():
+                        logger.warning(f"Публичный ключ все еще существует после удаления, пробуем принудительное удаление")
+                        try:
+                            os.remove(str(SSH_PUBLIC_KEY))
+                        except Exception:
+                            pass
+                
+                # Удаляем SSH config, чтобы он пересоздался с новым ключом
+                if SSH_CONFIG_FILE.exists():
+                    logger.info(f"Удаление существующего SSH config: {SSH_CONFIG_FILE}")
+                    SSH_CONFIG_FILE.unlink()
+                
+                # Небольшая задержка, чтобы файлы точно удалились
+                import time
+                time.sleep(0.2)
+                
+                # Финальная проверка
+                if SSH_PRIVATE_KEY.exists() or SSH_PUBLIC_KEY.exists():
+                    logger.error("Ключи все еще существуют после удаления!")
+                    return False, "Не удалось полностью удалить существующие ключи. Попробуйте удалить их вручную из директории data/ssh/"
             except Exception as e:
+                logger.error(f"Ошибка при удалении существующих ключей: {e}", exc_info=True)
                 return False, f"Не удалось удалить существующие ключи: {str(e)}"
         
         # Проверяем наличие ssh-keygen - используем агрессивный поиск
