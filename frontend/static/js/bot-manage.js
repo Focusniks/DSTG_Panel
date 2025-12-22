@@ -64,6 +64,11 @@
             stopBtn.addEventListener('click', handleStopBot);
         }
         
+        const restartBtn = document.getElementById('restart-bot-btn');
+        if (restartBtn) {
+            restartBtn.addEventListener('click', handleRestartBot);
+        }
+        
         // Форма настроек
         const settingsForm = document.getElementById('bot-settings-form');
         if (settingsForm) {
@@ -566,6 +571,90 @@
         }
     }
     
+    // Перезагрузка бота
+    async function handleRestartBot() {
+        if (!botId) {
+            showError('Ошибка', 'Не указан ID бота');
+            return;
+        }
+        
+        const confirmed = await showConfirm('Перезагрузка бота', 'Вы уверены, что хотите перезагрузить этого бота?', 'btn-info');
+        if (!confirmed) return;
+        
+        const btn = document.getElementById('restart-bot-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Перезагрузка...';
+        }
+        
+        // Обновляем статус сразу для визуальной обратной связи
+        const statusText = document.getElementById('bot-status-text');
+        const statusIndicator = document.getElementById('bot-status-indicator');
+        if (statusText) statusText.textContent = 'Перезагружается...';
+        if (statusIndicator) {
+            statusIndicator.className = 'bot-status restarting';
+            statusIndicator.textContent = 'Перезагружается';
+        }
+        
+        try {
+            const response = await fetch(`/api/bots/${botId}/restart`, {
+                method: 'POST'
+            });
+            
+            let result;
+            try {
+                result = await response.json();
+            } catch (e) {
+                console.error('Error parsing restart response:', e);
+                result = {};
+            }
+            
+            if (!response.ok) {
+                const errorMsg = result.detail || result.error || `Ошибка ${response.status}: ${response.statusText}`;
+                console.error('Restart bot error:', errorMsg);
+                showError('Ошибка перезагрузки бота: ' + errorMsg);
+                if (statusText) statusText.textContent = 'Ошибка';
+                if (statusIndicator) {
+                    statusIndicator.className = 'bot-status error';
+                    statusIndicator.textContent = 'Ошибка';
+                }
+                return;
+            }
+            
+            if (result.success) {
+                showSuccess('Бот перезагружается', 'Бот успешно перезагружается');
+                // Обновляем статус через небольшую задержку
+                setTimeout(() => {
+                    updateStatus();
+                    // Повторно обновляем через еще немного времени для финального статуса
+                    setTimeout(() => updateStatus(), 3000);
+                }, 1000);
+            } else {
+                const errorMsg = result.error || result.message || 'Неизвестная ошибка';
+                showError('Ошибка перезагрузки: ' + errorMsg);
+                if (statusText) statusText.textContent = 'Ошибка';
+                if (statusIndicator) {
+                    statusIndicator.className = 'bot-status error';
+                    statusIndicator.textContent = 'Ошибка';
+                }
+            }
+        } catch (error) {
+            console.error('Restart bot error:', error);
+            const errorMessage = error.message || 'Ошибка соединения с сервером';
+            showError('Ошибка перезагрузки бота: ' + errorMessage);
+            if (statusText) statusText.textContent = 'Ошибка';
+            if (statusIndicator) {
+                statusIndicator.className = 'bot-status error';
+                statusIndicator.textContent = 'Ошибка';
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-redo"></i> Перезагрузить';
+            }
+        }
+    }
+    
     // Остановка бота
     async function handleStopBot() {
         if (!botId) {
@@ -575,35 +664,6 @@
         
         const confirmed = await showConfirm('Остановка бота', 'Вы уверены, что хотите остановить этого бота?', 'btn-warning');
         if (!confirmed) return;
-        
-        const restartBtn = document.getElementById('restart-bot-btn');
-        if (restartBtn) {
-            restartBtn.addEventListener('click', async () => {
-                if (!confirm('Вы уверены, что хотите перезагрузить бота?')) return;
-                
-                restartBtn.disabled = true;
-                restartBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Перезагрузка...';
-                
-                try {
-                    const response = await fetch(`/api/bots/${botId}/restart`, {
-                        method: 'POST'
-                    });
-                    
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.detail || 'Ошибка перезагрузки бота');
-                    }
-                    
-                    showSuccess('Бот перезагружается...');
-                    setTimeout(() => loadBotStatus(), 2000);
-                } catch (error) {
-                    showError('Ошибка перезагрузки бота: ' + error.message);
-                } finally {
-                    restartBtn.disabled = false;
-                    restartBtn.innerHTML = '<i class="fas fa-redo"></i> Перезагрузить';
-                }
-            });
-        }
         
         const btn = document.getElementById('stop-bot-btn');
         if (btn) btn.disabled = true;
