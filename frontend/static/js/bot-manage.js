@@ -1512,17 +1512,11 @@
                     html += '</div>';
                     html += '</div>';
                     
-                    if (status.has_changes) {
-                        html += '<div class="alert alert-warning mt-2 mb-0">';
-                        html += '<i class="fas fa-exclamation-triangle"></i> <strong>Внимание:</strong> Есть несохраненные локальные изменения';
-                        html += '</div>';
-                    }
-                    
                     if (status.has_updates) {
                         html += '<div class="alert alert-success mt-2 mb-0">';
                         html += '<i class="fas fa-arrow-down"></i> <strong>Доступны обновления!</strong> Нажмите "Обновить из репозитория"';
                         html += '</div>';
-                    } else if (!status.has_changes) {
+                    } else {
                         html += '<div class="alert alert-success mt-2 mb-0">';
                         html += '<i class="fas fa-check-circle"></i> Репозиторий синхронизирован';
                         html += '</div>';

@@ -1278,7 +1278,18 @@ async def clone_bot_repository(bot_id: int):
 async def get_panel_git_status():
     """Получение статуса Git репозитория панели"""
     try:
+        from backend.config import PANEL_REPO_BRANCH
         status = get_git_status(BASE_DIR)
+        
+        # Если ветка не определена, используем ветку из конфига
+        if not status.get('branch') and not status.get('current_branch'):
+            status['current_branch'] = PANEL_REPO_BRANCH
+            status['branch'] = PANEL_REPO_BRANCH
+        
+        # Убеждаемся, что current_branch установлен
+        if not status.get('current_branch'):
+            status['current_branch'] = status.get('branch') or PANEL_REPO_BRANCH
+        
         return status
     except Exception as e:
         import logging

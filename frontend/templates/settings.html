@@ -511,11 +511,6 @@
                                 <i class="fas fa-info-circle"></i> Доступны обновления!
                             </div>
                         ` : ''}
-                        ${status.has_changes ? `
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle"></i> Есть локальные изменения
-                            </div>
-                        ` : ''}
                     `;
                     document.getElementById('update-panel-btn').disabled = false;
                 } else {

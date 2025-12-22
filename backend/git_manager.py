@@ -233,6 +233,7 @@ class GitRepository:
             return {
                 "is_repo": True,
                 "branch": branch,
+                "current_branch": branch or self.branch,
                 "commit": commit,
                 "remote": remote,
                 "has_changes": has_changes,
