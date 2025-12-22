@@ -694,7 +694,7 @@ class GitRepository:
             has_changes = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
             
             # Проверяем наличие обновлений в удаленном репозитории
-        has_updates = False
+            has_updates = False
             if current_branch and remote_url:
                 try:
                     # Для панели убеждаемся, что remote URL правильный (HTTPS)
@@ -707,7 +707,7 @@ class GitRepository:
                                 [self.git_cmd, "remote", "set-url", "origin", PANEL_REPO_URL],
                                 cwd=self.path,
                                 env=env,
-                        capture_output=True,
+                                capture_output=True,
                                 text=True,
                                 timeout=10
                             )
@@ -750,22 +750,18 @@ class GitRepository:
                         )
                         
                         if behind_result.returncode == 0:
-                            behind_count = int(behind_result.stdout.strip() or "0")
-                            has_updates = behind_count > 0
-                            logger.info(f"Проверка обновлений: {behind_count} коммитов позади удаленной ветки")
+                            try:
+                                behind_count = int(behind_result.stdout.strip() or "0")
+                                has_updates = behind_count > 0
+                                logger.info(f"Проверка обновлений: {behind_count} коммитов позади удаленной ветки, has_updates={has_updates}")
+                            except ValueError:
+                                logger.warning(f"Не удалось распарсить количество коммитов: {behind_result.stdout}")
                         else:
-                            # Альтернативный способ: сравниваем коммиты напрямую
+                            # Альтернативный способ: проверяем, что origin/branch существует и отличается от HEAD
                             logger.debug("Пробуем альтернативный способ проверки обновлений")
-                            local_commit_result = subprocess.run(
-                                [self.git_cmd, "rev-parse", "HEAD"],
-                                cwd=self.path,
-                                env=env,
-                                capture_output=True,
-                                text=True,
-                                timeout=10
-                            )
-                            remote_commit_result = subprocess.run(
-                                [self.git_cmd, "rev-parse", f"origin/{current_branch}"],
+                            # Проверяем существование origin/branch
+                            check_remote_result = subprocess.run(
+                                [self.git_cmd, "rev-parse", "--verify", f"origin/{current_branch}"],
                                 cwd=self.path,
                                 env=env,
                                 capture_output=True,
@@ -773,27 +769,43 @@ class GitRepository:
                                 timeout=10
                             )
                             
-                            if (local_commit_result.returncode == 0 and 
-                                remote_commit_result.returncode == 0):
-                                local_commit = local_commit_result.stdout.strip()
-                                remote_commit = remote_commit_result.stdout.strip()
+                            if check_remote_result.returncode == 0:
+                                local_commit_result = subprocess.run(
+                                    [self.git_cmd, "rev-parse", "HEAD"],
+                                    cwd=self.path,
+                                    env=env,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10
+                                )
+                                remote_commit_result = subprocess.run(
+                                    [self.git_cmd, "rev-parse", f"origin/{current_branch}"],
+                                    cwd=self.path,
+                                    env=env,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10
+                                )
                                 
-                                # Если коммиты разные, проверяем, что удаленный новее
-                                if local_commit != remote_commit:
-                                    # Проверяем, что удаленный коммит является предком локального или наоборот
-                                    merge_base_result = subprocess.run(
-                                        [self.git_cmd, "merge-base", "HEAD", f"origin/{current_branch}"],
-                                        cwd=self.path,
-                                        env=env,
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=10
-                                    )
-                                    if merge_base_result.returncode == 0:
-                                        merge_base = merge_base_result.stdout.strip()
-                                        # Если merge-base равен HEAD, значит удаленный коммит новее
-                                        has_updates = merge_base == local_commit and local_commit != remote_commit
-                                        logger.info(f"Проверка обновлений через merge-base: has_updates={has_updates}")
+                                if (local_commit_result.returncode == 0 and 
+                                    remote_commit_result.returncode == 0):
+                                    local_commit = local_commit_result.stdout.strip()
+                                    remote_commit = remote_commit_result.stdout.strip()
+                                    
+                                    # Если коммиты разные, проверяем, что удаленный новее
+                                    if local_commit != remote_commit:
+                                        # Проверяем, что HEAD является предком origin/branch
+                                        is_ancestor_result = subprocess.run(
+                                            [self.git_cmd, "merge-base", "--is-ancestor", "HEAD", f"origin/{current_branch}"],
+                                            cwd=self.path,
+                                            env=env,
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=10
+                                        )
+                                        # merge-base --is-ancestor возвращает 0 если HEAD является предком origin/branch
+                                        has_updates = is_ancestor_result.returncode == 0
+                                        logger.info(f"Проверка обновлений: local={local_commit[:8]}, remote={remote_commit[:8]}, has_updates={has_updates}")
                     else:
                         logger.warning(f"Не удалось выполнить git fetch: {fetch_result.stderr}")
                 except Exception as fetch_error:

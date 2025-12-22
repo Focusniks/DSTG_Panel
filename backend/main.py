@@ -1623,6 +1623,9 @@ async def get_panel_git_status():
         if not status.get('branch') or status.get('branch') == 'N/A':
             status['branch'] = PANEL_REPO_BRANCH
         
+        # Логируем статус обновлений для отладки
+        logger.info(f"Git статус панели: has_updates={status.get('has_updates', False)}, branch={status.get('branch')}, remote={status.get('remote')}")
+        
         return status
     except Exception as e:
         logger.error(f"Error getting panel git status: {str(e)}", exc_info=True)
