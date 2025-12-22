@@ -3,6 +3,8 @@
 """
 import sqlite3
 import json
+import random
+import string
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 from backend.database import get_bot
@@ -447,26 +449,56 @@ def get_databases(bot_id: int) -> List[str]:
         logger.error(f"Error getting databases: {e}", exc_info=True)
         return []
 
-def create_database(bot_id: int, db_name: str) -> Dict[str, Any]:
+def _generate_unique_db_name(bot_id: int, base_name: str = "bot") -> str:
+    """Генерация уникального имени базы данных с рандомными 3 буквами"""
+    existing_databases = get_databases(bot_id)
+    max_attempts = 100
+    
+    for _ in range(max_attempts):
+        # Генерируем 3 случайные буквы
+        random_suffix = ''.join(random.choices(string.ascii_lowercase, k=3))
+        db_name = f"{base_name}_{random_suffix}.db"
+        
+        # Проверяем, что такого имени еще нет
+        if db_name not in existing_databases:
+            return db_name
+    
+    # Если не удалось сгенерировать за 100 попыток, используем timestamp
+    import time
+    timestamp = int(time.time()) % 100000
+    return f"{base_name}_{timestamp}.db"
+
+def create_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str, Any]:
     """Создание новой SQLite БД"""
     try:
-        # Валидация имени
-        if not db_name or not db_name.replace('_', '').replace('.', '').isalnum():
-            return {'success': False, 'error': 'Недопустимое имя базы данных'}
-        
-        if not db_name.endswith('.db'):
-            db_name += '.db'
+        # Если имя не указано или пустое, генерируем уникальное
+        if not db_name or db_name.strip() == "" or db_name == "bot.db":
+            db_name = _generate_unique_db_name(bot_id)
+            logger.info(f"Сгенерировано уникальное имя базы данных: {db_name}")
+        else:
+            # Валидация имени
+            db_name_clean = db_name.strip()
+            if not db_name_clean.replace('_', '').replace('.', '').replace('-', '').isalnum():
+                return {'success': False, 'error': 'Недопустимое имя базы данных. Используйте только буквы, цифры, дефисы и подчеркивания.'}
+            
+            if not db_name_clean.endswith('.db'):
+                db_name_clean += '.db'
+            
+            db_name = db_name_clean
         
         db_path = get_bot_sqlite_db_path(bot_id, db_name)
         
+        # Если база уже существует, генерируем новое имя
         if db_path.exists():
-            return {'success': False, 'error': 'База данных уже существует'}
+            logger.warning(f"База данных {db_name} уже существует, генерируем новое имя")
+            db_name = _generate_unique_db_name(bot_id)
+            db_path = get_bot_sqlite_db_path(bot_id, db_name)
         
         # Создаем пустую БД
         conn = sqlite3.connect(str(db_path))
         conn.close()
         
-        return {'success': True, 'message': f'Database {db_name} created successfully'}
+        return {'success': True, 'message': f'База данных {db_name} успешно создана', 'db_name': db_name}
     except Exception as e:
         logger.error(f"Error creating database: {e}", exc_info=True)
         return {'success': False, 'error': str(e)}

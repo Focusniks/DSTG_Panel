@@ -25,6 +25,12 @@
         
         botId = parseInt(match[1]);
         
+        // Устанавливаем ссылку на SQL редактор
+        const sqlEditorLink = document.getElementById('sql-editor-link');
+        if (sqlEditorLink) {
+            sqlEditorLink.href = `/bot/${botId}/sql-editor`;
+        }
+        
         // Настраиваем обработчики событий
         setupEventListeners();
         
@@ -1552,7 +1558,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    db_name: dbName || 'bot.db'
+                    db_name: dbName || ''
                 })
             });
             

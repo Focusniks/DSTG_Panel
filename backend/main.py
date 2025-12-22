@@ -257,6 +257,13 @@ async def bot_manage_page(request: Request, bot_id: int):
         raise HTTPException(status_code=404, detail="Бот не найден")
     return templates.TemplateResponse("bot_manage.html", {"request": request, "bot_id": bot_id})
 
+@app.get("/bot/{bot_id}/sql-editor", response_class=HTMLResponse)
+async def sql_editor_page(request: Request, bot_id: int):
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    return templates.TemplateResponse("sql_editor.html", {"request": request, "bot_id": bot_id})
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
@@ -1148,7 +1155,7 @@ async def create_sqlite_database_endpoint(bot_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Бот не найден")
     
     data = await request.json()
-    db_name = data.get("db_name", "bot.db")
+    db_name = data.get("db_name", "").strip() if data.get("db_name") else None
     
     try:
         result = create_sqlite_database(bot_id, db_name)
