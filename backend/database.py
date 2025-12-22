@@ -264,51 +264,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_message_count:
         user_message_count[user_id] = 0
     
-    welcome_text = f'''
-Привет, {user.first_name}!
-
-Я функциональный Telegram бот-шаблон.
-
-Доступные команды:
-/start - Начать работу
-/help - Показать справку
-/info - Информация о боте
-/stats - Статистика сообщений
-/time - Текущее время
-/echo <текст> - Повторить текст
-
-Просто отправьте мне любое сообщение, и я отвечу!
-'''
+    welcome_text = f"Привет, {user.first_name}!\\n\\nЯ функциональный Telegram бот-шаблон.\\n\\nДоступные команды:\\n/start - Начать работу\\n/help - Показать справку\\n/info - Информация о боте\\n/stats - Статистика сообщений\\n/time - Текущее время\\n/echo <текст> - Повторить текст\\n\\nПросто отправьте мне любое сообщение, и я отвечу!"
     await update.message.reply_text(welcome_text)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /help"""
-    help_text = '''
-Справка по командам:
-
-/start - Начать работу с ботом
-/help - Показать эту справку
-/info - Информация о боте
-/stats - Ваша статистика сообщений
-/time - Текущее время и дата
-/echo <текст> - Повторить ваш текст
-
-Это шаблон бота для разработки. Вы можете добавить свои команды и функционал!
-'''
+    help_text = "Справка по командам:\\n\\n/start - Начать работу с ботом\\n/help - Показать эту справку\\n/info - Информация о боте\\n/stats - Ваша статистика сообщений\\n/time - Текущее время и дата\\n/echo <текст> - Повторить ваш текст\\n\\nЭто шаблон бота для разработки. Вы можете добавить свои команды и функционал!"
     await update.message.reply_text(help_text)
 
 
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Информация о боте"""
     bot_info = await context.bot.get_me()
-    info_text = f'''
-Информация о боте:
-
-Имя: {bot_info.first_name}
-Username: @{bot_info.username}
-ID: {bot_info.id}
-'''
+    info_text = f"Информация о боте:\\n\\nИмя: {bot_info.first_name}\\nUsername: @{bot_info.username}\\nID: {bot_info.id}"
     await update.message.reply_text(info_text)
 
 
@@ -364,7 +333,7 @@ def main():
     logger.info("Прокси настройки очищены. NO_PROXY: " + os.environ.get('NO_PROXY', 'не установлен'))
     
     if BOT_TOKEN == "YOUR_BOT_TOKEN":
-        logger.error("⚠️  ВНИМАНИЕ: Установите токен бота в переменной BOT_TOKEN или в коде!")
+        logger.error("ВНИМАНИЕ: Установите токен бота в переменной BOT_TOKEN или в коде!")
         logger.error("Получите токен у @BotFather в Telegram")
         return
     
@@ -383,8 +352,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запускаем бота
-    logger.info("🚀 Бот запущен и готов к работе!")
-    logger.info(f"📱 Бот: @{application.bot.username}")
+    logger.info("Бот запущен и готов к работе!")
+    logger.info(f"Бот: @{application.bot.username}")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
@@ -511,7 +480,7 @@ async def on_message(message):
 @bot.command(name='hello', aliases=['hi', 'привет'])
 async def hello(ctx):
     """Простая команда приветствия"""
-    await ctx.send(f'👋 Привет, {ctx.author.mention}! Рад тебя видеть!')
+    await ctx.send(f'Привет, {ctx.author.mention}! Рад тебя видеть!')
 
 
 @bot.command(name='ping')
@@ -519,7 +488,7 @@ async def ping(ctx):
     """Проверка работы бота и задержки"""
     latency = round(bot.latency * 1000)
     embed = discord.Embed(
-        title="🏓 Pong!",
+        title="Pong!",
         description=f"Задержка: {latency}ms",
         color=discord.Color.green()
     )
@@ -608,32 +577,32 @@ async def help_custom(ctx):
 async def on_command_error(ctx, error):
     """Обработка ошибок команд"""
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send(f'❌ Команда не найдена! Используйте `!help_custom` для списка команд.')
+        await ctx.send(f'Команда не найдена! Используйте `!help_custom` для списка команд.')
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f'❌ Отсутствует обязательный аргумент! Проверьте синтаксис команды.')
+        await ctx.send(f'Отсутствует обязательный аргумент! Проверьте синтаксис команды.')
     else:
         logger.error(f"Ошибка команды: {error}")
-        await ctx.send(f'❌ Произошла ошибка: {error}')
+        await ctx.send(f'Произошла ошибка: {error}')
 
 
 def main():
     """Основная функция запуска бота"""
     if BOT_TOKEN == "YOUR_BOT_TOKEN":
-        logger.error("⚠️  ВНИМАНИЕ: Установите токен бота в переменной BOT_TOKEN или в коде!")
+        logger.error("ВНИМАНИЕ: Установите токен бота в переменной BOT_TOKEN или в коде!")
         logger.error("Получите токен на https://discord.com/developers/applications")
         logger.error("Не забудьте включить необходимые intents в настройках приложения!")
         return
     
     try:
-        logger.info("🚀 Запуск Discord бота...")
+        logger.info("Запуск Discord бота...")
         bot.run(BOT_TOKEN)
     except discord.LoginFailure:
-        logger.error("❌ Неверный токен бота! Проверьте BOT_TOKEN")
+        logger.error("Неверный токен бота! Проверьте BOT_TOKEN")
     except discord.PrivilegedIntentsRequired:
-        logger.error("❌ Необходимые привилегированные intents не включены!")
+        logger.error("Необходимые привилегированные intents не включены!")
         logger.error("Включите их на https://discord.com/developers/applications")
     except Exception as e:
-        logger.error(f"❌ Ошибка при запуске бота: {e}")
+        logger.error(f"Ошибка при запуске бота: {e}")
 
 
 if __name__ == '__main__':
