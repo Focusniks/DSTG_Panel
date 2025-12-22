@@ -32,6 +32,7 @@ from backend.ssh_manager import (
     setup_ssh_config_for_github, test_ssh_connection, get_ssh_key_info,
     extract_host_from_url, convert_https_to_ssh
 )
+)
 
 # Настройка логирования
 import logging
@@ -1366,14 +1367,32 @@ async def generate_panel_ssh_key():
     Перезаписывает существующий ключ если он есть
     """
     import time
+    import traceback
     import logging
     logger = logging.getLogger(__name__)
     
     try:
+        logger.info("=== SSH KEY GENERATION START ===")
         logger.info("Starting SSH key generation...")
         
         # Генерируем ключ
-        success, message = generate_ssh_key(force=True)
+        try:
+            success, message = generate_ssh_key(force=True)
+        except Exception as gen_error:
+            error_trace = traceback.format_exc()
+            logger.error(f"Exception in generate_ssh_key: {gen_error}\n{error_trace}")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": False,
+                    "message": f"Ошибка при вызове generate_ssh_key: {str(gen_error)}",
+                    "error_type": type(gen_error).__name__,
+                    "traceback": error_trace,
+                    "public_key": None,
+                    "key_type": None,
+                    "key_size": None
+                }
+            )
         
         if not success:
             logger.error(f"SSH key generation failed: {message}")
@@ -1447,12 +1466,15 @@ async def generate_panel_ssh_key():
         }
         
     except Exception as e:
-        logger.error(f"Unexpected error in generate_panel_ssh_key: {e}", exc_info=True)
+        error_trace = traceback.format_exc()
+        logger.error(f"Unexpected error in generate_panel_ssh_key: {e}\n{error_trace}")
         return JSONResponse(
             status_code=200,
             content={
                 "success": False,
                 "message": f"Ошибка генерации SSH ключа: {str(e)}",
+                "error_type": type(e).__name__,
+                "traceback": error_trace,
                 "public_key": None,
                 "key_type": None,
                 "key_size": None

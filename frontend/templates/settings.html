@@ -396,12 +396,18 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Генерация...';
             
             try {
+                console.log('=== SSH KEY GENERATION REQUEST ===');
                 const response = await fetch('/api/panel/ssh-key/generate', {
                     method: 'POST'
                 });
                 
+                console.log('Response status:', response.status, response.statusText);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+                
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('Response data:', data);
+                    
                     if (data.success === true) {
                         showAlert('SSH ключ успешно сгенерирован!', 'success');
                         // Используем ключ из ответа API для немедленного отображения
@@ -414,15 +420,43 @@
                             }, 500);
                         }
                     } else {
+                        console.error('SSH key generation failed:', data);
+                        console.group('%c❌ ОШИБКА ГЕНЕРАЦИИ SSH КЛЮЧА', 'color: red; font-weight: bold; font-size: 14px;');
+                        console.error('Сообщение:', data.message);
+                        if (data.error_type) console.error('Тип ошибки:', data.error_type);
+                        if (data.traceback) {
+                            console.group('📋 Traceback:');
+                            console.error(data.traceback);
+                            console.groupEnd();
+                        }
+                        console.groupEnd();
                         showAlert('Ошибка генерации ключа: ' + (data.message || 'Unknown error'), 'danger');
                     }
                 } else {
-                    const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
+                    console.error('Response not OK:', response.status, response.statusText);
+                    const text = await response.text();
+                    console.error('Response text:', text);
+                    
+                    let error;
+                    try {
+                        error = JSON.parse(text);
+                    } catch {
+                        error = { detail: text || 'Ошибка сервера' };
+                    }
+                    
+                    console.group('%c❌ HTTP ОШИБКА', 'color: red; font-weight: bold; font-size: 14px;');
+                    console.error('Статус:', response.status);
+                    console.error('Детали:', error);
+                    console.groupEnd();
+                    
                     showAlert('Ошибка: ' + (error.detail || error.message || 'Unknown error'), 'danger');
                 }
             } catch (error) {
-                console.error('Error generating SSH key:', error);
-                showAlert('Ошибка генерации SSH ключа', 'danger');
+                console.group('%c❌ КРИТИЧЕСКАЯ ОШИБКА', 'color: red; font-weight: bold; font-size: 14px;');
+                console.error('Ошибка:', error);
+                console.error('Stack:', error.stack);
+                console.groupEnd();
+                showAlert('Ошибка генерации SSH ключа: ' + (error.message || 'Неизвестная ошибка'), 'danger');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-key"></i> Сгенерировать новый ключ';
