@@ -1098,7 +1098,43 @@ async def get_sqlite_databases_endpoint(bot_id: int):
         raise HTTPException(status_code=404, detail="Бот не найден")
     
     try:
-        databases = get_sqlite_databases(bot_id)
+        from backend.sqlite_manager import get_bot_sqlite_db_path, get_tables
+        import os
+        
+        db_names = get_sqlite_databases(bot_id)
+        databases = []
+        
+        for db_name in db_names:
+            try:
+                db_path = get_bot_sqlite_db_path(bot_id, db_name)
+                # Получаем размер файла
+                size_bytes = os.path.getsize(db_path) if db_path.exists() else 0
+                size_mb = round(size_bytes / (1024 * 1024), 2)
+                
+                # Получаем количество таблиц
+                table_count = 0
+                try:
+                    tables = get_tables(bot_id, db_name)
+                    table_count = len(tables) if tables else 0
+                except Exception:
+                    pass
+                
+                databases.append({
+                    "db_name": db_name,
+                    "db_user": "N/A",  # SQLite не использует пользователей
+                    "table_count": table_count,
+                    "size_mb": size_mb
+                })
+            except Exception as db_error:
+                logger.warning(f"Ошибка при получении информации о БД {db_name}: {db_error}")
+                databases.append({
+                    "db_name": db_name,
+                    "db_user": "N/A",
+                    "table_count": 0,
+                    "size_mb": 0,
+                    "error": str(db_error)
+                })
+        
         return {"success": True, "databases": databases}
     except Exception as e:
         logger.error(f"Error getting SQLite databases: {e}", exc_info=True)

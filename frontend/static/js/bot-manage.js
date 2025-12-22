@@ -1429,7 +1429,7 @@
         container.innerHTML = '<div class="text-center p-4 text-muted"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><p>Загрузка баз данных...</p></div>';
         
         try {
-            const response = await fetch('/api/bots/' + botId + '/databases');
+            const response = await fetch('/api/bots/' + botId + '/sqlite/databases');
             if (!response.ok) {
                 console.error('Failed to load databases:', response.status);
                 container.innerHTML = '<div class="database-item-empty"><i class="fas fa-exclamation-triangle"></i><p>Ошибка загрузки списка баз данных</p></div>';
@@ -1494,9 +1494,11 @@
         // Очищаем список
         select.innerHTML = '<option value="">Выберите базу данных...</option>';
         
-        // Добавляем базы данных (databases - это массив строк с именами БД)
-        databases.forEach(dbName => {
+        // Добавляем базы данных (databases - это массив объектов или строк с именами БД)
+        databases.forEach(db => {
             const option = document.createElement('option');
+            // Если db - это объект, берем db_name, иначе это строка
+            const dbName = typeof db === 'object' ? db.db_name : db;
             option.value = dbName;
             option.textContent = dbName;
             select.appendChild(option);
