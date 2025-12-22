@@ -585,7 +585,7 @@
                 restartBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Перезагрузка...';
                 
                 try {
-                    const response = await fetch(`${API_BASE}/bots/${botId}/restart`, {
+                    const response = await fetch(`/api/bots/${botId}/restart`, {
                         method: 'POST'
                     });
                     

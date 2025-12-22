@@ -1011,32 +1011,53 @@ async def start_bot_endpoint(bot_id: int):
 @app.post("/api/bots/{bot_id}/restart")
 async def restart_bot_endpoint(bot_id: int):
     """Перезапуск бота"""
-    bot = get_bot(bot_id)
-    if not bot:
-        raise HTTPException(status_code=404, detail="Бот не найден")
-    
-    # Устанавливаем статус "перезагрузка"
-    update_bot(bot_id, status='restarting')
-    
-    # Останавливаем бота, если запущен
-    if bot.get('status') == 'running' and bot.get('pid'):
-        stop_bot(bot_id)
-        import time
-        time.sleep(1)  # Небольшая задержка перед запуском
-    
-    # Запускаем бота
-    result = start_bot(bot_id)
-    if isinstance(result, tuple):
-        success, error_msg = result
-    else:
-        success = result
-        error_msg = None
-    
-    if not success:
-        error_detail = error_msg if error_msg else "Failed to restart bot"
-        raise HTTPException(status_code=500, detail=error_detail)
-    
-    return {"success": True}
+    try:
+        bot = get_bot(bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Бот не найден")
+        
+        logger.info(f"Перезагрузка бота {bot_id} ({bot.get('name', 'Unknown')})")
+        
+        # Устанавливаем статус "перезагрузка"
+        update_bot(bot_id, status='restarting')
+        
+        # Останавливаем бота, если запущен
+        if bot.get('status') == 'running' and bot.get('pid'):
+            logger.info(f"Остановка бота {bot_id} перед перезагрузкой")
+            stop_result = stop_bot(bot_id)
+            if isinstance(stop_result, tuple):
+                stop_success, stop_error = stop_result
+                if not stop_success:
+                    logger.warning(f"Ошибка при остановке бота {bot_id}: {stop_error}")
+            elif not stop_result:
+                logger.warning(f"Не удалось остановить бота {bot_id}")
+            
+            import time
+            time.sleep(1)  # Небольшая задержка перед запуском
+        
+        # Запускаем бота
+        logger.info(f"Запуск бота {bot_id} после перезагрузки")
+        result = start_bot(bot_id)
+        if isinstance(result, tuple):
+            success, error_msg = result
+        else:
+            success = result
+            error_msg = None
+        
+        if not success:
+            error_detail = error_msg if error_msg else "Не удалось перезагрузить бота"
+            logger.error(f"Ошибка перезагрузки бота {bot_id}: {error_detail}")
+            update_bot(bot_id, status='error')
+            raise HTTPException(status_code=500, detail=error_detail)
+        
+        logger.info(f"Бот {bot_id} успешно перезагружен")
+        return {"success": True, "message": "Бот успешно перезагружен"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при перезагрузке бота {bot_id}: {e}", exc_info=True)
+        update_bot(bot_id, status='error')
+        raise HTTPException(status_code=500, detail=f"Ошибка перезагрузки бота: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/stop")
 async def stop_bot_endpoint(bot_id: int):

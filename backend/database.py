@@ -289,15 +289,14 @@ def create_bot_templates(bot_dir: Path, bot_type: str, start_file: str = 'main.p
             main_content = '''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Telegram бот - шаблон
+Telegram бот - простой шаблон
 Замените YOUR_BOT_TOKEN на токен вашего бота от @BotFather
 """
 
 import logging
 import os
-from datetime import datetime
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Настройка логирования
 logging.basicConfig(
@@ -313,69 +312,11 @@ logger = logging.getLogger(__name__)
 # Токен бота (получите у @BotFather в Telegram)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 
-# Счетчик сообщений (пример использования контекста)
-user_message_count = {}
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user = update.effective_user
-    user_id = user.id
-    
-    # Инициализируем счетчик для пользователя
-    if user_id not in user_message_count:
-        user_message_count[user_id] = 0
-    
-    welcome_text = f"Привет, {user.first_name}!\\n\\nЯ функциональный Telegram бот-шаблон.\\n\\nДоступные команды:\\n/start - Начать работу\\n/help - Показать справку\\n/info - Информация о боте\\n/stats - Статистика сообщений\\n/time - Текущее время\\n/echo <текст> - Повторить текст\\n\\nПросто отправьте мне любое сообщение, и я отвечу!"
-    await update.message.reply_text(welcome_text)
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /help"""
-    help_text = "Справка по командам:\\n\\n/start - Начать работу с ботом\\n/help - Показать эту справку\\n/info - Информация о боте\\n/stats - Ваша статистика сообщений\\n/time - Текущее время и дата\\n/echo <текст> - Повторить ваш текст\\n\\nЭто шаблон бота для разработки. Вы можете добавить свои команды и функционал!"
-    await update.message.reply_text(help_text)
-
-
-async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Информация о боте"""
-    bot_info = await context.bot.get_me()
-    info_text = f"Информация о боте:\\n\\nИмя: {bot_info.first_name}\\nUsername: @{bot_info.username}\\nID: {bot_info.id}"
-    await update.message.reply_text(info_text)
-
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Статистика сообщений пользователя"""
-    user_id = update.effective_user.id
-    count = user_message_count.get(user_id, 0)
-    await update.message.reply_text(f'Вы отправили мне {count} сообщений!')
-
-
-async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Текущее время"""
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    await update.message.reply_text(f'Текущее время: {current_time}')
-
-
-async def echo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /echo"""
-    if context.args:
-        text = ' '.join(context.args)
-        await update.message.reply_text(f'Эхо: {text}')
-    else:
-        await update.message.reply_text('Использование: /echo <текст>')
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик всех текстовых сообщений"""
-    user_id = update.effective_user.id
-    message_text = update.message.text
-    
-    # Увеличиваем счетчик
-    user_message_count[user_id] = user_message_count.get(user_id, 0) + 1
-    
-    # Простой ответ на сообщение
-    response = f'Вы написали: "{message_text}"\\n\\nЭто сообщение #{user_message_count[user_id]} от вас!'
-    await update.message.reply_text(response)
+    await update.message.reply_text(f"Привет, {user.first_name}!")
 
 
 def main():
@@ -402,21 +343,12 @@ def main():
     # Создаем приложение без прокси
     application = Application.builder().token(BOT_TOKEN).proxy(None).build()
 
-    # Регистрируем обработчики команд
+    # Регистрируем обработчик команды /start
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("info", info_command))
-    application.add_handler(CommandHandler("stats", stats_command))
-    application.add_handler(CommandHandler("time", time_command))
-    application.add_handler(CommandHandler("echo", echo_command))
-
-    # Регистрируем обработчик текстовых сообщений
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запускаем бота
     logger.info("Бот запущен и готов к работе!")
-    # Информация о боте будет доступна после инициализации через команду /info
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling()
 
 
 if __name__ == '__main__':
