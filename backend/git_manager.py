@@ -12,6 +12,8 @@ import uuid
 import fnmatch
 import tempfile
 import stat
+import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any, List, Set
 from backend.config import BASE_DIR
@@ -471,98 +473,29 @@ def update_bot_from_git(bot_dir: Path, repo_url: str, branch: str = "main") -> T
 
 
 def update_panel_from_git() -> Tuple[bool, str]:
-    """Обновление панели из Git репозитория с сохранением папок bots/ и data/"""
+    """Обновление панели с GitHub без использования SSH.
+
+    Важно: для панели мы всегда используем HTTPS и не полагаемся на локальную
+    конфигурацию Git (SSH ключи, url.insteadOf и т.п.), чтобы избежать
+    ошибок Permission denied (publickey).
+    """
     from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH, BOTS_DIR, DATA_DIR
-    
-    # Находим Git команду
-    git_cmd = None
-    candidates = [shutil.which("git"), "git"]
-    if os.name != 'nt':
-        candidates.extend(["/usr/bin/git", "/usr/local/bin/git", "/bin/git"])
-    
-    for candidate in candidates:
-        if not candidate:
-            continue
-        try:
-            result = subprocess.run(
-                [candidate, "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=3
-            )
-            if result.returncode == 0:
-                git_cmd = candidate
-                break
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            continue
-    
-    if not git_cmd:
-        return (False, "Git не установлен. Установите Git для обновления панели.")
-    
-    if not is_git_repo(BASE_DIR):
-        return (False, "Панель не является Git репозиторием. Инициализируйте репозиторий в настройках.")
-    
-    # Убеждаемся, что используем HTTPS URL для панели
-    https_url = PANEL_REPO_URL
-    if not https_url.endswith(".git"):
-        https_url += ".git"
-    
-    logger.info(f"Используем HTTPS URL для панели: {https_url}")
-    
-    # Принудительно устанавливаем HTTPS URL
-    try:
-        # Сначала проверяем текущий URL
-        check_result = subprocess.run(
-            [git_cmd, "remote", "get-url", "origin"],
-            cwd=BASE_DIR,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        current_url = check_result.stdout.strip() if check_result.returncode == 0 else None
-        logger.info(f"Текущий remote URL: {current_url}")
-        
-        # Устанавливаем HTTPS URL
-        set_url_result = subprocess.run(
-            [git_cmd, "remote", "set-url", "origin", https_url],
-            cwd=BASE_DIR,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        if set_url_result.returncode == 0:
-            logger.info(f"Remote URL установлен на HTTPS: {https_url}")
-            # Проверяем, что URL действительно установлен
-            verify_result = subprocess.run(
-                [git_cmd, "remote", "get-url", "origin"],
-                cwd=BASE_DIR,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if verify_result.returncode == 0:
-                verified_url = verify_result.stdout.strip()
-                logger.info(f"Проверка: remote URL теперь: {verified_url}")
-                if verified_url != https_url:
-                    logger.warning(f"URL не совпадает! Ожидалось: {https_url}, получено: {verified_url}")
-        else:
-            logger.warning(f"Не удалось установить remote URL: {set_url_result.stderr}")
-            # Пробуем добавить remote если его нет
-            add_result = subprocess.run(
-                [git_cmd, "remote", "add", "origin", https_url],
-                cwd=BASE_DIR,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if add_result.returncode == 0:
-                logger.info(f"Remote URL добавлен: {https_url}")
-            else:
-                logger.error(f"Не удалось добавить remote URL: {add_result.stderr}")
-    except Exception as e:
-        logger.error(f"Ошибка при установке remote URL: {e}", exc_info=True)
-    
+
+    # Формируем URL для скачивания ZIP-архива ветки
+    # Пример: https://github.com/Focusniks/DSTG_Panel/archive/refs/heads/main.zip
+    repo_url = PANEL_REPO_URL
+    if repo_url.endswith(".git"):
+        base_url = repo_url[:-4]
+    else:
+        base_url = repo_url
+    zip_url = f"{base_url}/archive/refs/heads/{PANEL_REPO_BRANCH}.zip"
+
+    logger.info(f"Обновление панели через ZIP архив: {zip_url}")
+
+    # Создаем временные пути
+    tmp_dir = Path(tempfile.mkdtemp(prefix="panel_update_zip_"))
+    zip_path = tmp_dir / "panel.zip"
+
     # Создаем временную директорию для бэкапа защищаемых папок
     try:
         backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
@@ -570,14 +503,14 @@ def update_panel_from_git() -> Tuple[bool, str]:
     except Exception as e:
         logger.error(f"Не удалось создать временную директорию: {e}", exc_info=True)
         return (False, f"Не удалось создать временную директорию для бэкапа: {str(e)}")
-    
+
     protected_dirs = []
     if BOTS_DIR.exists() and BOTS_DIR.is_dir():
         protected_dirs.append(("bots", BOTS_DIR))
     if DATA_DIR.exists() and DATA_DIR.is_dir():
         protected_dirs.append(("data", DATA_DIR))
-    
-    # Сохраняем защищаемые директории
+
+    # Сохраняем защищаемые директории (bots/, data/)
     for dir_name, dir_path in protected_dirs:
         try:
             backup_path = backup_dir / dir_name
@@ -589,240 +522,93 @@ def update_panel_from_git() -> Tuple[bool, str]:
                 logger.info(f"Директория {dir_name} сохранена")
         except Exception as backup_error:
             logger.error(f"Ошибка при сохранении директории {dir_name}: {backup_error}", exc_info=True)
-    
-    # Выполняем git pull через HTTPS (без SSH)
+
     try:
-        env = os.environ.copy()
-        # Убираем SSH команду если есть
-        if 'GIT_SSH_COMMAND' in env:
-            logger.info(f"Удаляем GIT_SSH_COMMAND из окружения (было: {env['GIT_SSH_COMMAND']})")
-            del env['GIT_SSH_COMMAND']
-        
-        # Удаляем все SSH-связанные переменные окружения
-        ssh_vars = [k for k in env.keys() if 'SSH' in k.upper()]
-        for var in ssh_vars:
-            logger.info(f"Удаляем переменную окружения: {var}")
-            del env[var]
-        
-        # Убеждаемся, что remote URL правильный перед pull
-        verify_result = subprocess.run(
-            [git_cmd, "remote", "get-url", "origin"],
-            cwd=BASE_DIR,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        if verify_result.returncode == 0:
-            final_url = verify_result.stdout.strip()
-            logger.info(f"Remote URL перед pull: {final_url}")
-            if not final_url.startswith("https://"):
-                logger.error(f"ОШИБКА: Remote URL не HTTPS! URL: {final_url}")
-                # Принудительно устанавливаем еще раз
-                force_result = subprocess.run(
-                    [git_cmd, "remote", "set-url", "origin", https_url],
-                    cwd=BASE_DIR,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if force_result.returncode == 0:
-                    logger.info(f"Принудительно установлен HTTPS URL: {https_url}")
-                    # Проверяем еще раз
-                    verify2_result = subprocess.run(
-                        [git_cmd, "remote", "get-url", "origin"],
-                        cwd=BASE_DIR,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if verify2_result.returncode == 0:
-                        final_url = verify2_result.stdout.strip()
-                        logger.info(f"После принудительной установки URL: {final_url}")
+        # Скачиваем ZIP-архив
+        logger.info(f"Скачивание ZIP архива панели: {zip_url}")
+        urllib.request.urlretrieve(zip_url, zip_path)
+        logger.info(f"ZIP архив панели скачан: {zip_path}")
+
+        # Распаковываем архив
+        extract_dir = tmp_dir / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        # Находим корневую директорию внутри архива (обычно DSTG_Panel-main)
+        inner_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
+        if not inner_dirs:
+            raise Exception("Не удалось найти корневую директорию в архиве")
+        src_root = inner_dirs[0]
+
+        logger.info(f"Корневая директория архива: {src_root}")
+
+        # Копируем файлы из архива в BASE_DIR, кроме bots/ и data/
+        for item in src_root.iterdir():
+            if item.name in ("bots", "data"):
+                logger.info(f"Пропускаем директорию {item.name} при обновлении")
+                continue
+
+            dst = BASE_DIR / item.name
+
+            try:
+                if dst.exists():
+                    if dst.is_file() or dst.is_symlink():
+                        dst.unlink()
+                    elif dst.is_dir():
+                        shutil.rmtree(dst)
+                if item.is_dir():
+                    shutil.copytree(item, dst, dirs_exist_ok=True)
                 else:
-                    logger.error(f"Не удалось принудительно установить URL: {force_result.stderr}")
-                    return (False, f"Не удалось установить HTTPS URL. Ошибка: {force_result.stderr}")
-        
-        # Удаляем url rewrite правила из Git config если есть
-        try:
-            config_result = subprocess.run(
-                [git_cmd, "config", "--get-regexp", "url.*git@"],
-                cwd=BASE_DIR,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if config_result.returncode == 0:
-                logger.warning(f"Найдены url rewrite правила: {config_result.stdout}")
-                # Удаляем все url rewrite правила
-                subprocess.run(
-                    [git_cmd, "config", "--unset-all", "url.git@github.com:.insteadof"],
-                    cwd=BASE_DIR,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-        except Exception:
-            pass
-        
-        logger.info(f"Выполняем git fetch через HTTPS (ветка: {PANEL_REPO_BRANCH}, URL: {https_url})")
-        logger.info(f"Окружение: GIT_SSH_COMMAND={'НЕТ' if 'GIT_SSH_COMMAND' not in env else env.get('GIT_SSH_COMMAND')}")
-        
-        # Используем fetch + reset --hard для принудительного обновления
-        # Это позволяет обновить все файлы, даже если есть конфликты
-        fetch_result = subprocess.run(
-            [git_cmd, "fetch", "origin", PANEL_REPO_BRANCH],
-            cwd=BASE_DIR,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
-        
-        if fetch_result.returncode != 0:
-            error_msg = fetch_result.stderr or fetch_result.stdout or "Неизвестная ошибка"
-            logger.error(f"Git fetch failed: {error_msg}")
-            # Восстанавливаем директории даже при ошибке
-            for dir_name, dir_path in protected_dirs:
-                try:
-                    backup_path = backup_dir / dir_name
-                    if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
-                        shutil.copytree(backup_path, dir_path)
-                except Exception:
-                    pass
+                    shutil.copy2(item, dst)
+                logger.info(f"Обновлен элемент: {item.name}")
+            except Exception as copy_error:
+                logger.error(f"Ошибка при обновлении {item.name}: {copy_error}", exc_info=True)
+                # Продолжаем, чтобы попытаться обновить остальные файлы
+
+        # Восстанавливаем защищаемые директории из бэкапа
+        logger.info("Восстановление защищаемых директорий (bots, data)...")
+        for dir_name, dir_path in protected_dirs:
             try:
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-            except Exception:
-                pass
-            return (False, f"Ошибка Git fetch: {error_msg}")
-        
-        logger.info("Git fetch успешно выполнен, выполняем reset --hard")
-        
-        # Выполняем reset --hard для принудительного обновления всех файлов
-        reset_result = subprocess.run(
-            [git_cmd, "reset", "--hard", f"origin/{PANEL_REPO_BRANCH}"],
-            cwd=BASE_DIR,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
-        
-        if reset_result.returncode != 0:
-            error_msg = reset_result.stderr or reset_result.stdout or "Неизвестная ошибка"
-            logger.error(f"Git reset failed: {error_msg}")
-            # Восстанавливаем директории даже при ошибке
-            for dir_name, dir_path in protected_dirs:
-                try:
-                    backup_path = backup_dir / dir_name
-                    if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
-                        shutil.copytree(backup_path, dir_path)
-                except Exception:
-                    pass
-            try:
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-            except Exception:
-                pass
-            return (False, f"Ошибка Git reset: {error_msg}")
-        
-        logger.info("Git reset --hard успешно выполнен")
-        
-        # Используем результат reset как результат pull
-        pull_result = type('obj', (object,), {
-            'returncode': 0,
-            'stdout': reset_result.stdout,
-            'stderr': reset_result.stderr
-        })()
-        
-        logger.info(f"Git pull завершен с кодом: {pull_result.returncode}")
-        if pull_result.stdout:
-            logger.info(f"Git pull stdout: {pull_result.stdout[:500]}")
-        if pull_result.stderr:
-            logger.info(f"Git pull stderr: {pull_result.stderr[:500]}")
-        
-        if pull_result.returncode == 0:
-            logger.info("Git pull успешно выполнен")
-            
-            # Восстанавливаем защищаемые директории
-            logger.info("Восстановление защищаемых директорий...")
-            for dir_name, dir_path in protected_dirs:
-                try:
-                    backup_path = backup_dir / dir_name
-                    if backup_path.exists() and backup_path.is_dir():
-                        if dir_path.exists():
-                            logger.info(f"Восстановление директории {dir_name}...")
-                            try:
-                                shutil.rmtree(dir_path)
-                            except Exception as rmtree_error:
-                                logger.warning(f"Не удалось удалить {dir_path}, пробуем принудительно")
-                                def handle_remove_readonly(func, path, exc):
-                                    os.chmod(path, stat.S_IWRITE)
-                                    func(path)
-                                shutil.rmtree(dir_path, onerror=handle_remove_readonly)
-                        
-                        shutil.copytree(backup_path, dir_path, dirs_exist_ok=True)
-                        logger.info(f"Директория {dir_name} восстановлена")
-                except Exception as restore_error:
-                    logger.error(f"Ошибка при восстановлении директории {dir_name}: {restore_error}", exc_info=True)
-            
-            # Удаляем временную директорию
-            try:
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-            except Exception:
-                pass
-            
-            return (True, "Панель успешно обновлена. Защищенные директории (bots/, data/) сохранены.")
-        else:
-            error_msg = pull_result.stderr or pull_result.stdout or "Неизвестная ошибка"
-            logger.error(f"Git pull failed: {error_msg}")
-            
-            # Восстанавливаем директории даже при ошибке
-            for dir_name, dir_path in protected_dirs:
-                try:
-                    backup_path = backup_dir / dir_name
-                    if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
-                        shutil.copytree(backup_path, dir_path)
-                except Exception:
-                    pass
-            
-            # Удаляем временную директорию
-            try:
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-            except Exception:
-                pass
-            
-            return (False, f"Ошибка Git pull: {error_msg}")
-            
-    except subprocess.TimeoutExpired:
-        logger.error("Git pull timeout")
-        return (False, "Git pull timeout")
+                backup_path = backup_dir / dir_name
+                if backup_path.exists() and backup_path.is_dir():
+                    if dir_path.exists():
+                        shutil.rmtree(dir_path)
+                    shutil.copytree(backup_path, dir_path, dirs_exist_ok=True)
+                    logger.info(f"Директория {dir_name} восстановлена")
+            except Exception as restore_error:
+                logger.error(f"Ошибка при восстановлении директории {dir_name}: {restore_error}", exc_info=True)
+
+        return (True, "Панель успешно обновлена из ZIP архива. Защищенные директории (bots/, data/) сохранены.")
+
     except Exception as e:
-        logger.error(f"Критическая ошибка при обновлении панели: {e}", exc_info=True)
-        
+        logger.error(f"Критическая ошибка при обновлении панели из ZIP: {e}", exc_info=True)
+
         # Восстанавливаем директории при ошибке
         try:
             if backup_dir and backup_dir.exists():
                 for dir_name, dir_path in protected_dirs:
                     try:
                         backup_path = backup_dir / dir_name
-                        if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
+                        if backup_path.exists() and backup_path.is_dir():
+                            if dir_path.exists():
+                                shutil.rmtree(dir_path)
                             shutil.copytree(backup_path, dir_path)
+                            logger.info(f"Директория {dir_name} восстановлена после ошибки")
                     except Exception:
                         pass
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
         except Exception:
             pass
-        
+
         return (False, f"Ошибка обновления панели: {str(e)}")
+    finally:
+        # Чистим временные файлы
+        try:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
 
 
 def get_git_status(path: Path) -> Dict[str, Any]:
