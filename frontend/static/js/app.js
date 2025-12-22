@@ -125,14 +125,6 @@ function renderBotsList(bots) {
                             </div>
                         </div>
                         
-                        ${bot.status === 'running' ? `
-                            <div class="bot-card-new-progress">
-                                <div class="progress-label">Использование CPU</div>
-                                <div class="progress-bar-wrapper">
-                                    <div class="progress-bar-fill" id="cpu-progress-${bot.id}" style="width: 0%"></div>
-                                </div>
-                            </div>
-                        ` : ''}
                     </div>
                     
                     <div class="bot-card-new-footer" onclick="event.stopPropagation()">
@@ -205,16 +197,6 @@ async function loadBotMetrics(botId) {
                         }
                         cpuEl.style.opacity = '1';
                     }, 100);
-                }
-                
-                // Плавное обновление прогресс-бара
-                const progressBar = document.getElementById(`cpu-progress-${botId}`);
-                if (progressBar) {
-                    const newWidth = Math.min(status.cpu_percent, 100) + '%';
-                    if (progressBar.style.width !== newWidth) {
-                        progressBar.style.transition = 'width 0.5s ease';
-                        progressBar.style.width = newWidth;
-                    }
                 }
             } else {
                 if (cpuEl.textContent !== '-') {
@@ -671,26 +653,6 @@ function updateBotStatusOnly(botId, status) {
                 }, 50);
             }
         }, 200);
-    }
-    
-    // Показываем/скрываем прогресс-бар в зависимости от статуса с плавным переходом
-    const progressBar = botCard.querySelector('.bot-card-new-progress');
-    if (progressBar) {
-        if (status === 'running') {
-            progressBar.style.display = 'block';
-            progressBar.style.transition = 'opacity 0.3s ease';
-            setTimeout(() => {
-                progressBar.style.opacity = '1';
-            }, 50);
-        } else {
-            progressBar.style.transition = 'opacity 0.3s ease';
-            progressBar.style.opacity = '0';
-            setTimeout(() => {
-                if (progressBar.style.opacity === '0') {
-                    progressBar.style.display = 'none';
-                }
-            }, 300);
-        }
     }
 }
 

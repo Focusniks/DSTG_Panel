@@ -17,7 +17,8 @@ import tempfile
 from backend.config import BASE_DIR, set_admin_password_hash, get_admin_password_hash
 from backend.auth import verify_password, create_session_token, get_session_from_request
 from backend.database import (
-    create_bot, get_bot, get_all_bots, update_bot, delete_bot
+    create_bot, get_bot, get_all_bots, update_bot, delete_bot,
+    save_bot_metric, get_bot_metrics
 )
 from backend.bot_manager import start_bot, stop_bot, get_bot_process_info, is_process_running
 from backend.sqlite_manager import (
@@ -1108,13 +1109,45 @@ async def get_bot_status(bot_id: int):
             "pid": None
         }
     
+    cpu_percent = process_info.get("cpu_percent")
+    memory_mb = process_info.get("memory_mb")
+    
+    # Сохраняем метрику для графиков
+    if cpu_percent is not None and memory_mb is not None:
+        save_bot_metric(bot_id, cpu_percent, memory_mb)
+    
     return {
         "running": True,
         "status": "running",
-        "cpu_percent": process_info.get("cpu_percent"),
-        "memory_mb": process_info.get("memory_mb"),
+        "cpu_percent": cpu_percent,
+        "memory_mb": memory_mb,
         "pid": process_info.get("pid")
     }
+
+# Metrics endpoints
+@app.get("/api/bots/{bot_id}/metrics")
+async def get_bot_metrics_endpoint(bot_id: int, hours: int = 24):
+    """Получение исторических метрик бота для графиков"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    # Ограничиваем период от 1 часа до 7 дней
+    if hours < 1:
+        hours = 1
+    elif hours > 168:  # 7 дней
+        hours = 168
+    
+    try:
+        metrics = get_bot_metrics(bot_id, hours)
+        return {
+            "success": True,
+            "metrics": metrics,
+            "period_hours": hours
+        }
+    except Exception as e:
+        logger.error(f"Ошибка получения метрик бота {bot_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка получения метрик: {str(e)}")
 
 # Database management endpoints - SQLite only
 

@@ -54,6 +54,24 @@ def init_database():
             )
         """)
         
+        # Таблица метрик ботов для графиков
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bot_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bot_id INTEGER NOT NULL,
+                cpu_percent REAL,
+                memory_mb REAL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Создаем индекс для быстрого поиска метрик по боту и времени
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_bot_metrics_bot_time 
+            ON bot_metrics(bot_id, timestamp DESC)
+        """)
+        
         # Инициализация настроек панели (если нужно добавить новые настройки)
         
         # Миграция: добавляем поле auto_start, если его нет
@@ -675,6 +693,62 @@ python main.py
 Все зависимости указаны в `requirements.txt` и устанавливаются автоматически при первом запуске.
 '''
             readme_file.write_text(readme_content, encoding='utf-8')
+
+def save_bot_metric(bot_id: int, cpu_percent: float, memory_mb: float) -> bool:
+    """Сохранение метрики бота"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO bot_metrics (bot_id, cpu_percent, memory_mb, timestamp)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        """, (bot_id, cpu_percent, memory_mb))
+        conn.commit()
+        conn.close()
+        
+        # Удаляем старые метрики (старше 7 дней)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM bot_metrics 
+            WHERE timestamp < datetime('now', '-7 days')
+        """)
+        conn.commit()
+        conn.close()
+        
+        return True
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка сохранения метрики бота {bot_id}: {e}")
+        return False
+
+def get_bot_metrics(bot_id: int, hours: int = 24) -> List[Dict]:
+    """Получение метрик бота за указанный период"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT cpu_percent, memory_mb, timestamp
+            FROM bot_metrics
+            WHERE bot_id = ? AND timestamp >= datetime('now', '-' || ? || ' hours')
+            ORDER BY timestamp ASC
+        """, (bot_id, hours))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {
+                'cpu_percent': row[0],
+                'memory_mb': row[1],
+                'timestamp': row[2]
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка получения метрик бота {bot_id}: {e}")
+        return []
 
 # Инициализируем БД при импорте
 init_database()

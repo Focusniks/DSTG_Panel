@@ -1488,6 +1488,28 @@ body::before {
     letter-spacing: 0.5px;
 }
 
+/* Стили для графиков мониторинга */
+#cpu-chart, #memory-chart {
+    max-height: 200px;
+}
+
+.btn-group .btn.active {
+    background: var(--neon-cyan);
+    border-color: var(--neon-cyan);
+    color: var(--bg-primary);
+}
+
+.btn-group .btn-outline-primary {
+    border-color: var(--neon-cyan);
+    color: var(--neon-cyan);
+}
+
+.btn-group .btn-outline-primary:hover {
+    background: rgba(0, 243, 255, 0.2);
+    border-color: var(--neon-cyan);
+    color: var(--neon-cyan);
+}
+
 .bg-primary {
     background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue)) !important;
     color: var(--text-primary) !important;

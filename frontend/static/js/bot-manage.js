@@ -8,6 +8,9 @@
     let codeEditor = null;
     let currentFile = null;
     let updateInterval = null;
+    let cpuChart = null;
+    let memoryChart = null;
+    let currentMetricsPeriod = 24; // По умолчанию 24 часа
     
     // Инициализация при загрузке страницы
     window.addEventListener('DOMContentLoaded', function() {
@@ -36,6 +39,12 @@
         
         // Загружаем данные бота
         loadBot();
+        
+        // Инициализируем графики
+        initCharts();
+        
+        // Загружаем метрики
+        loadMetrics(currentMetricsPeriod);
         
         // Показываем dashboard по умолчанию
         showSection('dashboard');
@@ -294,6 +303,9 @@
             loadDatabase();
         } else if (sectionName === 'logs') {
             loadLogs();
+        } else if (sectionName === 'dashboard') {
+            // Обновляем графики при переключении на dashboard
+            loadMetrics(currentMetricsPeriod);
         }
     }
     
@@ -305,6 +317,14 @@
         
         updateStatus();
         updateInterval = setInterval(updateStatus, 5000);
+        
+        // Обновляем графики каждые 30 секунд
+        setInterval(() => {
+            const dashboardSection = document.getElementById('section-dashboard');
+            if (dashboardSection && dashboardSection.style.display !== 'none') {
+                loadMetrics(currentMetricsPeriod);
+            }
+        }, 30000);
     }
     
     // Обновление статуса
@@ -330,7 +350,7 @@
                     'running': 'Запущен',
                     'stopped': 'Остановлен',
                     'starting': 'Запускается...',
-                    'restarting': 'Перезагрузка...',
+                    'restarting': 'Перезагружается...',
                     'installing': 'Установка зависимостей...',
                     'error': 'Ошибка',
                     'error_startup': 'Ошибка запуска'
@@ -593,7 +613,7 @@
         if (statusText) statusText.textContent = 'Перезагружается...';
         if (statusIndicator) {
             statusIndicator.className = 'bot-status restarting';
-            statusIndicator.textContent = 'Перезагружается';
+            // Не устанавливаем textContent, так как это визуальный индикатор (точка)
         }
         
         try {
@@ -616,7 +636,6 @@
                 if (statusText) statusText.textContent = 'Ошибка';
                 if (statusIndicator) {
                     statusIndicator.className = 'bot-status error';
-                    statusIndicator.textContent = 'Ошибка';
                 }
                 return;
             }
@@ -635,7 +654,6 @@
                 if (statusText) statusText.textContent = 'Ошибка';
                 if (statusIndicator) {
                     statusIndicator.className = 'bot-status error';
-                    statusIndicator.textContent = 'Ошибка';
                 }
             }
         } catch (error) {
@@ -645,7 +663,6 @@
             if (statusText) statusText.textContent = 'Ошибка';
             if (statusIndicator) {
                 statusIndicator.className = 'bot-status error';
-                statusIndicator.textContent = 'Ошибка';
             }
         } finally {
             if (btn) {
@@ -2478,5 +2495,208 @@
             showError('Ошибка переименования', 'Не удалось переименовать файл. См. консоль (F12).', error.message);
         }
     }
+    
+    // Инициализация графиков
+    function initCharts() {
+        const cpuCtx = document.getElementById('cpu-chart');
+        const memoryCtx = document.getElementById('memory-chart');
+        
+        if (!cpuCtx || !memoryCtx) return;
+        
+        // Получаем цвета из CSS переменных
+        const rootStyle = getComputedStyle(document.documentElement);
+        const textColor = rootStyle.getPropertyValue('--text-primary').trim() || '#ffffff';
+        const textSecondary = rootStyle.getPropertyValue('--text-secondary').trim() || '#b4b9d1';
+        const borderColor = rootStyle.getPropertyValue('--border-color').trim() || '#2a2f47';
+        let neonCyan = rootStyle.getPropertyValue('--neon-cyan').trim() || '#00f3ff';
+        let neonGreen = rootStyle.getPropertyValue('--neon-green').trim() || '#39ff14';
+        
+        // Конвертируем hex в rgb для rgba
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+        
+        const neonCyanRgb = hexToRgb(neonCyan);
+        const neonGreenRgb = hexToRgb(neonGreen);
+        const neonCyanRgba = neonCyanRgb ? `rgba(${neonCyanRgb.r}, ${neonCyanRgb.g}, ${neonCyanRgb.b}, 0.1)` : 'rgba(0, 243, 255, 0.1)';
+        const neonGreenRgba = neonGreenRgb ? `rgba(${neonGreenRgb.r}, ${neonGreenRgb.g}, ${neonGreenRgb.b}, 0.1)` : 'rgba(57, 255, 20, 0.1)';
+        
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: textColor,
+                    bodyColor: textColor,
+                    borderColor: borderColor,
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: textSecondary,
+                        maxRotation: 45,
+                        minRotation: 0,
+                        font: {
+                            size: 11
+                        }
+                    },
+                    grid: {
+                        color: borderColor
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: textSecondary,
+                        font: {
+                            size: 11
+                        }
+                    },
+                    grid: {
+                        color: borderColor
+                    },
+                    beginAtZero: true
+                }
+            }
+        };
+        
+        // График CPU
+        cpuChart = new Chart(cpuCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'CPU %',
+                    data: [],
+                    borderColor: neonCyan,
+                    backgroundColor: neonCyanRgba,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: chartOptions
+        });
+        
+        // График памяти
+        memoryChart = new Chart(memoryCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Memory MB',
+                    data: [],
+                    borderColor: neonGreen,
+                    backgroundColor: neonGreenRgba,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: chartOptions
+        });
+    }
+    
+    // Загрузка метрик
+    async function loadMetrics(hours) {
+        if (!botId) return;
+        
+        try {
+            const response = await fetch(`/api/bots/${botId}/metrics?hours=${hours}`);
+            if (!response.ok) {
+                console.error('Ошибка загрузки метрик:', response.statusText);
+                return;
+            }
+            
+            const result = await response.json();
+            if (result.success && result.metrics) {
+                updateCharts(result.metrics);
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки метрик:', error);
+        }
+    }
+    
+    // Обновление графиков
+    function updateCharts(metrics) {
+        if (!cpuChart || !memoryChart || !metrics || metrics.length === 0) {
+            // Если нет данных, показываем пустые графики
+            if (cpuChart) {
+                cpuChart.data.labels = [];
+                cpuChart.data.datasets[0].data = [];
+                cpuChart.update();
+            }
+            if (memoryChart) {
+                memoryChart.data.labels = [];
+                memoryChart.data.datasets[0].data = [];
+                memoryChart.update();
+            }
+            return;
+        }
+        
+        const labels = [];
+        const cpuData = [];
+        const memoryData = [];
+        
+        metrics.forEach(metric => {
+            const date = new Date(metric.timestamp);
+            // Форматируем время в зависимости от периода
+            let timeLabel;
+            if (currentMetricsPeriod <= 6) {
+                timeLabel = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            } else if (currentMetricsPeriod <= 24) {
+                timeLabel = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            } else {
+                timeLabel = date.toLocaleString('ru-RU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            }
+            
+            labels.push(timeLabel);
+            cpuData.push(metric.cpu_percent || 0);
+            memoryData.push(metric.memory_mb || 0);
+        });
+        
+        // Обновляем график CPU
+        cpuChart.data.labels = labels;
+        cpuChart.data.datasets[0].data = cpuData;
+        cpuChart.update('none'); // 'none' для плавного обновления
+        
+        // Обновляем график памяти
+        memoryChart.data.labels = labels;
+        memoryChart.data.datasets[0].data = memoryData;
+        memoryChart.update('none');
+    }
+    
+    // Изменение периода метрик
+    window.changeMetricsPeriod = function(hours) {
+        currentMetricsPeriod = hours;
+        
+        // Обновляем активную кнопку
+        document.querySelectorAll('[data-period]').forEach(btn => {
+            if (parseInt(btn.getAttribute('data-period')) === hours) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        
+        // Загружаем новые метрики
+        loadMetrics(hours);
+    };
     
 })();

@@ -1,0 +1,299 @@
+/* ============================================
+   СИСТЕМА ТЕМ ДЛЯ ПАНЕЛИ УПРАВЛЕНИЯ БОТАМИ
+   ============================================ */
+
+/* ТЕМНАЯ ТЕМА (по умолчанию) */
+[data-theme="dark"] {
+    --neon-cyan: #00f3ff;
+    --neon-purple: #b026ff;
+    --neon-pink: #ff006e;
+    --neon-green: #39ff14;
+    --neon-blue: #00d4ff;
+    --neon-orange: #ff6b35;
+    --neon-yellow: #ffd700;
+    
+    --bg-primary: #0a0e27;
+    --bg-secondary: #0f1629;
+    --bg-tertiary: #151b2e;
+    --bg-card: #1a1f35;
+    --bg-hover: #252b42;
+    --bg-overlay: rgba(10, 14, 39, 0.95);
+    
+    --text-primary: #ffffff;
+    --text-secondary: #b4b9d1;
+    --text-muted: #6b7280;
+    
+    --border-color: #2a2f47;
+    --border-neon: rgba(0, 243, 255, 0.3);
+}
+
+[data-theme="dark"] body {
+    background: var(--bg-primary);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 243, 255, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(176, 38, 255, 0.15) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(255, 0, 110, 0.1) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(57, 255, 20, 0.1) 0px, transparent 50%);
+}
+
+/* СВЕТЛАЯ ТЕМА */
+[data-theme="light"] {
+    --neon-cyan: #0099cc;
+    --neon-purple: #7b2cbf;
+    --neon-pink: #c9184a;
+    --neon-green: #2d7a3d;
+    --neon-blue: #0066cc;
+    --neon-orange: #d97706;
+    --neon-yellow: #ca8a04;
+    
+    --bg-primary: #f8f9fa;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #e9ecef;
+    --bg-card: #ffffff;
+    --bg-hover: #f1f3f5;
+    --bg-overlay: rgba(248, 249, 250, 0.95);
+    
+    --text-primary: #212529;
+    --text-secondary: #495057;
+    --text-muted: #6c757d;
+    
+    --border-color: #dee2e6;
+    --border-neon: rgba(0, 153, 204, 0.3);
+}
+
+[data-theme="light"] body {
+    background: var(--bg-primary);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 153, 204, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(123, 44, 191, 0.08) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(201, 24, 74, 0.05) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(45, 122, 61, 0.05) 0px, transparent 50%);
+}
+
+[data-theme="light"] body::before {
+    background: 
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 153, 204, 0.02) 2px,
+            rgba(0, 153, 204, 0.02) 4px
+        );
+}
+
+/* НОВОГОДНЯЯ ТЕМА */
+[data-theme="christmas"] {
+    --neon-cyan: #ff0000;
+    --neon-purple: #00ff00;
+    --neon-pink: #ffd700;
+    --neon-green: #00ff00;
+    --neon-blue: #ff0000;
+    --neon-orange: #ff6b35;
+    --neon-yellow: #ffd700;
+    
+    --bg-primary: #0d1b0f;
+    --bg-secondary: #1a2e1d;
+    --bg-tertiary: #1f3a23;
+    --bg-card: #2a4a2f;
+    --bg-hover: #355a3a;
+    --bg-overlay: rgba(13, 27, 15, 0.95);
+    
+    --text-primary: #ffffff;
+    --text-secondary: #c4e6c8;
+    --text-muted: #8fb894;
+    
+    --border-color: #3d5a42;
+    --border-neon: rgba(255, 0, 0, 0.5);
+}
+
+[data-theme="christmas"] body {
+    background: var(--bg-primary);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(255, 0, 0, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(0, 255, 0, 0.15) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(255, 215, 0, 0.1) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(255, 0, 0, 0.1) 0px, transparent 50%);
+}
+
+/* Анимация снега для новогодней темы */
+[data-theme="christmas"] .snow-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+}
+
+[data-theme="christmas"] .snowflake {
+    position: absolute;
+    color: #ffffff;
+    font-size: 1em;
+    font-family: Arial;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.8);
+    animation: snowfall linear infinite;
+    opacity: 0.8;
+}
+
+@keyframes snowfall {
+    0% {
+        transform: translateY(-100vh) rotate(0deg);
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.8;
+    }
+    90% {
+        opacity: 0.8;
+    }
+    100% {
+        transform: translateY(100vh) rotate(360deg);
+        opacity: 0;
+    }
+}
+
+/* Гирлянда для новогодней темы */
+[data-theme="christmas"] .garland {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    pointer-events: none;
+    z-index: 2;
+    overflow: hidden;
+}
+
+[data-theme="christmas"] .garland-light {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    animation: garland-blink 1.5s ease-in-out infinite;
+}
+
+[data-theme="christmas"] .garland-light:nth-child(odd) {
+    background: #ff0000;
+    box-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000;
+}
+
+[data-theme="christmas"] .garland-light:nth-child(even) {
+    background: #00ff00;
+    box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+}
+
+@keyframes garland-blink {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+}
+
+/* МИНИМАЛИСТИЧНАЯ ТЕМА */
+[data-theme="minimal"] {
+    --neon-cyan: #4a90e2;
+    --neon-purple: #9013fe;
+    --neon-pink: #e91e63;
+    --neon-green: #4caf50;
+    --neon-blue: #2196f3;
+    --neon-orange: #ff9800;
+    --neon-yellow: #ffc107;
+    
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --bg-tertiary: #eeeeee;
+    --bg-card: #ffffff;
+    --bg-hover: #fafafa;
+    --bg-overlay: rgba(255, 255, 255, 0.95);
+    
+    --text-primary: #212121;
+    --text-secondary: #424242;
+    --text-muted: #757575;
+    
+    --border-color: #e0e0e0;
+    --border-neon: rgba(74, 144, 226, 0.3);
+}
+
+[data-theme="minimal"] body {
+    background: var(--bg-primary);
+    background-image: none;
+}
+
+[data-theme="minimal"] body::before {
+    display: none;
+}
+
+/* НЕОНОВАЯ ТЕМА */
+[data-theme="neon"] {
+    --neon-cyan: #00ffff;
+    --neon-purple: #ff00ff;
+    --neon-pink: #ff0080;
+    --neon-green: #00ff00;
+    --neon-blue: #0080ff;
+    --neon-orange: #ff8000;
+    --neon-yellow: #ffff00;
+    
+    --bg-primary: #000000;
+    --bg-secondary: #0a0a0a;
+    --bg-tertiary: #141414;
+    --bg-card: #1a1a1a;
+    --bg-hover: #252525;
+    --bg-overlay: rgba(0, 0, 0, 0.95);
+    
+    --text-primary: #ffffff;
+    --text-secondary: #cccccc;
+    --text-muted: #888888;
+    
+    --border-color: #333333;
+    --border-neon: rgba(0, 255, 255, 0.5);
+}
+
+[data-theme="neon"] body {
+    background: var(--bg-primary);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 255, 255, 0.2) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(255, 0, 255, 0.2) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(0, 255, 0, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(255, 0, 128, 0.15) 0px, transparent 50%);
+}
+
+[data-theme="neon"] body::before {
+    background: 
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 255, 255, 0.05) 2px,
+            rgba(0, 255, 255, 0.05) 4px
+        );
+}
+
+/* Пользовательская тема (загружается динамически) */
+[data-theme="custom"] {
+    /* Переменные будут установлены через JavaScript */
+}
+
+/* Стили для карточек тем */
+.theme-card {
+    transition: all 0.3s ease;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+}
+
+.theme-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+    border-color: var(--neon-cyan);
+}
+
+.theme-card.border-primary {
+    border-color: var(--neon-cyan) !important;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+}
+

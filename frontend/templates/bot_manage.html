@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/themes.css">
 </head>
 <body>
     <!-- Sidebar -->
@@ -107,6 +108,38 @@
                     <h5 class="mb-3">Использование памяти</h5>
                     <div class="metric-value" id="memory-usage">-</div>
                     <div class="metric-label">MB</div>
+                </div>
+            </div>
+
+            <!-- Графики мониторинга -->
+            <div class="dashboard-section mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">Графики нагрузки</h5>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-sm btn-outline-primary active" data-period="1" onclick="changeMetricsPeriod(1)">1 час</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-period="6" onclick="changeMetricsPeriod(6)">6 часов</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-period="24" onclick="changeMetricsPeriod(24)">24 часа</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-period="72" onclick="changeMetricsPeriod(72)">3 дня</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-period="168" onclick="changeMetricsPeriod(168)">7 дней</button>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">Использование CPU (%)</h6>
+                                <canvas id="cpu-chart" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">Использование памяти (MB)</h6>
+                                <canvas id="memory-chart" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -581,6 +614,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
@@ -588,6 +622,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
+    <script src="/static/js/theme-manager.js"></script>
     <script src="/static/js/bot-manage.js"></script>
 </body>
 </html>
