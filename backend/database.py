@@ -400,7 +400,7 @@ def main():
         return
     
     # Создаем приложение без прокси
-    application = Application.builder().token(BOT_TOKEN).proxy_url(None).build()
+    application = Application.builder().token(BOT_TOKEN).proxy(None).build()
 
     # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
@@ -415,7 +415,7 @@ def main():
 
     # Запускаем бота
     logger.info("Бот запущен и готов к работе!")
-    logger.info(f"Бот: @{application.bot.username}")
+    # Информация о боте будет доступна после инициализации через команду /info
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
