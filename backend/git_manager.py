@@ -814,6 +814,48 @@ def update_panel_from_git() -> Tuple[bool, str]:
         if not repo.is_repo():
             return (False, "Панель не является Git репозиторием. Инициализируйте репозиторий в настройках.")
         
+        # Для панели всегда используем HTTPS для публичных репозиториев
+        # Проверяем текущий remote URL и конвертируем SSH в HTTPS если нужно
+        try:
+            current_remote = repo._get_remote_url()
+            if current_remote:
+                logger.info(f"Текущий remote URL панели: {current_remote}")
+                
+                # Если используется SSH URL, конвертируем в HTTPS
+                if current_remote.startswith("git@") or current_remote.startswith("ssh://"):
+                    https_url = None
+                    
+                    if "github.com" in current_remote:
+                        # git@github.com:user/repo.git -> https://github.com/user/repo.git
+                        if current_remote.startswith("git@"):
+                            https_url = current_remote.replace("git@github.com:", "https://github.com/")
+                        elif current_remote.startswith("ssh://"):
+                            https_url = current_remote.replace("ssh://git@github.com/", "https://github.com/")
+                        
+                        if https_url and not https_url.endswith(".git"):
+                            https_url += ".git"
+                    
+                    if https_url:
+                        logger.info(f"Конвертируем SSH URL в HTTPS для панели: {https_url}")
+                        env_no_ssh = os.environ.copy()
+                        if 'GIT_SSH_COMMAND' in env_no_ssh:
+                            del env_no_ssh['GIT_SSH_COMMAND']
+                        
+                        set_result = subprocess.run(
+                            [repo.git_cmd, "remote", "set-url", "origin", https_url],
+                            cwd=repo.path,
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        
+                        if set_result.returncode == 0:
+                            logger.info("Remote URL панели успешно изменен на HTTPS")
+                        else:
+                            logger.warning(f"Не удалось изменить remote URL на HTTPS: {set_result.stderr}")
+        except Exception as remote_check_error:
+            logger.warning(f"Не удалось проверить/изменить remote URL: {remote_check_error}")
+        
         # Создаем временную директорию для бэкапа защищаемых папок
         try:
             backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
@@ -1045,11 +1087,27 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
         
         # Если указан URL, добавляем remote
         if repo_url:
-            ssh_url = convert_https_to_ssh(repo_url)
-            env = get_git_env_with_ssh()
+            # Для панели всегда используем HTTPS (публичный репозиторий)
+            # Для ботов используем SSH если URL начинается с https://
+            use_https = False
+            if repo_url.startswith("https://"):
+                # Проверяем, это репозиторий панели или нет
+                from backend.config import PANEL_REPO_URL
+                if repo_url == PANEL_REPO_URL or path == BASE_DIR:
+                    use_https = True
+                    logger.info("Используем HTTPS для репозитория панели")
+            
+            if use_https:
+                # Используем HTTPS напрямую
+                remote_url = repo_url
+                env = os.environ.copy()
+            else:
+                # Конвертируем HTTPS в SSH для приватных репозиториев ботов
+                remote_url = convert_https_to_ssh(repo_url)
+                env = get_git_env_with_ssh()
             
             result = subprocess.run(
-                [git_cmd, "remote", "add", "origin", ssh_url],
+                [git_cmd, "remote", "add", "origin", remote_url],
                 cwd=path,
                 env=env,
                 capture_output=True,
@@ -1060,7 +1118,7 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
             if result.returncode != 0:
                 # Если remote уже существует, обновляем его
                 result = subprocess.run(
-                    [git_cmd, "remote", "set-url", "origin", ssh_url],
+                    [git_cmd, "remote", "set-url", "origin", remote_url],
                     cwd=path,
                     env=env,
                     capture_output=True,
