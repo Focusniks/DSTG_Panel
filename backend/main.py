@@ -1131,13 +1131,184 @@ async def execute_sql_endpoint(bot_id: int, request: Request):
     else:
         raise HTTPException(status_code=500, detail=result.get("error", "Query failed"))
 
+@app.get("/phpMyAdmin")
+@app.get("/phpMyAdmin/")
+async def phpmyadmin_proxy(request: Request):
+    """Прокси для phpMyAdmin - показывает инструкцию по установке или перенаправляет"""
+    from fastapi.responses import HTMLResponse
+    import urllib.request
+    import urllib.error
+    
+    # Проверяем, установлен ли phpMyAdmin (проверяем доступность)
+    try:
+        # Пробуем подключиться к стандартному пути phpMyAdmin
+        req = urllib.request.Request("http://localhost/phpmyadmin")
+        req.add_header('User-Agent', 'Mozilla/5.0')
+        with urllib.request.urlopen(req, timeout=2) as response:
+            if response.status == 200:
+                # phpMyAdmin установлен, перенаправляем
+                base_url = str(request.base_url).rstrip('/')
+                return Response(status_code=307, headers={"Location": f"{base_url}/phpmyadmin"})
+    except (urllib.error.URLError, urllib.error.HTTPError, Exception):
+        pass
+    
+    # phpMyAdmin не установлен, показываем инструкцию
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>phpMyAdmin не установлен</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                margin: 0;
+                padding: 20px;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .container {
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                padding: 40px;
+                max-width: 800px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            }
+            h1 {
+                margin-top: 0;
+                font-size: 2.5em;
+                text-align: center;
+            }
+            .code-block {
+                background: rgba(0, 0, 0, 0.3);
+                padding: 20px;
+                border-radius: 10px;
+                font-family: 'Courier New', monospace;
+                margin: 20px 0;
+                overflow-x: auto;
+                border-left: 4px solid #00ff88;
+            }
+            .code-block code {
+                color: #00ff88;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+            .step {
+                margin: 30px 0;
+                padding: 20px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 10px;
+            }
+            .step h2 {
+                color: #00ff88;
+                margin-top: 0;
+            }
+            .warning {
+                background: rgba(255, 193, 7, 0.2);
+                border-left: 4px solid #ffc107;
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 5px;
+            }
+            .back-link {
+                display: inline-block;
+                margin-top: 30px;
+                padding: 10px 20px;
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
+                text-decoration: none;
+                border-radius: 5px;
+                transition: background 0.3s;
+            }
+            .back-link:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚠️ phpMyAdmin не установлен</h1>
+            <p style="text-align: center; font-size: 1.2em;">Для работы с базами данных через веб-интерфейс необходимо установить phpMyAdmin.</p>
+            
+            <div class="step">
+                <h2>📦 Установка phpMyAdmin на Ubuntu/Debian</h2>
+                <p>Выполните следующие команды в терминале:</p>
+                <div class="code-block">
+                    <code>
+# Обновление списка пакетов<br>
+sudo apt update<br><br>
+# Установка Apache и PHP (если еще не установлены)<br>
+sudo apt install -y apache2 php php-mysql php-mbstring php-zip php-gd php-json php-curl<br><br>
+# Установка phpMyAdmin<br>
+sudo apt install -y phpmyadmin<br><br>
+# Во время установки выберите:<br>
+# - Веб-сервер: apache2<br>
+# - Настроить базу данных: Да<br>
+# - Пароль для phpmyadmin: (укажите пароль)
+                    </code>
+                </div>
+            </div>
+            
+            <div class="step">
+                <h2>🔧 Настройка Apache</h2>
+                <p>После установки создайте символическую ссылку:</p>
+                <div class="code-block">
+                    <code>
+sudo ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin<br><br>
+# Или если используете другой путь:<br>
+sudo ln -s /usr/share/phpmyadmin /var/www/html/phpMyAdmin
+                    </code>
+                </div>
+            </div>
+            
+            <div class="step">
+                <h2>🌐 Альтернативный вариант: Установка через Docker</h2>
+                <p>Если у вас установлен Docker, можно использовать контейнер:</p>
+                <div class="code-block">
+                    <code>
+docker run -d \\<br>
+  --name phpmyadmin \\<br>
+  -e PMA_HOST=localhost \\<br>
+  -e PMA_PORT=3306 \\<br>
+  -p 8080:80 \\<br>
+  --restart=always \\<br>
+  phpmyadmin/phpmyadmin
+                    </code>
+                </div>
+                <p>После этого phpMyAdmin будет доступен по адресу: <code>http://ваш_ip:8080</code></p>
+            </div>
+            
+            <div class="warning">
+                <strong>⚠️ Важно:</strong> После установки phpMyAdmin перезапустите панель управления ботами, чтобы изменения вступили в силу.
+            </div>
+            
+            <div style="text-align: center;">
+                <a href="/" class="back-link">← Вернуться в панель управления</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
 @app.get("/api/bots/{bot_id}/db/phpmyadmin")
-async def get_phpmyadmin_url_endpoint(bot_id: int, db_name: Optional[str] = Query(None)):
+async def get_phpmyadmin_url_endpoint(request: Request, bot_id: int, db_name: Optional[str] = Query(None)):
     bot = get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
     
-    url = get_phpmyadmin_url(bot_id, db_name=db_name)
+    # Получаем базовый URL панели из запроса
+    base_url = str(request.base_url).rstrip('/')
+    # Формируем URL для phpMyAdmin на основе текущего запроса
+    phpmyadmin_base = f"{base_url}/phpMyAdmin"
+    
+    url = get_phpmyadmin_url(bot_id, db_name=db_name, phpmyadmin_base_url=phpmyadmin_base)
     return {"url": url}
 
 # Bot Git endpoints

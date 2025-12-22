@@ -415,10 +415,16 @@ def execute_sql_query(bot_id: int, query: str, db_name: Optional[str] = None) ->
             "error": str(e)
         }
 
-def get_phpmyadmin_url(bot_id: int, db_name: Optional[str] = None) -> str:
+def get_phpmyadmin_url(bot_id: int, db_name: Optional[str] = None, phpmyadmin_base_url: Optional[str] = None) -> str:
     """Генерация URL для phpMyAdmin с автологином"""
     from backend.config import PHPMYADMIN_URL
     from urllib.parse import quote
+    
+    # Используем переданный базовый URL или значение из конфига
+    if phpmyadmin_base_url:
+        phpmyadmin_url = phpmyadmin_base_url
+    else:
+        phpmyadmin_url = PHPMYADMIN_URL
     
     # Если db_name не указан, используем первую БД из списка
     if not db_name:
@@ -429,7 +435,7 @@ def get_phpmyadmin_url(bot_id: int, db_name: Optional[str] = None) -> str:
             # Обратная совместимость
             bot = get_bot(bot_id)
             if not bot or not bot.get('db_name'):
-                return PHPMYADMIN_URL
+                return phpmyadmin_url
             db_name = bot['db_name']
     
     # Получаем credentials из таблицы bot_databases
@@ -458,6 +464,6 @@ def get_phpmyadmin_url(bot_id: int, db_name: Optional[str] = None) -> str:
         db_password = mysql_config['password']
     
     # Формируем URL для phpMyAdmin с параметрами автологина
-    url = f"{PHPMYADMIN_URL}/?pma_username={quote(db_user)}&pma_password={quote(db_password)}&server=1&db={quote(db_name)}"
+    url = f"{phpmyadmin_url}/?pma_username={quote(db_user)}&pma_password={quote(db_password)}&server=1&db={quote(db_name)}"
     return url
 
