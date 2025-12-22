@@ -387,6 +387,7 @@ class GitRepository:
                 "is_repo": False,
                 "branch": None,
                 "commit": None,
+                "last_commit": None,
                 "remote": None,
                 "status": "not_a_repo"
             }
@@ -405,7 +406,7 @@ class GitRepository:
             )
             current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
             
-            # Получаем последний коммит
+            # Получаем последний коммит (хеш)
             commit_result = subprocess.run(
                 [self.git_cmd, "rev-parse", "--short", "HEAD"],
                 cwd=self.path,
@@ -414,7 +415,47 @@ class GitRepository:
                 text=True,
                 timeout=10
             )
-            last_commit = commit_result.stdout.strip() if commit_result.returncode == 0 else None
+            commit_hash = commit_result.stdout.strip() if commit_result.returncode == 0 else None
+            
+            # Получаем сообщение последнего коммита
+            commit_message = None
+            commit_date = None
+            if commit_hash:
+                try:
+                    # Получаем сообщение коммита
+                    message_result = subprocess.run(
+                        [self.git_cmd, "log", "-1", "--pretty=format:%s", "HEAD"],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if message_result.returncode == 0:
+                        commit_message = message_result.stdout.strip()
+                    
+                    # Получаем дату коммита
+                    date_result = subprocess.run(
+                        [self.git_cmd, "log", "-1", "--pretty=format:%ci", "HEAD"],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if date_result.returncode == 0:
+                        commit_date = date_result.stdout.strip()
+                except Exception as e:
+                    logger.warning(f"Не удалось получить детали коммита: {e}")
+            
+            # Формируем объект last_commit для фронтенда
+            last_commit = None
+            if commit_hash:
+                last_commit = {
+                    "hash": commit_hash,
+                    "message": commit_message or "Без сообщения",
+                    "date": commit_date or None
+                }
             
             # Получаем remote URL
             remote_result = subprocess.run(
@@ -442,7 +483,8 @@ class GitRepository:
                 "is_repo": True,
                 "branch": current_branch or self.branch,
                 "current_branch": current_branch or self.branch,
-                "commit": last_commit,
+                "commit": commit_hash,
+                "last_commit": last_commit,
                 "remote": remote_url,
                 "has_changes": has_changes,
                 "status": "clean" if not has_changes else "dirty"
@@ -453,6 +495,7 @@ class GitRepository:
                 "is_repo": True,
                 "branch": self.branch,
                 "commit": None,
+                "last_commit": None,
                 "remote": None,
                 "status": "error"
             }
