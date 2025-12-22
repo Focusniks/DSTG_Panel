@@ -237,6 +237,42 @@
     <script src="/static/js/theme-manager.js"></script>
     <script src="/static/js/app.js"></script>
     <script>
+        // Функция для показа/скрытия полей Git
+        function toggleGitFields(type) {
+            const checkboxId = type === 'create' ? 'create-use-git' : 'use-git';
+            const fieldsId = type === 'create' ? 'create-git-fields' : 'edit-git-fields';
+            
+            const checkbox = document.getElementById(checkboxId);
+            const fields = document.getElementById(fieldsId);
+            
+            if (!checkbox || !fields) {
+                console.error('Elements not found:', { checkboxId, fieldsId, checkbox, fields });
+                return;
+            }
+            
+            if (checkbox.checked) {
+                fields.style.display = 'block';
+            } else {
+                fields.style.display = 'none';
+                // Очищаем поля при скрытии
+                if (type === 'create') {
+                    const repoInput = document.getElementById('create-git-repo-url');
+                    const branchInput = document.getElementById('create-git-branch');
+                    if (repoInput) repoInput.value = '';
+                    if (branchInput) branchInput.value = 'main';
+                } else {
+                    const repoInput = document.getElementById('git-repo-url');
+                    const branchInput = document.getElementById('git-branch');
+                    if (repoInput) repoInput.value = '';
+                    if (branchInput) branchInput.value = 'main';
+                }
+            }
+        }
+        
+        // Делаем функцию глобальной для вызова из onchange
+        window.toggleGitFields = toggleGitFields;
+    </script>
+    <script>
         // Создание бота
         // Улучшенная функция для логирования ошибок в консоль F12
         function logErrorToConsole(errorData, context = '') {
