@@ -265,11 +265,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_message_count[user_id] = 0
     
     welcome_text = f'''
-🤖 Привет, {user.first_name}!
+Привет, {user.first_name}!
 
 Я функциональный Telegram бот-шаблон.
 
-📋 Доступные команды:
+Доступные команды:
 /start - Начать работу
 /help - Показать справку
 /info - Информация о боте
@@ -277,7 +277,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /time - Текущее время
 /echo <текст> - Повторить текст
 
-💡 Просто отправьте мне любое сообщение, и я отвечу!
+Просто отправьте мне любое сообщение, и я отвечу!
 '''
     await update.message.reply_text(welcome_text)
 
@@ -303,7 +303,7 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Информация о боте"""
     bot_info = await context.bot.get_me()
     info_text = f'''
-🤖 Информация о боте:
+Информация о боте:
 
 Имя: {bot_info.first_name}
 Username: @{bot_info.username}
@@ -316,20 +316,20 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Статистика сообщений пользователя"""
     user_id = update.effective_user.id
     count = user_message_count.get(user_id, 0)
-    await update.message.reply_text(f'📊 Вы отправили мне {count} сообщений!')
+    await update.message.reply_text(f'Вы отправили мне {count} сообщений!')
 
 
 async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Текущее время"""
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    await update.message.reply_text(f'🕐 Текущее время: {current_time}')
+    await update.message.reply_text(f'Текущее время: {current_time}')
 
 
 async def echo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /echo"""
     if context.args:
         text = ' '.join(context.args)
-        await update.message.reply_text(f'📢 Эхо: {text}')
+        await update.message.reply_text(f'Эхо: {text}')
     else:
         await update.message.reply_text('Использование: /echo <текст>')
 
@@ -484,9 +484,9 @@ message_count = {}
 @bot.event
 async def on_ready():
     """Вызывается когда бот готов к работе"""
-    logger.info(f'✅ {bot.user} подключился к Discord!')
-    logger.info(f'📊 Бот находится на {len(bot.guilds)} серверах')
-    logger.info(f'👥 Всего пользователей: {sum(guild.member_count for guild in bot.guilds)}')
+    logger.info(f'{bot.user} подключился к Discord!')
+    logger.info(f'Бот находится на {len(bot.guilds)} серверах')
+    logger.info(f'Всего пользователей: {sum(guild.member_count for guild in bot.guilds)}')
     
     # Устанавливаем статус бота
     activity = discord.Game(name="!help для справки")
@@ -530,7 +530,7 @@ async def ping(ctx):
 async def info(ctx):
     """Информация о боте"""
     embed = discord.Embed(
-        title="🤖 Информация о боте",
+        title="Информация о боте",
         color=discord.Color.blue()
     )
     embed.add_field(name="Имя", value=bot.user.name, inline=True)
@@ -548,7 +548,7 @@ async def stats(ctx):
     user_id = ctx.author.id
     count = message_count.get(user_id, 0)
     embed = discord.Embed(
-        title="📊 Ваша статистика",
+        title="Ваша статистика",
         description=f"Вы отправили {count} сообщений на этом сервере!",
         color=discord.Color.purple()
     )
@@ -560,7 +560,7 @@ async def time_command(ctx):
     """Текущее время"""
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     embed = discord.Embed(
-        title="🕐 Текущее время",
+        title="Текущее время",
         description=current_time,
         color=discord.Color.orange()
     )
@@ -665,8 +665,8 @@ if __name__ == '__main__':
 ## Важно: Intents
 
 В настройках бота на Discord Developer Portal включите:
-- ✅ MESSAGE CONTENT INTENT (для чтения содержимого сообщений)
-- ✅ SERVER MEMBERS INTENT (для работы с участниками)
+- MESSAGE CONTENT INTENT (для чтения содержимого сообщений)
+- SERVER MEMBERS INTENT (для работы с участниками)
 
 Без этих intents бот не сможет работать правильно!
 

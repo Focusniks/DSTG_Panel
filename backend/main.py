@@ -32,7 +32,6 @@ from backend.ssh_manager import (
     setup_ssh_config_for_github, test_ssh_connection, get_ssh_key_info,
     extract_host_from_url, convert_https_to_ssh
 )
-)
 
 # Настройка логирования
 import logging
@@ -1597,9 +1596,22 @@ async def startup_event():
     restore_bot_states()
     
     # Убеждаемся, что SSH ключ существует при запуске
-    if not get_ssh_key_exists():
-        generate_ssh_key()
-        setup_ssh_config_for_github()
+    try:
+        if not get_ssh_key_exists():
+            logger.info("SSH ключ не найден, пытаемся сгенерировать...")
+            success, message = generate_ssh_key()
+            if success:
+                logger.info(f"SSH ключ успешно сгенерирован: {message}")
+                try:
+                    setup_ssh_config_for_github()
+                except Exception as config_error:
+                    logger.warning(f"Не удалось настроить SSH config: {config_error}")
+            else:
+                logger.warning(f"Не удалось сгенерировать SSH ключ при запуске: {message}")
+                logger.warning("SSH ключ можно сгенерировать позже в настройках панели")
+    except Exception as ssh_error:
+        logger.error(f"Ошибка при инициализации SSH ключа: {ssh_error}", exc_info=True)
+        logger.warning("Сервер запустится без SSH ключа. Вы можете сгенерировать его позже в настройках.")
     
     # Автоматически инициализируем Git репозиторий панели, если его нет
     from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
