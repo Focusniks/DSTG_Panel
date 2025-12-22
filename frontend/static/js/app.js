@@ -59,10 +59,6 @@ function renderBotsList(bots) {
                 </div>
                 <h3 class="empty-state-title">Боты не созданы</h3>
                 <p class="empty-state-text">Создайте первого бота для Discord или Telegram, чтобы начать работу</p>
-                <button class="btn-create-bot-empty" data-bs-toggle="modal" data-bs-target="#createBotModal">
-                    <i class="fas fa-plus"></i>
-                    <span>Создать первого бота</span>
-                </button>
             </div>
         `;
         return;
@@ -88,10 +84,10 @@ function renderBotsList(bots) {
                             <span class="status-text">${getStatusText(bot.status || 'stopped')}</span>
                         </div>
                         
-                        ${bot.uptime ? `
+                        ${bot.status === 'running' && bot.started_at ? `
                             <div class="bot-card-new-info">
                                 <i class="fas fa-clock"></i>
-                                <span>Работает: ${bot.uptime}</span>
+                                <span>Работает: ${calculateUptimeClient(bot.started_at) || '-'}</span>
                             </div>
                         ` : ''}
                         
@@ -173,6 +169,13 @@ function renderBotsList(bots) {
     bots.forEach(bot => {
         if (bot.status === 'running') {
             loadBotMetrics(bot.id);
+            // Сохраняем дату запуска для расчета времени работы
+            if (bot.started_at) {
+                botStartedAtCache.set(bot.id, bot.started_at);
+            }
+        } else {
+            // Очищаем кэш, если бот не запущен
+            botStartedAtCache.delete(bot.id);
         }
         // Обновляем кэш статусов
         botStatusCache.set(bot.id, bot.status);
@@ -581,6 +584,16 @@ function startMetricsUpdate() {
                     // Сохраняем дату запуска для расчета времени работы
                     if (bot.started_at) {
                         botStartedAtCache.set(bot.id, bot.started_at);
+                    } else {
+                        // Если бот запущен, но started_at не пришел, пытаемся получить его из API
+                        fetch(`${API_BASE}/bots/${bot.id}`)
+                            .then(res => res.json())
+                            .then(botData => {
+                                if (botData.started_at) {
+                                    botStartedAtCache.set(bot.id, botData.started_at);
+                                }
+                            })
+                            .catch(() => {});
                     }
                 } else {
                     // Очищаем кэш, если бот не запущен
@@ -606,9 +619,18 @@ function startMetricsUpdate() {
     }, 5000);
 }
 
+// Интервал для обновления времени работы
+let uptimeUpdateInterval = null;
+
 // Обновление времени работы каждую секунду
 function startUptimeUpdate() {
-    setInterval(() => {
+    // Очищаем предыдущий интервал, если он существует
+    if (uptimeUpdateInterval) {
+        clearInterval(uptimeUpdateInterval);
+    }
+    
+    // Создаем новый интервал
+    uptimeUpdateInterval = setInterval(() => {
         botStartedAtCache.forEach((startedAt, botId) => {
             updateBotUptime(botId, startedAt);
         });
@@ -647,17 +669,30 @@ function updateBotUptime(botId, startedAt) {
     const botCard = document.querySelector(`.bot-card-new[data-bot-id="${botId}"]`);
     if (!botCard) return;
     
-    const uptimeElement = botCard.querySelector('.bot-card-new-info i.fa-clock');
-    if (uptimeElement && uptimeElement.parentElement) {
-        const span = uptimeElement.parentElement.querySelector('span');
-        if (span) {
-            if (startedAt) {
-                const uptime = calculateUptimeClient(startedAt);
-                if (uptime) {
-                    span.textContent = `Работает: ${uptime}`;
-                }
-            } else {
-                span.textContent = 'Не запущен';
+    // Ищем элемент с временем работы
+    const uptimeElements = botCard.querySelectorAll('.bot-card-new-info');
+    let uptimeElement = null;
+    let span = null;
+    
+    // Ищем элемент с иконкой часов
+    uptimeElements.forEach(el => {
+        const icon = el.querySelector('i.fa-clock');
+        if (icon) {
+            uptimeElement = el;
+            span = el.querySelector('span');
+        }
+    });
+    
+    if (span) {
+        if (startedAt) {
+            const uptime = calculateUptimeClient(startedAt);
+            if (uptime) {
+                span.textContent = `Работает: ${uptime}`;
+            }
+        } else {
+            // Если startedAt нет, но элемент существует, скрываем его
+            if (uptimeElement) {
+                uptimeElement.style.display = 'none';
             }
         }
     }
@@ -846,7 +881,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const bots = await loadBots();
         bots.forEach(bot => {
             botStatusCache.set(bot.id, bot.status);
+            if (bot.status === 'running' && bot.started_at) {
+                botStartedAtCache.set(bot.id, bot.started_at);
+            }
         });
         startMetricsUpdate();
+        // Запускаем обновление времени работы каждую секунду
+        startUptimeUpdate();
     }
 });
