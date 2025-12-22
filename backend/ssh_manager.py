@@ -59,6 +59,104 @@ def ensure_ssh_dir() -> Path:
     return SSH_DIR
 
 
+def find_ssh_keygen_aggressive() -> Optional[str]:
+    """
+    Агрессивный поиск ssh-keygen в системе
+    Пробует все возможные пути и методы
+    """
+    import platform
+    
+    # Метод 1: shutil.which
+    path = shutil.which("ssh-keygen")
+    if path:
+        logger.info(f"ssh-keygen найден через shutil.which: {path}")
+        return path
+    
+    # Метод 2: Прямой вызов команды (может работать даже если не в PATH)
+    try:
+        result = subprocess.run(
+            ["ssh-keygen", "-V"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            shell=(os.name == 'nt')
+        )
+        if result.returncode == 0 or "OpenSSH" in (result.stderr or result.stdout or ""):
+            logger.info("ssh-keygen найден через прямую проверку команды")
+            return "ssh-keygen"
+    except:
+        pass
+    
+    # Метод 3: Стандартные пути
+    if platform.system() == 'Windows':
+        paths = [
+            r"C:\Windows\System32\OpenSSH\ssh-keygen.exe",
+            r"C:\Program Files\Git\usr\bin\ssh-keygen.exe",
+            r"C:\Program Files (x86)\Git\usr\bin\ssh-keygen.exe",
+            r"C:\Program Files\OpenSSH\ssh-keygen.exe",
+            os.path.expanduser(r"~\AppData\Local\Programs\Git\usr\bin\ssh-keygen.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Git\mingw64\bin\ssh-keygen.exe"),
+        ]
+        # Также пробуем найти через переменные окружения
+        program_files = os.environ.get('ProgramFiles', r'C:\Program Files')
+        program_files_x86 = os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')
+        local_appdata = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+        
+        paths.extend([
+            os.path.join(program_files, 'Git', 'usr', 'bin', 'ssh-keygen.exe'),
+            os.path.join(program_files_x86, 'Git', 'usr', 'bin', 'ssh-keygen.exe'),
+            os.path.join(local_appdata, 'Programs', 'Git', 'usr', 'bin', 'ssh-keygen.exe'),
+        ])
+    else:
+        paths = [
+            "/usr/bin/ssh-keygen",
+            "/usr/local/bin/ssh-keygen",
+            "/bin/ssh-keygen",
+            "/opt/local/bin/ssh-keygen",
+        ]
+    
+    for path in paths:
+        if os.path.exists(path):
+            logger.info(f"ssh-keygen найден в стандартном пути: {path}")
+            return path
+    
+    # Метод 4: Windows - через where
+    if platform.system() == 'Windows':
+        try:
+            result = subprocess.run(
+                ["where", "ssh-keygen"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                shell=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                found_path = result.stdout.strip().split('\n')[0].strip()
+                logger.info(f"ssh-keygen найден через where: {found_path}")
+                return found_path
+        except:
+            pass
+    
+    # Метод 5: PowerShell Get-Command
+    if platform.system() == 'Windows':
+        try:
+            result = subprocess.run(
+                ["powershell", "-Command", "Get-Command ssh-keygen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                found_path = result.stdout.strip()
+                logger.info(f"ssh-keygen найден через PowerShell: {found_path}")
+                return found_path
+        except:
+            pass
+    
+    logger.warning("ssh-keygen не найден ни одним методом")
+    return None
+
+
 def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
     """
     Генерация SSH ключа для панели
@@ -86,13 +184,18 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
             except Exception as e:
                 return False, f"Не удалось удалить существующие ключи: {str(e)}"
         
-        # Проверяем наличие ssh-keygen - используем несколько методов
-        ssh_keygen_path = None
+        # Проверяем наличие ssh-keygen - используем агрессивный поиск
+        logger.info("Поиск ssh-keygen: запуск агрессивного поиска")
+        ssh_keygen_path = find_ssh_keygen_aggressive()
         search_log = []
         
-        # Метод 1: через which/where
-        logger.info("Поиск ssh-keygen: метод 1 - shutil.which")
-        ssh_keygen_path = shutil.which("ssh-keygen")
+        if not ssh_keygen_path:
+            # Если агрессивный поиск не дал результата, пробуем старые методы для логирования
+            logger.info("Агрессивный поиск не дал результата, пробуем дополнительные методы")
+            
+            # Метод 1: через which/where
+            logger.info("Поиск ssh-keygen: метод 1 - shutil.which")
+            ssh_keygen_path = shutil.which("ssh-keygen")
         if ssh_keygen_path:
             logger.info(f"Найден через shutil.which: {ssh_keygen_path}")
         else:
@@ -301,8 +404,24 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
             error_msg += f". Последняя ошибка: {last_error}"
         return False, error_msg
         
-    except FileNotFoundError:
-        return False, "ssh-keygen не найден. Установите OpenSSH."
+    except FileNotFoundError as e:
+        logger.error(f"FileNotFoundError при генерации SSH ключа: {e}")
+        error_msg = "ssh-keygen не найден. Установите OpenSSH."
+        # Пробуем еще раз найти через разные методы
+        import platform
+        if platform.system() == 'Windows':
+            # На Windows пробуем найти через разные способы
+            possible_paths = [
+                r"C:\Windows\System32\OpenSSH\ssh-keygen.exe",
+                r"C:\Program Files\Git\usr\bin\ssh-keygen.exe",
+            ]
+            for path in possible_paths:
+                if os.path.exists(path):
+                    logger.info(f"Найден ssh-keygen в {path}, но FileNotFoundError все равно произошел")
+                    error_msg += f"\n\nОбнаружен ssh-keygen в: {path}"
+                    error_msg += "\nПопробуйте добавить этот путь в переменную окружения PATH и перезапустить сервер."
+                    break
+        return False, error_msg
     except Exception as e:
         logger.error(f"Ошибка генерации SSH ключа: {e}", exc_info=True)
         return False, f"Ошибка генерации ключа: {str(e)}"
