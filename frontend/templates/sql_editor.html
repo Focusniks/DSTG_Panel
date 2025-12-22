@@ -148,6 +148,29 @@
         .form-row select {
             flex: 1;
         }
+        .column-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+        }
+        .column-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .column-item-fields {
+            display: grid;
+            grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr;
+            gap: 10px;
+            align-items: end;
+        }
+        .column-item-fields label {
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -177,7 +200,12 @@
             </div>
             
             <div class="mt-4">
-                <h6 class="text-white mb-3">Таблицы:</h6>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="text-white mb-0">Таблицы:</h6>
+                    <button class="btn btn-sm btn-success" id="create-table-btn" style="display: none;">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
                 <ul class="tables-list" id="tables-list">
                     <li class="text-muted">Выберите базу данных</li>
                 </ul>
@@ -299,6 +327,87 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                     <button type="button" class="btn btn-primary" id="save-edit-row-btn">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Table Modal -->
+    <div class="modal fade" id="create-table-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title">Создать новую таблицу</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="create-table-form">
+                        <div class="mb-3">
+                            <label for="new-table-name" class="form-label">Имя таблицы *</label>
+                            <input type="text" class="form-control" id="new-table-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0">Столбцы:</label>
+                                <button type="button" class="btn btn-sm btn-success" id="add-column-btn">
+                                    <i class="fas fa-plus"></i> Добавить столбец
+                                </button>
+                            </div>
+                            <div id="columns-list">
+                                <!-- Динамически заполняется -->
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="save-create-table-btn">Создать таблицу</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Column Modal -->
+    <div class="modal fade" id="add-column-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить столбец</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-column-form">
+                        <div class="mb-3">
+                            <label for="new-column-name" class="form-label">Имя столбца *</label>
+                            <input type="text" class="form-control" id="new-column-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new-column-type" class="form-label">Тип данных *</label>
+                            <select class="form-select" id="new-column-type" required>
+                                <option value="TEXT">TEXT</option>
+                                <option value="INTEGER">INTEGER</option>
+                                <option value="REAL">REAL</option>
+                                <option value="BLOB">BLOB</option>
+                                <option value="NUMERIC">NUMERIC</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="new-column-notnull">
+                                <label class="form-check-label" for="new-column-notnull">
+                                    NOT NULL
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new-column-default" class="form-label">Значение по умолчанию (опционально)</label>
+                            <input type="text" class="form-control" id="new-column-default" placeholder="NULL">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="save-add-column-btn">Добавить столбец</button>
                 </div>
             </div>
         </div>

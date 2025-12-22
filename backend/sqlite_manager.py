@@ -34,37 +34,55 @@ def get_sqlite_connection(bot_id: int, db_name: str = "bot.db") -> sqlite3.Conne
 def get_tables(bot_id: int, db_name: str = "bot.db") -> List[Dict[str, Any]]:
     """Получение списка таблиц в БД"""
     try:
-        conn = get_sqlite_connection(bot_id, db_name)
-        cursor = conn.cursor()
+        # Проверяем, существует ли файл базы данных
+        try:
+            db_path = get_bot_sqlite_db_path(bot_id, db_name)
+        except (ValueError, Exception) as e:
+            # Если бот не найден или другая ошибка при получении пути
+            logger.warning(f"Error getting DB path for bot {bot_id}, db {db_name}: {e}")
+            return []
         
-        cursor.execute("""
-            SELECT name, type 
-            FROM sqlite_master 
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-        """)
+        if not db_path.exists():
+            # База данных не существует - возвращаем пустой список
+            return []
         
-        tables = []
-        for row in cursor.fetchall():
-            # Получаем количество строк в таблице
-            try:
-                cursor.execute(f"SELECT COUNT(*) as count FROM {row['name']}")
-                count_row = cursor.fetchone()
-                row_count = count_row['count'] if count_row else 0
-            except:
-                row_count = 0
+        try:
+            conn = get_sqlite_connection(bot_id, db_name)
+            cursor = conn.cursor()
             
-            tables.append({
-                'name': row['name'],
-                'type': row['type'],
-                'row_count': row_count
-            })
-        
-        conn.close()
-        return tables
+            cursor.execute("""
+                SELECT name, type 
+                FROM sqlite_master 
+                WHERE type='table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+            """)
+            
+            tables = []
+            for row in cursor.fetchall():
+                # Получаем количество строк в таблице
+                try:
+                    cursor.execute(f"SELECT COUNT(*) as count FROM {row['name']}")
+                    count_row = cursor.fetchone()
+                    row_count = count_row['count'] if count_row else 0
+                except Exception:
+                    row_count = 0
+                
+                tables.append({
+                    'name': row['name'],
+                    'type': row['type'],
+                    'row_count': row_count
+                })
+            
+            conn.close()
+            return tables
+        except sqlite3.Error as e:
+            # Ошибка SQLite - возможно, база данных повреждена или недоступна
+            logger.warning(f"SQLite error getting tables for bot {bot_id}, db {db_name}: {e}")
+            return []
     except Exception as e:
-        logger.error(f"Error getting tables: {e}", exc_info=True)
-        raise
+        logger.error(f"Unexpected error getting tables for bot {bot_id}, db {db_name}: {e}", exc_info=True)
+        # В любом случае возвращаем пустой список, чтобы не ломать UI
+        return []
 
 def get_table_structure(bot_id: int, table_name: str, db_name: str = "bot.db") -> Dict[str, Any]:
     """Получение структуры таблицы"""

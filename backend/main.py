@@ -309,68 +309,68 @@ async def list_bots():
 @app.post("/api/bots")
 async def create_bot_endpoint(bot_data: BotCreate):
     try:
-        bot_id = create_bot(
-            name=bot_data.name,
-            bot_type=bot_data.bot_type,
-            start_file=bot_data.start_file,
-            cpu_limit=bot_data.cpu_limit,
-            memory_limit=bot_data.memory_limit,
-            git_repo_url=bot_data.git_repo_url,
-            git_branch=bot_data.git_branch
-        )
-        
-        # Если указан репозиторий, клонируем его (репозиторий не обязателен)
-        if bot_data.git_repo_url and bot_data.git_repo_url.strip():
+    bot_id = create_bot(
+        name=bot_data.name,
+        bot_type=bot_data.bot_type,
+        start_file=bot_data.start_file,
+        cpu_limit=bot_data.cpu_limit,
+        memory_limit=bot_data.memory_limit,
+        git_repo_url=bot_data.git_repo_url,
+        git_branch=bot_data.git_branch
+    )
+    
+    # Если указан репозиторий, клонируем его (репозиторий не обязателен)
+    if bot_data.git_repo_url and bot_data.git_repo_url.strip():
             try:
-                bot = get_bot(bot_id)
+        bot = get_bot(bot_id)
                 if not bot:
                     logger.error(f"Bot {bot_id} not found after creation")
                     return {"id": bot_id, "success": True, "warning": "Bot created but could not be found for git clone"}
                 
-                bot_dir = Path(bot['bot_dir'])
-                
-                # Временно перемещаем config.json, чтобы директория была пуста для клонирования
-                config_path = bot_dir / "config.json"
-                config_backup = None
-                if config_path.exists():
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-                        config_backup = tmp.name
-                        shutil.copy2(config_path, config_backup)
-                    config_path.unlink()
-                
-                # Удаляем шаблонные файлы, если они были созданы
-                start_file_path = bot_dir / (bot_data.start_file or 'main.py')
-                if start_file_path.exists():
-                    start_file_path.unlink()
-                requirements_path = bot_dir / "requirements.txt"
-                if requirements_path.exists():
-                    requirements_path.unlink()
-                
+        bot_dir = Path(bot['bot_dir'])
+        
+        # Временно перемещаем config.json, чтобы директория была пуста для клонирования
+        config_path = bot_dir / "config.json"
+        config_backup = None
+        if config_path.exists():
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+                config_backup = tmp.name
+                shutil.copy2(config_path, config_backup)
+            config_path.unlink()
+        
+        # Удаляем шаблонные файлы, если они были созданы
+        start_file_path = bot_dir / (bot_data.start_file or 'main.py')
+        if start_file_path.exists():
+            start_file_path.unlink()
+        requirements_path = bot_dir / "requirements.txt"
+        if requirements_path.exists():
+            requirements_path.unlink()
+        
                 # Используем новую систему GitRepository для клонирования
                 repo = GitRepository(bot_dir, bot_data.git_repo_url.strip(), bot_data.git_branch)
                 if not repo.is_git_installed():
                     return {"id": bot_id, "success": True, "warning": "Git не установлен. Репозиторий не клонирован."}
                 
                 success, message = repo.clone(bot_data.git_repo_url.strip(), bot_data.git_branch)
-                
-                # Восстанавливаем config.json
-                if config_backup:
+        
+        # Восстанавливаем config.json
+        if config_backup:
                     try:
-                        shutil.copy2(config_backup, config_path)
-                        os.unlink(config_backup)
+            shutil.copy2(config_backup, config_path)
+            os.unlink(config_backup)
                     except Exception as restore_error:
                         logger.error(f"Failed to restore config.json: {restore_error}")
-                
-                if not success:
-                    # Не удаляем бота, но возвращаем предупреждение
+        
+        if not success:
+            # Не удаляем бота, но возвращаем предупреждение
                     return {"id": bot_id, "success": True, "warning": f"Бот создан, но клонирование репозитория не удалось: {message}"}
             except Exception as git_error:
                 logger.error(f"Error during git clone for bot {bot_id}: {git_error}", exc_info=True)
                 # Бот создан, но клонирование не удалось - не критично
                 return {"id": bot_id, "success": True, "warning": f"Бот создан, но произошла ошибка при клонировании репозитория: {str(git_error)}"}
-        
-        return {"id": bot_id, "success": True}
+    
+    return {"id": bot_id, "success": True}
     except Exception as e:
         logger.error(f"Error creating bot: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка создания бота: {str(e)}")
@@ -1161,7 +1161,7 @@ async def create_sqlite_database_endpoint(bot_id: int, request: Request):
         result = create_sqlite_database(bot_id, db_name)
         if result['success']:
             return result
-        else:
+    else:
             raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
     except Exception as e:
         logger.error(f"Error creating SQLite database: {e}", exc_info=True)
@@ -1193,10 +1193,14 @@ async def get_sqlite_tables_endpoint(bot_id: int, db_name: Optional[str] = Query
     
     try:
         tables = get_tables(bot_id, db_name)
-        return {"success": True, "tables": tables}
+        # Преобразуем список словарей в список имен таблиц
+        table_names = [table['name'] if isinstance(table, dict) else table for table in tables]
+        return {"success": True, "tables": table_names}
     except Exception as e:
         logger.error(f"Error getting tables: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # В случае ошибки возвращаем пустой список вместо выброса исключения
+        # чтобы не ломать UI, если база данных не существует или есть другая проблема
+        return {"success": True, "tables": []}
 
 @app.get("/api/bots/{bot_id}/sqlite/tables/{table_name}/structure")
 async def get_sqlite_table_structure_endpoint(bot_id: int, table_name: str, db_name: Optional[str] = Query("bot.db")):
@@ -1269,8 +1273,8 @@ async def create_sqlite_table_endpoint(bot_id: int, request: Request):
     try:
         result = create_table(bot_id, table_name, columns, db_name)
         if result['success']:
-            return result
-        else:
+        return result
+    else:
             raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
     except Exception as e:
         logger.error(f"Error creating table: {e}", exc_info=True)
@@ -1518,12 +1522,12 @@ async def clone_bot_repository(bot_id: int):
         
         # Если репозиторий существует, удаляем .git для чистого клонирования
         if repo.is_repo():
-            git_dir = bot_dir / ".git"
-            if git_dir.exists():
+                git_dir = bot_dir / ".git"
+                if git_dir.exists():
                 logger.info("Удаление существующего Git репозитория...")
-                shutil.rmtree(git_dir)
-        
-        # Удаляем все файлы кроме config.json
+                    shutil.rmtree(git_dir)
+            
+            # Удаляем все файлы кроме config.json
         if bot_dir.exists():
             for item in bot_dir.iterdir():
                 if item.name not in ['config.json', '.gitkeep']:
@@ -1556,8 +1560,8 @@ async def clone_bot_repository(bot_id: int):
                 if config_path.exists():
                     # Читаем существующий конфиг из клонированного репозитория
                     try:
-                        with open(config_path, 'r', encoding='utf-8') as f:
-                            new_config = json.load(f)
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        new_config = json.load(f)
                     except (json.JSONDecodeError, FileNotFoundError):
                         new_config = {}
                     
@@ -1585,7 +1589,7 @@ async def clone_bot_repository(bot_id: int):
                 # В крайнем случае просто восстанавливаем из бэкапа
                 try:
                     if not config_path.exists():
-                        shutil.copy2(config_backup, config_path)
+                    shutil.copy2(config_backup, config_path)
                     os.unlink(config_backup)
                 except:
                     pass
@@ -1734,21 +1738,21 @@ async def get_panel_ssh_key():
         key_info = get_ssh_key_info()
         
         if not key_info["exists"]:
-            # Попытка сгенерировать ключ, если его нет
+        # Попытка сгенерировать ключ, если его нет
             logger.info("SSH key not found, attempting to generate...")
             try:
-                success, msg = generate_ssh_key()
-                if success:
+        success, msg = generate_ssh_key()
+        if success:
                     try:
                         setup_ssh_config_for_github()
                     except Exception as config_error:
                         logger.warning(f"Failed to setup SSH config: {config_error}")
                     key_info = get_ssh_key_info()
-                else:
-                    return {
-                        "success": False,
-                        "key_exists": False,
-                        "error": msg,
+        else:
+            return {
+                "success": False,
+                "key_exists": False,
+                "error": msg,
                         "public_key": None,
                         **key_info
                     }
@@ -1760,11 +1764,11 @@ async def get_panel_ssh_key():
                     "error": f"Ошибка генерации ключа: {str(gen_error)}",
                     "public_key": None,
                     **key_info
-                }
-        
-        return {
-            "success": True,
-            "key_exists": True,
+            }
+    
+    return {
+        "success": True,
+        "key_exists": True,
             "public_key": key_info["public_key"],
             "key_type": key_info["key_type"],
             "key_size": key_info["key_size"],
@@ -1792,7 +1796,7 @@ async def generate_panel_ssh_key():
         # Генерируем ключ
         try:
             logger.info("Calling generate_ssh_key(force=True)...")
-            success, message = generate_ssh_key(force=True)
+    success, message = generate_ssh_key(force=True)
             logger.info(f"generate_ssh_key returned: success={success}, message={message[:100] if message else 'None'}")
         except Exception as gen_error:
             error_trace = traceback.format_exc()
@@ -1845,7 +1849,7 @@ async def generate_panel_ssh_key():
         
         # Настраиваем SSH config
         try:
-            setup_ssh_config_for_github()
+        setup_ssh_config_for_github()
         except Exception as config_error:
             logger.warning(f"Failed to setup SSH config: {config_error}")
         
@@ -1868,13 +1872,13 @@ async def generate_panel_ssh_key():
                 if public_key:
                     break
                     
-                time.sleep(0.1)
+        time.sleep(0.1)
             except Exception as info_error:
                 logger.warning(f"Attempt {attempt + 1} to get key info failed: {info_error}")
                 if attempt == 2:
                     # Последняя попытка - пробуем напрямую
                     try:
-                        public_key = get_public_key()
+        public_key = get_public_key()
                     except:
                         pass
         
@@ -1951,8 +1955,8 @@ async def test_panel_ssh_connection(
                 "success": True,
                 "message": message,
                 "host": test_host
-            }
-        else:
+        }
+    else:
             # Возвращаем ошибку, но не как HTTPException, а как JSON с success=False
             logger.warning(f"SSH connection test to {test_host} failed: {message}")
             return JSONResponse(
@@ -2051,13 +2055,13 @@ async def startup_event():
     
     # Убеждаемся, что SSH ключ существует при запуске
     try:
-        if not get_ssh_key_exists():
+    if not get_ssh_key_exists():
             logger.info("SSH ключ не найден, пытаемся сгенерировать...")
             success, message = generate_ssh_key()
             if success:
                 logger.info(f"SSH ключ успешно сгенерирован: {message}")
                 try:
-                    setup_ssh_config_for_github()
+        setup_ssh_config_for_github()
                 except Exception as config_error:
                     logger.warning(f"Не удалось настроить SSH config: {config_error}")
             else:
@@ -2069,20 +2073,20 @@ async def startup_event():
     
     # Автоматически инициализируем Git репозиторий панели, если его нет
     try:
-        from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
+    from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
         from backend.git_manager import is_git_repo, init_git_repo, set_git_remote, get_git_remote, GitRepository
-        
+    
         # Проверяем, установлен ли Git
         test_repo = GitRepository(BASE_DIR)
         if test_repo.is_git_installed():
-            if not is_git_repo(BASE_DIR):
-                # Пытаемся инициализировать репозиторий
-                success, message = init_git_repo(BASE_DIR, PANEL_REPO_URL)
-                if success:
-                    # Проверяем, что remote установлен правильно
-                    remote = get_git_remote(BASE_DIR)
-                    if remote != PANEL_REPO_URL:
-                        set_git_remote(BASE_DIR, PANEL_REPO_URL)
+    if not is_git_repo(BASE_DIR):
+        # Пытаемся инициализировать репозиторий
+        success, message = init_git_repo(BASE_DIR, PANEL_REPO_URL)
+        if success:
+            # Проверяем, что remote установлен правильно
+            remote = get_git_remote(BASE_DIR)
+            if remote != PANEL_REPO_URL:
+                set_git_remote(BASE_DIR, PANEL_REPO_URL)
                     logger.info("Git репозиторий панели инициализирован")
                 else:
                     logger.warning(f"Не удалось инициализировать Git репозиторий панели: {message}")
