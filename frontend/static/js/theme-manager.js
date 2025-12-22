@@ -8,16 +8,34 @@ class ThemeManager {
     }
 
     init() {
+        // Загружаем пользовательские темы
+        this.loadCustomThemes();
+        
         // Загружаем сохраненную тему
         const savedTheme = localStorage.getItem('panel-theme');
-        if (savedTheme) {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        
+        // Если тема уже установлена (inline скриптом), применяем её полностью
+        if (currentTheme && currentTheme === savedTheme) {
+            this.currentTheme = currentTheme;
+            // Если это пользовательская тема, применяем CSS переменные
+            if (currentTheme === 'custom') {
+                const customTheme = this.customThemes[localStorage.getItem('panel-custom-theme-name') || 'custom'];
+                if (customTheme) {
+                    this.applyCustomTheme(customTheme);
+                }
+            }
+            // Создаем/удаляем эффекты для новогодней темы
+            if (currentTheme === 'christmas') {
+                this.createChristmasEffects();
+            } else {
+                this.removeChristmasEffects();
+            }
+        } else if (savedTheme) {
             this.setTheme(savedTheme);
         } else {
             this.setTheme('dark');
         }
-
-        // Загружаем пользовательские темы
-        this.loadCustomThemes();
     }
 
     setTheme(themeName) {
@@ -62,32 +80,32 @@ class ThemeManager {
         snowContainer.className = 'snow-container';
         snowContainer.id = 'snow-container';
         
-        // Создаем снежинки
+        // Создаем снежинки (меньше и более тонкие)
         const snowflakes = ['❄', '❅', '❆'];
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 25; i++) {
             const snowflake = document.createElement('div');
             snowflake.className = 'snowflake';
             snowflake.textContent = snowflakes[Math.floor(Math.random() * snowflakes.length)];
             snowflake.style.left = Math.random() * 100 + '%';
-            snowflake.style.animationDuration = (Math.random() * 3 + 2) + 's';
-            snowflake.style.animationDelay = Math.random() * 2 + 's';
-            snowflake.style.fontSize = (Math.random() * 10 + 10) + 'px';
+            snowflake.style.animationDuration = (Math.random() * 4 + 3) + 's';
+            snowflake.style.animationDelay = Math.random() * 3 + 's';
+            snowflake.style.fontSize = (Math.random() * 8 + 8) + 'px';
             snowContainer.appendChild(snowflake);
         }
         document.body.appendChild(snowContainer);
 
-        // Создаем гирлянду
+        // Создаем гирлянду (более редкая и тонкая)
         const garland = document.createElement('div');
         garland.className = 'garland';
         garland.id = 'garland';
         
-        const lightCount = Math.floor(window.innerWidth / 20);
+        const lightCount = Math.floor(window.innerWidth / 40);
         for (let i = 0; i < lightCount; i++) {
             const light = document.createElement('div');
             light.className = 'garland-light';
             light.style.left = (i * (100 / lightCount)) + '%';
-            light.style.top = Math.random() * 30 + 'px';
-            light.style.animationDelay = (Math.random() * 1.5) + 's';
+            light.style.top = Math.random() * 20 + 5 + 'px';
+            light.style.animationDelay = (Math.random() * 2) + 's';
             garland.appendChild(light);
         }
         document.body.appendChild(garland);

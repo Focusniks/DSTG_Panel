@@ -160,6 +160,8 @@ function renderBotsList(bots) {
         if (bot.status === 'running') {
             loadBotMetrics(bot.id);
         }
+        // Обновляем кэш статусов
+        botStatusCache.set(bot.id, bot.status);
     });
     
     // Обновляем статусы ботов периодически (особенно для installing)
@@ -320,6 +322,7 @@ async function restartBot(botId) {
             showAlert('Бот успешно перезагружается', 'success');
             // Обновляем статус сразу, затем обновим список ботов
             updateBotStatusOnly(botId, 'restarting');
+            botStatusCache.set(botId, 'restarting');
             // Обновляем список ботов через небольшую задержку, чтобы сервер успел обновить статус
             setTimeout(() => {
                 loadBots();
@@ -329,11 +332,13 @@ async function restartBot(botId) {
         } else {
             const errorMsg = result.error || result.message || 'Неизвестная ошибка';
             updateBotStatusOnly(botId, 'error');
+            botStatusCache.set(botId, 'error');
             showAlert('Ошибка перезапуска: ' + errorMsg, 'danger');
         }
     } catch (error) {
         console.error('Restart bot error:', error);
         updateBotStatusOnly(botId, 'error');
+        botStatusCache.set(botId, 'error');
         const errorMessage = error.message || 'Ошибка соединения с сервером';
         showAlert('Ошибка перезапуска бота: ' + errorMessage, 'danger');
     }
@@ -375,6 +380,7 @@ async function startBot(botId) {
         const result = await response.json();
         if (result.success) {
             showAlert('Бот успешно запущен', 'success');
+            botStatusCache.set(botId, 'starting');
             setTimeout(() => loadBots(), 1000);
         } else {
             showAlert('Ошибка запуска бота: ' + (result.error || 'Неизвестная ошибка'), 'danger');
@@ -416,6 +422,7 @@ async function stopBot(botId) {
         const result = await response.json();
         if (result.success) {
             showAlert('Бот успешно остановлен', 'success');
+            botStatusCache.set(botId, 'stopped');
             setTimeout(() => loadBots(), 1000);
         } else {
             showAlert('Ошибка остановки бота: ' + (result.error || 'Неизвестная ошибка'), 'danger');
@@ -512,6 +519,9 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Хранилище предыдущих статусов ботов
+const botStatusCache = new Map();
+
 // Обновление только метрик без перерисовки карточек
 function startMetricsUpdate() {
     setInterval(async () => {
@@ -530,7 +540,15 @@ function startMetricsUpdate() {
             
             // Обновляем только статусы ботов без перерисовки карточек
             bots.forEach(bot => {
-                updateBotStatusOnly(bot.id, bot.status);
+                const previousStatus = botStatusCache.get(bot.id);
+                // Обновляем только если статус изменился
+                if (previousStatus !== bot.status) {
+                    updateBotStatusOnly(bot.id, bot.status);
+                    botStatusCache.set(bot.id, bot.status);
+                } else {
+                    // Обновляем только визуальные индикаторы, но не кнопки
+                    updateBotStatusIndicatorsOnly(bot.id, bot.status);
+                }
             });
         } catch (error) {
             console.error('Error updating metrics:', error);
@@ -538,7 +556,25 @@ function startMetricsUpdate() {
     }, 5000);
 }
 
-// Обновление только статуса бота без перерисовки карточки
+// Обновление только визуальных индикаторов статуса (без кнопок)
+function updateBotStatusIndicatorsOnly(botId, status) {
+    const botCard = document.querySelector(`.bot-card-new[data-bot-id="${botId}"]`);
+    if (!botCard) return;
+    
+    // Обновляем индикатор статуса
+    const statusIndicator = botCard.querySelector('.bot-card-new-status-indicator');
+    if (statusIndicator) {
+        statusIndicator.className = `bot-card-new-status-indicator ${status}`;
+    }
+    
+    // Обновляем точку статуса
+    const statusDot = botCard.querySelector('.status-indicator-dot');
+    if (statusDot) {
+        statusDot.className = `status-indicator-dot ${status}`;
+    }
+}
+
+// Обновление статуса бота с перерисовкой кнопок (только при изменении статуса)
 function updateBotStatusOnly(botId, status) {
     const botCard = document.querySelector(`.bot-card-new[data-bot-id="${botId}"]`);
     if (!botCard) return;
@@ -571,14 +607,49 @@ function updateBotStatusOnly(botId, status) {
     
     // Обновляем кнопки в зависимости от статуса
     const footer = botCard.querySelector('.bot-card-new-footer');
-    if (footer) {
+    if (!footer) return;
+    
+    // Проверяем, какие кнопки уже есть
+    const existingButtons = footer.querySelectorAll('.bot-card-new-btn:not(.btn-manage):not(.btn-delete)');
+    const hasStartBtn = Array.from(existingButtons).some(btn => btn.classList.contains('btn-start'));
+    const hasRestartBtn = Array.from(existingButtons).some(btn => btn.classList.contains('btn-restart'));
+    const hasStopBtn = Array.from(existingButtons).some(btn => btn.classList.contains('btn-stop'));
+    const hasInstallingBtn = Array.from(existingButtons).some(btn => btn.classList.contains('btn-installing'));
+    
+    // Определяем, какие кнопки должны быть
+    let shouldHaveStart = false;
+    let shouldHaveRestart = false;
+    let shouldHaveStop = false;
+    let shouldHaveInstalling = false;
+    
+    if (status === 'running') {
+        shouldHaveRestart = true;
+        shouldHaveStop = true;
+    } else if (['starting', 'restarting', 'installing'].includes(status)) {
+        shouldHaveInstalling = true;
+    } else {
+        shouldHaveStart = true;
+    }
+    
+    // Проверяем, нужно ли обновлять кнопки
+    const needsUpdate = 
+        (shouldHaveStart && !hasStartBtn) ||
+        (shouldHaveRestart && !hasRestartBtn) ||
+        (shouldHaveStop && !hasStopBtn) ||
+        (shouldHaveInstalling && !hasInstallingBtn) ||
+        (!shouldHaveStart && hasStartBtn) ||
+        (!shouldHaveRestart && hasRestartBtn) ||
+        (!shouldHaveStop && hasStopBtn) ||
+        (!shouldHaveInstalling && hasInstallingBtn);
+    
+    // Обновляем кнопки только если нужно
+    if (needsUpdate) {
         // Сохраняем текущие обработчики событий
         const manageBtn = footer.querySelector('.btn-manage');
         const deleteBtn = footer.querySelector('.btn-delete');
         
         // Удаляем все кнопки кроме manage и delete с плавным исчезновением
-        const actionButtons = footer.querySelectorAll('.bot-card-new-btn:not(.btn-manage):not(.btn-delete)');
-        actionButtons.forEach(btn => {
+        existingButtons.forEach(btn => {
             btn.style.transition = 'opacity 0.2s ease';
             btn.style.opacity = '0';
             setTimeout(() => btn.remove(), 200);
@@ -664,7 +735,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     if (document.getElementById('bots-list')) {
-        await loadBots();
+        // Загружаем ботов и инициализируем кэш статусов
+        const bots = await loadBots();
+        bots.forEach(bot => {
+            botStatusCache.set(bot.id, bot.status);
+        });
         startMetricsUpdate();
     }
 });

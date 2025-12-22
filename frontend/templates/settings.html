@@ -10,6 +10,39 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/themes.css">
+    <script>
+        // Применяем тему сразу, чтобы избежать мерцания
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('panel-theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                
+                // Если это пользовательская тема, применяем CSS переменные
+                if (savedTheme === 'custom') {
+                    const customThemesStr = localStorage.getItem('panel-custom-themes');
+                    if (customThemesStr) {
+                        try {
+                            const customThemes = JSON.parse(customThemesStr);
+                            const customThemeName = localStorage.getItem('panel-custom-theme-name') || 'custom';
+                            const customTheme = customThemes[customThemeName];
+                            if (customTheme) {
+                                const root = document.documentElement;
+                                Object.keys(customTheme).forEach(key => {
+                                    if (key.startsWith('--')) {
+                                        root.style.setProperty(key, customTheme[key]);
+                                    }
+                                });
+                            }
+                        } catch(e) {
+                            console.warn('Ошибка загрузки пользовательской темы:', e);
+                        }
+                    }
+                }
+            } catch(e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 <body>
     <nav class="navbar navbar-dark bg-dark">

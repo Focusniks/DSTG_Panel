@@ -83,36 +83,36 @@
 
 /* НОВОГОДНЯЯ ТЕМА */
 [data-theme="christmas"] {
-    --neon-cyan: #ff0000;
-    --neon-purple: #00ff00;
-    --neon-pink: #ffd700;
-    --neon-green: #00ff00;
-    --neon-blue: #ff0000;
-    --neon-orange: #ff6b35;
-    --neon-yellow: #ffd700;
+    --neon-cyan: #c41e3a;
+    --neon-purple: #2d5016;
+    --neon-pink: #d4af37;
+    --neon-green: #2d5016;
+    --neon-blue: #c41e3a;
+    --neon-orange: #d4af37;
+    --neon-yellow: #d4af37;
     
-    --bg-primary: #0d1b0f;
-    --bg-secondary: #1a2e1d;
-    --bg-tertiary: #1f3a23;
-    --bg-card: #2a4a2f;
-    --bg-hover: #355a3a;
-    --bg-overlay: rgba(13, 27, 15, 0.95);
+    --bg-primary: #0f1419;
+    --bg-secondary: #1a1f26;
+    --bg-tertiary: #1f252d;
+    --bg-card: #252b35;
+    --bg-hover: #2d3440;
+    --bg-overlay: rgba(15, 20, 25, 0.95);
     
     --text-primary: #ffffff;
-    --text-secondary: #c4e6c8;
-    --text-muted: #8fb894;
+    --text-secondary: #d4d9e0;
+    --text-muted: #8b95a3;
     
-    --border-color: #3d5a42;
-    --border-neon: rgba(255, 0, 0, 0.5);
+    --border-color: #2d3440;
+    --border-neon: rgba(196, 30, 58, 0.3);
 }
 
 [data-theme="christmas"] body {
     background: var(--bg-primary);
     background-image: 
-        radial-gradient(at 0% 0%, rgba(255, 0, 0, 0.15) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(0, 255, 0, 0.15) 0px, transparent 50%),
-        radial-gradient(at 50% 100%, rgba(255, 215, 0, 0.1) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(255, 0, 0, 0.1) 0px, transparent 50%);
+        radial-gradient(at 0% 0%, rgba(196, 30, 58, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(45, 80, 22, 0.08) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(212, 175, 55, 0.06) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(196, 30, 58, 0.06) 0px, transparent 50%);
 }
 
 /* Анимация снега для новогодней темы */
@@ -129,12 +129,12 @@
 
 [data-theme="christmas"] .snowflake {
     position: absolute;
-    color: #ffffff;
-    font-size: 1em;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8em;
     font-family: Arial;
-    text-shadow: 0 0 5px rgba(255, 255, 255, 0.8);
+    text-shadow: 0 0 3px rgba(255, 255, 255, 0.3);
     animation: snowfall linear infinite;
-    opacity: 0.8;
+    opacity: 0.4;
 }
 
 @keyframes snowfall {
@@ -143,10 +143,10 @@
         opacity: 0;
     }
     10% {
-        opacity: 0.8;
+        opacity: 0.4;
     }
     90% {
-        opacity: 0.8;
+        opacity: 0.4;
     }
     100% {
         transform: translateY(100vh) rotate(360deg);
@@ -160,7 +160,7 @@
     top: 0;
     left: 0;
     width: 100%;
-    height: 60px;
+    height: 40px;
     pointer-events: none;
     z-index: 2;
     overflow: hidden;
@@ -168,30 +168,35 @@
 
 [data-theme="christmas"] .garland-light {
     position: absolute;
-    width: 12px;
-    height: 12px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    animation: garland-blink 1.5s ease-in-out infinite;
+    animation: garland-blink 2s ease-in-out infinite;
 }
 
-[data-theme="christmas"] .garland-light:nth-child(odd) {
-    background: #ff0000;
-    box-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000;
+[data-theme="christmas"] .garland-light:nth-child(3n+1) {
+    background: #c41e3a;
+    box-shadow: 0 0 6px rgba(196, 30, 58, 0.6), 0 0 12px rgba(196, 30, 58, 0.3);
 }
 
-[data-theme="christmas"] .garland-light:nth-child(even) {
-    background: #00ff00;
-    box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+[data-theme="christmas"] .garland-light:nth-child(3n+2) {
+    background: #2d5016;
+    box-shadow: 0 0 6px rgba(45, 80, 22, 0.6), 0 0 12px rgba(45, 80, 22, 0.3);
+}
+
+[data-theme="christmas"] .garland-light:nth-child(3n+3) {
+    background: #d4af37;
+    box-shadow: 0 0 6px rgba(212, 175, 55, 0.6), 0 0 12px rgba(212, 175, 55, 0.3);
 }
 
 @keyframes garland-blink {
     0%, 100% {
-        opacity: 1;
+        opacity: 0.6;
         transform: scale(1);
     }
     50% {
-        opacity: 0.3;
-        transform: scale(0.8);
+        opacity: 0.2;
+        transform: scale(0.9);
     }
 }
 

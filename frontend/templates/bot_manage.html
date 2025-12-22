@@ -10,8 +10,42 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/themes.css">
+    <script>
+        // Применяем тему сразу, чтобы избежать мерцания
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('panel-theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                
+                // Если это пользовательская тема, применяем CSS переменные
+                if (savedTheme === 'custom') {
+                    const customThemesStr = localStorage.getItem('panel-custom-themes');
+                    if (customThemesStr) {
+                        try {
+                            const customThemes = JSON.parse(customThemesStr);
+                            const customThemeName = localStorage.getItem('panel-custom-theme-name') || 'custom';
+                            const customTheme = customThemes[customThemeName];
+                            if (customTheme) {
+                                const root = document.documentElement;
+                                Object.keys(customTheme).forEach(key => {
+                                    if (key.startsWith('--')) {
+                                        root.style.setProperty(key, customTheme[key]);
+                                    }
+                                });
+                            }
+                        } catch(e) {
+                            console.warn('Ошибка загрузки пользовательской темы:', e);
+                        }
+                    }
+                }
+            } catch(e) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
 </head>
 <body>
     <!-- Sidebar -->
@@ -82,14 +116,14 @@
                             <span id="bot-status-text">Остановлен</span>
                         </div>
                         <div>
-                            <button class="btn btn-success btn-sm" id="start-bot-btn">
-                                <i class="fas fa-play"></i> Запустить
+                            <button class="btn btn-success btn-sm bot-action-btn" id="start-bot-btn" title="Запустить">
+                                <i class="fas fa-play"></i>
                             </button>
-                            <button class="btn btn-info btn-sm" id="restart-bot-btn" style="display: none;">
-                                <i class="fas fa-redo"></i> Перезагрузить
+                            <button class="btn btn-info btn-sm bot-action-btn" id="restart-bot-btn" style="display: none;" title="Перезагрузить">
+                                <i class="fas fa-redo"></i>
                             </button>
-                            <button class="btn btn-warning btn-sm" id="stop-bot-btn" style="display: none;">
-                                <i class="fas fa-stop"></i> Остановить
+                            <button class="btn btn-warning btn-sm bot-action-btn" id="stop-bot-btn" style="display: none;" title="Остановить">
+                                <i class="fas fa-stop"></i>
                             </button>
                         </div>
                     </div>
@@ -153,6 +187,19 @@
                     <div class="col-md-6">
                         <p><strong>Лимит CPU:</strong> <span id="cpu-limit-info"></span>%</p>
                         <p><strong>Лимит памяти:</strong> <span id="memory-limit-info"></span> MB</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- README секция -->
+            <div class="dashboard-section mt-4" id="readme-section" style="display: none;">
+                <h5 class="mb-3">
+                    <i class="fas fa-book"></i> Описание бота
+                </h5>
+                <div id="readme-content" class="readme-content">
+                    <div class="text-center p-4 text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                        <p>Загрузка README...</p>
                     </div>
                 </div>
             </div>

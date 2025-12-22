@@ -271,6 +271,68 @@
         
         const memoryLimitInfo = document.getElementById('memory-limit-info');
         if (memoryLimitInfo) memoryLimitInfo.textContent = bot.memory_limit || 512;
+        
+        // Загружаем README если есть
+        loadReadme();
+    }
+    
+    // Загрузка и отображение README.md
+    async function loadReadme() {
+        if (!botId) return;
+        
+        const readmeSection = document.getElementById('readme-section');
+        const readmeContent = document.getElementById('readme-content');
+        
+        if (!readmeSection || !readmeContent) return;
+        
+        try {
+            // Показываем индикатор загрузки
+            readmeContent.innerHTML = '<div class="text-center p-4 text-muted"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><p>Загрузка README...</p></div>';
+            readmeSection.style.display = 'block';
+            
+            const response = await fetch(`/api/bots/${botId}/file?path=README.md`);
+            
+            if (!response.ok) {
+                if (response.status === 404) {
+                    // README не найден, скрываем секцию
+                    readmeSection.style.display = 'none';
+                    return;
+                }
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            const readmeText = result.content || '';
+            
+            if (!readmeText.trim()) {
+                readmeSection.style.display = 'none';
+                return;
+            }
+            
+            // Проверяем наличие marked.js
+            if (typeof marked === 'undefined') {
+                // Если marked.js не загружен, показываем как plain text
+                readmeContent.innerHTML = '<pre class="readme-text">' + escapeHtml(readmeText) + '</pre>';
+            } else {
+                // Рендерим Markdown
+                marked.setOptions({
+                    breaks: true,
+                    gfm: true,
+                    headerIds: false,
+                    mangle: false
+                });
+                const html = marked.parse(readmeText);
+                readmeContent.innerHTML = html;
+            }
+            
+            // Показываем секцию
+            readmeSection.style.display = 'block';
+            
+        } catch (error) {
+            console.error('Ошибка загрузки README:', error);
+            // Скрываем секцию при ошибке
+            readmeSection.style.display = 'none';
+        }
     }
     
     // Переключение секций
@@ -604,7 +666,7 @@
         const btn = document.getElementById('restart-bot-btn');
         if (btn) {
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Перезагрузка...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         }
         
         // Обновляем статус сразу для визуальной обратной связи
@@ -667,7 +729,7 @@
         } finally {
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-redo"></i> Перезагрузить';
+                btn.innerHTML = '<i class="fas fa-redo"></i>';
             }
         }
     }

@@ -1152,6 +1152,169 @@ body::before {
     display: none;
 }
 
+/* Компактные кнопки действий в панели управления ботом */
+.bot-action-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    margin-left: 0.5rem;
+    flex: 0 0 auto;
+}
+
+.bot-action-btn i {
+    font-size: 1rem;
+    margin: 0;
+}
+
+.bot-action-btn:first-child {
+    margin-left: 0;
+}
+
+/* Стили для README контента */
+.readme-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.readme-content h1,
+.readme-content h2,
+.readme-content h3,
+.readme-content h4,
+.readme-content h5,
+.readme-content h6 {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.readme-content h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.readme-content h2 {
+    font-size: 1.5rem;
+}
+
+.readme-content h3 {
+    font-size: 1.25rem;
+}
+
+.readme-content p {
+    margin-bottom: 1rem;
+}
+
+.readme-content ul,
+.readme-content ol {
+    margin-bottom: 1rem;
+    padding-left: 2rem;
+}
+
+.readme-content li {
+    margin-bottom: 0.5rem;
+}
+
+.readme-content code {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.2rem 0.4rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    color: var(--neon-cyan);
+}
+
+.readme-content pre {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+}
+
+.readme-content pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--text-primary);
+}
+
+.readme-content blockquote {
+    border-left: 4px solid var(--neon-cyan);
+    padding-left: 1rem;
+    margin-left: 0;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.readme-content a {
+    color: var(--neon-cyan);
+    text-decoration: none;
+    transition: color var(--anim-fast) ease;
+}
+
+.readme-content a:hover {
+    color: var(--neon-blue);
+    text-decoration: underline;
+}
+
+.readme-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 1rem 0;
+}
+
+.readme-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+}
+
+.readme-content table th,
+.readme-content table td {
+    border: 1px solid var(--border-color);
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.readme-content table th {
+    background: var(--bg-secondary);
+    font-weight: 600;
+}
+
+.readme-content table tr:nth-child(even) {
+    background: var(--bg-secondary);
+}
+
+.readme-content hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 2rem 0;
+}
+
+.readme-text {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
 /* Responsive для новых карточек */
 @media (max-width: 1400px) {
     .bots-grid-new {
