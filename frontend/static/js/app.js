@@ -314,28 +314,51 @@ async function restartBot(botId) {
     const confirmed = await showConfirm('Перезапуск бота', 'Вы уверены, что хотите перезагрузить этого бота?', null, 'btn-info');
     if (!confirmed) return;
     
+    // Сразу обновляем статус на "перезагрузка" для визуальной обратной связи
+    updateBotStatusOnly(botId, 'restarting');
+    showAlert('Перезагрузка бота...', 'info');
+    
     try {
         const response = await fetch(`${API_BASE}/bots/${botId}/restart`, {
             method: 'POST'
         });
         
+        let result;
+        try {
+            result = await response.json();
+        } catch (e) {
+            console.error('Error parsing restart response:', e);
+            result = {};
+        }
+        
         if (!response.ok) {
-            let errorMsg = 'Неизвестная ошибка';
-            try {
-                const errorData = await response.json();
-                errorMsg = errorData.detail || errorData.error || errorMsg;
-            } catch (e) {
-                errorMsg = 'Ошибка соединения с сервером';
-            }
+            const errorMsg = result.detail || result.error || `Ошибка ${response.status}: ${response.statusText}`;
+            console.error('Restart bot error:', errorMsg);
+            updateBotStatusOnly(botId, 'error');
             showAlert('Ошибка перезапуска бота: ' + errorMsg, 'danger');
             return;
         }
         
-        showAlert('Бот перезагружается...', 'info');
-        setTimeout(() => loadBots(), 2000);
+        if (result.success) {
+            showAlert('Бот успешно перезагружается', 'success');
+            // Обновляем статус сразу, затем обновим список ботов
+            updateBotStatusOnly(botId, 'restarting');
+            // Обновляем список ботов через небольшую задержку, чтобы сервер успел обновить статус
+            setTimeout(() => {
+                loadBots();
+                // Повторно обновляем через еще немного времени для финального статуса
+                setTimeout(() => loadBots(), 3000);
+            }, 1000);
+        } else {
+            const errorMsg = result.error || result.message || 'Неизвестная ошибка';
+            updateBotStatusOnly(botId, 'error');
+            showAlert('Ошибка перезапуска: ' + errorMsg, 'danger');
+        }
     } catch (error) {
         console.error('Restart bot error:', error);
-        showAlert('Ошибка перезапуска бота', 'danger');
+        updateBotStatusOnly(botId, 'error');
+        const errorMessage = error.message || 'Ошибка соединения с сервером';
+        showAlert('Ошибка перезапуска бота: ' + errorMessage, 'danger');
     }
 }
 

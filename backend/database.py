@@ -367,7 +367,7 @@ if __name__ == '__main__':
         if not readme_file.exists():
             readme_content = '''# Telegram Bot Template
 
-Это шаблон Telegram бота, созданный через DSTG Panel.
+Это простой шаблон Telegram бота, созданный через DSTG Panel.
 
 ## Настройка
 
@@ -377,12 +377,9 @@ if __name__ == '__main__':
 
 ## Функционал
 
-- `/start` - Начать работу с ботом
-- `/help` - Справка по командам
-- `/info` - Информация о боте
-- `/stats` - Статистика сообщений
-- `/time` - Текущее время
-- `/echo <текст>` - Повторить текст
+- `/start` - Приветствие от бота
+
+Это минимальный шаблон бота. Вы можете добавить свои команды и функционал, редактируя файл `main.py`.
 
 ## Запуск
 
@@ -396,6 +393,20 @@ python main.py
 ## Зависимости
 
 Все зависимости указаны в `requirements.txt` и устанавливаются автоматически при первом запуске.
+
+## Разработка
+
+Добавьте свои обработчики команд в функцию `main()`:
+
+```python
+application.add_handler(CommandHandler("your_command", your_handler))
+```
+
+Добавьте обработчики сообщений:
+
+```python
+application.add_handler(MessageHandler(filters.TEXT, your_message_handler))
+```
 '''
             readme_file.write_text(readme_content, encoding='utf-8')
     
