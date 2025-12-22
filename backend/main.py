@@ -141,56 +141,75 @@ async def list_bots():
 
 @app.post("/api/bots")
 async def create_bot_endpoint(bot_data: BotCreate):
-    bot_id = create_bot(
-        name=bot_data.name,
-        bot_type=bot_data.bot_type,
-        start_file=bot_data.start_file,
-        cpu_limit=bot_data.cpu_limit,
-        memory_limit=bot_data.memory_limit,
-        git_repo_url=bot_data.git_repo_url,
-        git_branch=bot_data.git_branch
-    )
+    import logging
+    logger = logging.getLogger(__name__)
     
-    # Если указан репозиторий, клонируем его (репозиторий не обязателен)
-    if bot_data.git_repo_url and bot_data.git_repo_url.strip():
-        bot = get_bot(bot_id)
-        bot_dir = Path(bot['bot_dir'])
+    try:
+        bot_id = create_bot(
+            name=bot_data.name,
+            bot_type=bot_data.bot_type,
+            start_file=bot_data.start_file,
+            cpu_limit=bot_data.cpu_limit,
+            memory_limit=bot_data.memory_limit,
+            git_repo_url=bot_data.git_repo_url,
+            git_branch=bot_data.git_branch
+        )
         
-        # Временно перемещаем config.json, чтобы директория была пуста для клонирования
-        config_path = bot_dir / "config.json"
-        config_backup = None
-        if config_path.exists():
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-                config_backup = tmp.name
-                shutil.copy2(config_path, config_backup)
-            config_path.unlink()
+        # Если указан репозиторий, клонируем его (репозиторий не обязателен)
+        if bot_data.git_repo_url and bot_data.git_repo_url.strip():
+            try:
+                bot = get_bot(bot_id)
+                if not bot:
+                    logger.error(f"Bot {bot_id} not found after creation")
+                    return {"id": bot_id, "success": True, "warning": "Bot created but could not be found for git clone"}
+                
+                bot_dir = Path(bot['bot_dir'])
+                
+                # Временно перемещаем config.json, чтобы директория была пуста для клонирования
+                config_path = bot_dir / "config.json"
+                config_backup = None
+                if config_path.exists():
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+                        config_backup = tmp.name
+                        shutil.copy2(config_path, config_backup)
+                    config_path.unlink()
+                
+                # Удаляем шаблонные файлы, если они были созданы
+                start_file_path = bot_dir / (bot_data.start_file or 'main.py')
+                if start_file_path.exists():
+                    start_file_path.unlink()
+                requirements_path = bot_dir / "requirements.txt"
+                if requirements_path.exists():
+                    requirements_path.unlink()
+                
+                # Используем новую систему GitRepository для клонирования
+                repo = GitRepository(bot_dir, bot_data.git_repo_url.strip(), bot_data.git_branch)
+                if not repo.is_git_installed():
+                    return {"id": bot_id, "success": True, "warning": "Git не установлен. Репозиторий не клонирован."}
+                
+                success, message = repo.clone(bot_data.git_repo_url.strip(), bot_data.git_branch)
+                
+                # Восстанавливаем config.json
+                if config_backup:
+                    try:
+                        shutil.copy2(config_backup, config_path)
+                        os.unlink(config_backup)
+                    except Exception as restore_error:
+                        logger.error(f"Failed to restore config.json: {restore_error}")
+                
+                if not success:
+                    # Не удаляем бота, но возвращаем предупреждение
+                    return {"id": bot_id, "success": True, "warning": f"Бот создан, но клонирование репозитория не удалось: {message}"}
+            except Exception as git_error:
+                logger.error(f"Error during git clone for bot {bot_id}: {git_error}", exc_info=True)
+                # Бот создан, но клонирование не удалось - не критично
+                return {"id": bot_id, "success": True, "warning": f"Бот создан, но произошла ошибка при клонировании репозитория: {str(git_error)}"}
         
-        # Удаляем шаблонные файлы, если они были созданы
-        start_file_path = bot_dir / (bot_data.start_file or 'main.py')
-        if start_file_path.exists():
-            start_file_path.unlink()
-        requirements_path = bot_dir / "requirements.txt"
-        if requirements_path.exists():
-            requirements_path.unlink()
-        
-        # Используем новую систему GitRepository для клонирования
-        repo = GitRepository(bot_dir, bot_data.git_repo_url.strip(), bot_data.git_branch)
-        if not repo.is_git_installed():
-            return {"id": bot_id, "success": True, "warning": "Git не установлен. Репозиторий не клонирован."}
-        
-        success, message = repo.clone(bot_data.git_repo_url.strip(), bot_data.git_branch)
-        
-        # Восстанавливаем config.json
-        if config_backup:
-            shutil.copy2(config_backup, config_path)
-            os.unlink(config_backup)
-        
-        if not success:
-            # Не удаляем бота, но возвращаем предупреждение
-            return {"id": bot_id, "success": True, "warning": f"Bot created but git clone failed: {message}"}
-    
-    return {"id": bot_id, "success": True}
+        return {"id": bot_id, "success": True}
+    except Exception as e:
+        logger.error(f"Error creating bot: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка создания бота: {str(e)}")
 
 @app.get("/api/bots/{bot_id}")
 async def get_bot_endpoint(bot_id: int):

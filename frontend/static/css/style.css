@@ -1310,11 +1310,11 @@ body::before {
     border: 1px solid var(--border-color);
     border-radius: 16px;
     padding: 1.5rem;
-    margin-bottom: 1.5rem;
     transition: all var(--anim-normal) ease;
     position: relative;
     overflow: hidden;
     animation: fade-in 0.5s ease-out;
+    width: 100%;
 }
 
 .bot-card::before {
@@ -1397,6 +1397,8 @@ body::before {
     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: 1.5rem;
     margin-top: 2rem;
+    width: 100%;
+    align-items: start;
 }
 
 /* Quick Actions */

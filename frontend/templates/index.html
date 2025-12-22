@@ -254,16 +254,44 @@
                     })
                 });
                 
-                const result = await response.json();
+                // Проверяем, является ли ответ JSON
+                let result;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        result = await response.json();
+                    } catch (jsonError) {
+                        console.error('JSON parse error:', jsonError);
+                        const text = await response.text();
+                        console.error('Response text:', text);
+                        showAlert('Ошибка создания бота: Сервер вернул некорректный ответ. Проверьте консоль (F12).', 'danger');
+                        return;
+                    }
+                } else {
+                    // Если ответ не JSON, читаем как текст
+                    const text = await response.text();
+                    console.error('Non-JSON response:', text);
+                    showAlert('Ошибка создания бота: Сервер вернул ошибку. Проверьте консоль (F12).', 'danger');
+                    return;
+                }
                 
                 if (response.ok && result.id) {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('createBotModal'));
                     modal.hide();
                     document.getElementById('create-bot-form').reset();
-                    showAlert('Бот успешно создан!', 'success');
-                    window.location.href = `/bot/${result.id}`;
+                    
+                    // Показываем предупреждение, если есть
+                    if (result.warning) {
+                        showAlert('Бот создан, но есть предупреждение: ' + result.warning, 'warning');
+                        setTimeout(() => {
+                            window.location.href = `/bot/${result.id}`;
+                        }, 2000);
+                    } else {
+                        showAlert('Бот успешно создан!', 'success');
+                        window.location.href = `/bot/${result.id}`;
+                    }
                 } else {
-                    let errorMsg = result.detail || 'Неизвестная ошибка';
+                    let errorMsg = result.detail || result.message || 'Неизвестная ошибка';
                     if (errorMsg.includes('already exists') || errorMsg.includes('уже существует')) {
                         errorMsg = 'Бот с таким именем уже существует. Выберите другое имя.';
                     }
@@ -272,10 +300,14 @@
             } catch (error) {
                 console.error('Error creating bot:', error);
                 let errorMsg = 'Неизвестная ошибка';
-                if (error.message && error.message.includes('fetch')) {
-                    errorMsg = 'Не удалось подключиться к серверу. Проверьте соединение.';
-                } else {
-                    errorMsg = error.message || 'Произошла ошибка при создании бота';
+                if (error.message) {
+                    if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+                        errorMsg = 'Не удалось подключиться к серверу. Проверьте соединение.';
+                    } else if (error.message.includes('JSON') || error.message.includes('Unexpected token')) {
+                        errorMsg = 'Ошибка обработки ответа сервера. Возможно, сервер вернул ошибку. Проверьте консоль (F12).';
+                    } else {
+                        errorMsg = error.message;
+                    }
                 }
                 showAlert('Ошибка создания бота: ' + errorMsg, 'danger');
             }
