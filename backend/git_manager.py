@@ -84,6 +84,14 @@ class GitRepository:
         
         return None
     
+    def is_git_installed(self) -> bool:
+        """Проверка установки Git"""
+        return self.git_cmd is not None
+    
+    def is_repo(self) -> bool:
+        """Проверка, является ли директория Git репозиторием"""
+        return is_git_repo(self.path)
+    
     def clone(self, repo_url: str, branch: str = "main") -> Tuple[bool, str]:
         """Клонирование репозитория"""
         if not self.git_cmd:
