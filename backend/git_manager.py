@@ -196,74 +196,75 @@ class GitRepository:
         return None
     
     def clone(self, repo_url: str, branch: str = "main") -> Tuple[bool, str]:
-        """Клонирование репозитория"""
+        """
+        Клонирование репозитория с автоматическим выбором протокола (HTTPS/SSH)
+        
+        Логика:
+        1. Если URL в формате SSH (git@...) - используем SSH (требует SSH клиент и ключ)
+        2. Если SSH недоступен - ВСЕГДА используем HTTPS
+        3. Если SSH доступен и есть ключ - пробуем SSH для HTTPS URL, при ошибке fallback на HTTPS
+        4. Если SSH доступен, но нет ключа - используем HTTPS
+        """
         if not self.git_cmd:
             return (False, "Команда Git не найдена")
         
+        temp_dir = None
         try:
             # Используем временную директорию для клонирования
             temp_dir = Path(tempfile.mkdtemp(prefix="git_clone_"))
             
-            # Проверяем доступность SSH
+            # Проверяем доступность SSH и наличие ключа
             from backend.ssh_manager import check_ssh_available, get_ssh_key_exists
             ssh_available, ssh_path = check_ssh_available()
-            ssh_key_exists = get_ssh_key_exists()
+            ssh_key_exists = get_ssh_key_exists() if ssh_available else False
             
-            # Определяем, является ли URL SSH-адресом (приватный репозиторий)
+            # Определяем, является ли URL SSH-адресом
             is_ssh_url = repo_url.startswith("git@") or repo_url.startswith("ssh://")
+            is_https_url = repo_url.startswith("https://")
             
-            # Определяем, какой URL использовать
+            # Логика выбора протокола
             use_https = False
             clone_url = repo_url
-            is_private_repo = False
+            try_ssh_first = False
             
             if is_ssh_url:
-                # Если URL уже в формате SSH, это явно приватный репозиторий
-                is_private_repo = True
+                # Явно указан SSH URL - требуем SSH
                 if not ssh_available:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    return (False, "SSH URL указан, но SSH клиент не установлен. Установите OpenSSH клиент для работы с приватными репозиториями.")
+                    return (False, "SSH URL указан, но SSH клиент не установлен. Установите OpenSSH клиент или используйте HTTPS URL.")
                 if not ssh_key_exists:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    return (False, "SSH URL указан, но SSH ключ не найден. Сгенерируйте SSH ключ в настройках панели.")
+                    return (False, "SSH URL указан, но SSH ключ не найден. Сгенерируйте SSH ключ в настройках панели или используйте HTTPS URL.")
+                # Используем SSH URL как есть
                 clone_url = repo_url
-                logger.info(f"Используем SSH для клонирования приватного репозитория: {clone_url}")
+                try_ssh_first = True
+                logger.info(f"Используем SSH URL: {clone_url}")
             elif not ssh_available:
-                # Если SSH недоступен, используем HTTPS
-                logger.info("SSH недоступен, используем HTTPS для клонирования")
+                # SSH недоступен - используем HTTPS
+                use_https = True
+                clone_url = repo_url if is_https_url else self._convert_to_https(repo_url)
+                logger.info(f"SSH недоступен, используем HTTPS: {clone_url}")
+            elif not ssh_key_exists:
+                # SSH доступен, но нет ключа - используем HTTPS
+                use_https = True
+                clone_url = repo_url if is_https_url else self._convert_to_https(repo_url)
+                logger.info(f"SSH ключ не найден, используем HTTPS: {clone_url}")
+            elif is_https_url:
+                # HTTPS URL, SSH доступен и есть ключ - пробуем SSH, при ошибке fallback на HTTPS
+                try_ssh_first = True
+                clone_url = convert_https_to_ssh(repo_url)
+                logger.info(f"Пробуем SSH для HTTPS URL: {clone_url}")
+            else:
+                # Неизвестный формат URL - пробуем как есть (скорее всего HTTPS)
                 use_https = True
                 clone_url = repo_url
-            else:
-                # Если SSH доступен и URL в формате HTTPS, конвертируем в SSH для приватных репозиториев
-                if repo_url.startswith("https://"):
-                    if ssh_key_exists:
-                        # Если есть SSH ключ, используем SSH (предполагаем приватный репозиторий)
-                        clone_url = convert_https_to_ssh(repo_url)
-                        is_private_repo = True
-                        logger.info(f"Конвертируем HTTPS в SSH для приватного репозитория: {clone_url}")
-                    else:
-                        # Если нет SSH ключа, используем HTTPS
-                        use_https = True
-                        clone_url = repo_url
-                        logger.info("SSH ключ не найден, используем HTTPS")
-                else:
-                    clone_url = repo_url
+                logger.info(f"Неизвестный формат URL, используем как есть: {clone_url}")
             
-            # Подготавливаем окружение
+            # Подготавливаем окружение для первой попытки
             if use_https:
-                # Для HTTPS не используем SSH окружение
-                env = os.environ.copy()
-                # Убираем SSH переменные если есть
-                if "GIT_SSH_COMMAND" in env:
-                    del env["GIT_SSH_COMMAND"]
-                logger.info(f"Клонирование через HTTPS: {clone_url}")
+                env = self._get_https_env()
             else:
-                # Для SSH используем SSH окружение
-                env = get_git_env_with_ssh()
-                logger.info(f"Клонирование через SSH: {clone_url}")
-                logger.debug(f"SSH окружение: GIT_SSH_COMMAND={env.get('GIT_SSH_COMMAND', 'не установлен')}")
+                env = self._get_ssh_env()
             
-            # Клонируем во временную директорию
+            # Первая попытка клонирования
             logger.info(f"Клонирование репозитория: {clone_url} (ветка: {branch})")
             result = subprocess.run(
                 [self.git_cmd, "clone", "-b", branch, "--single-branch", clone_url, str(temp_dir)],
@@ -273,30 +274,23 @@ class GitRepository:
                 env=env
             )
             
-            # Если клонирование через SSH не удалось
+            # Если первая попытка не удалась
             if result.returncode != 0:
                 error_output = result.stderr or result.stdout or "Unknown error"
                 
-                # Для приватных репозиториев (SSH URL) не делаем fallback на HTTPS
-                if is_private_repo or is_ssh_url:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    logger.error(f"Ошибка клонирования приватного репозитория через SSH: {error_output}")
-                    # Улучшаем сообщение об ошибке
-                    if "Permission denied" in error_output or "publickey" in error_output.lower():
-                        return (False, f"Ошибка аутентификации SSH: {error_output}\n\nПроверьте:\n1. SSH ключ добавлен в настройки Git хостинга (GitHub/GitLab)\n2. SSH ключ сгенерирован в настройках панели\n3. Правильность URL репозитория")
-                    elif "Host key verification failed" in error_output:
-                        return (False, f"Ошибка проверки SSH ключа хоста: {error_output}\n\nПопробуйте протестировать SSH подключение в настройках панели.")
-                    else:
-                        return (False, f"Ошибка клонирования через SSH: {error_output}")
+                # Проверяем, была ли это ошибка SSH
+                is_ssh_error = (
+                    "cannot run ssh" in error_output.lower() or
+                    "No such file or directory" in error_output or
+                    "unable to fork" in error_output.lower() or
+                    "ssh:" in error_output.lower()
+                )
                 
-                # Для публичных репозиториев (HTTPS URL) пробуем fallback на HTTPS
-                if not use_https and repo_url.startswith("https://"):
-                    logger.warning(f"Клонирование через SSH не удалось, пробуем HTTPS: {error_output}")
-                    # Пробуем через HTTPS
-                    env = os.environ.copy()
-                    if "GIT_SSH_COMMAND" in env:
-                        del env["GIT_SSH_COMMAND"]
-                    clone_url = repo_url
+                # Если это была попытка SSH и произошла ошибка SSH - пробуем HTTPS
+                if try_ssh_first and is_ssh_error and is_https_url:
+                    logger.warning(f"SSH не работает ({error_output[:200]}), пробуем HTTPS")
+                    clone_url = repo_url  # Возвращаемся к оригинальному HTTPS URL
+                    env = self._get_https_env()
                     result = subprocess.run(
                         [self.git_cmd, "clone", "-b", branch, "--single-branch", clone_url, str(temp_dir)],
                         capture_output=True,
@@ -304,51 +298,145 @@ class GitRepository:
                         timeout=600,
                         env=env
                     )
-                    if result.returncode != 0:
-                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    if result.returncode == 0:
+                        logger.info("Клонирование через HTTPS успешно")
+                    else:
                         error_msg = result.stderr or result.stdout or "Unknown error"
-                        return (False, f"Ошибка клонирования: {error_msg}")
-                else:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    error_msg = result.stderr or result.stdout or "Unknown error"
-                    return (False, f"Ошибка клонирования: {error_msg}")
+                        return (False, f"Ошибка клонирования через HTTPS: {error_msg}")
+                elif try_ssh_first and is_ssh_url:
+                    # SSH URL не сработал - это критическая ошибка для SSH URL
+                    return (False, self._format_ssh_error(error_output))
+                elif result.returncode != 0:
+                    # Другая ошибка
+                    return (False, f"Ошибка клонирования: {error_output}")
             
-            # Перемещаем содержимое в целевую директорию
-            try:
-                # Создаем целевую директорию если не существует
-                self.path.mkdir(parents=True, exist_ok=True)
-                
-                # Перемещаем все файлы из временной директории
-                for item in temp_dir.iterdir():
-                    if item.name != '.git':
-                        dest = self.path / item.name
-                        if item.is_dir():
-                            if dest.exists():
-                                shutil.rmtree(dest)
-                            shutil.copytree(item, dest)
-                        else:
-                            shutil.copy2(item, dest)
-                
-                # Перемещаем .git директорию
-                git_source = temp_dir / ".git"
-                git_dest = self.path / ".git"
-                if git_source.exists():
-                    if git_dest.exists():
-                        shutil.rmtree(git_dest)
-                    shutil.move(str(git_source), str(git_dest))
-                
-                # Удаляем временную директорию
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                
-                return (True, "Repository cloned successfully")
-            except Exception as move_error:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                return (False, f"Ошибка при перемещении файлов: {str(move_error)}")
+            # Клонирование успешно, перемещаем файлы
+            return self._move_cloned_files(temp_dir)
+            
         except subprocess.TimeoutExpired:
-            return (False, "Clone timeout")
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return (False, "Таймаут при клонировании репозитория")
         except Exception as e:
-            logger.error(f"Error cloning repository: {e}", exc_info=True)
-            return (False, f"Ошибка: {str(e)}")
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.error(f"Ошибка клонирования репозитория: {e}", exc_info=True)
+            return (False, f"Ошибка клонирования: {str(e)}")
+    
+    def _convert_to_https(self, url: str) -> str:
+        """Конвертация URL в HTTPS формат"""
+        if url.startswith("https://"):
+            return url
+        if "github.com" in url:
+            return url.replace("git@github.com:", "https://github.com/").replace("ssh://git@github.com/", "https://github.com/")
+        elif "gitlab.com" in url:
+            return url.replace("git@gitlab.com:", "https://gitlab.com/").replace("ssh://git@gitlab.com/", "https://gitlab.com/")
+        else:
+            # Общий паттерн
+            return url.replace("git@", "https://").replace("ssh://git@", "https://").replace(":", "/", 1)
+    
+    def _get_https_env(self) -> dict:
+        """Получение окружения для HTTPS клонирования (без SSH)"""
+        env = os.environ.copy()
+        # Убираем все SSH-связанные переменные
+        for key in list(env.keys()):
+            if "SSH" in key.upper() or "GIT_SSH" in key.upper():
+                del env[key]
+        return env
+    
+    def _get_ssh_env(self) -> dict:
+        """Получение окружения для SSH клонирования с проверкой доступности SSH"""
+        try:
+            # Сначала проверяем доступность SSH
+            from backend.ssh_manager import check_ssh_available
+            ssh_available, ssh_path = check_ssh_available()
+            
+            if not ssh_available:
+                logger.warning("SSH недоступен, используем HTTPS окружение")
+                return self._get_https_env()
+            
+            # Проверяем, что путь к SSH существует и доступен
+            if ssh_path and not os.path.exists(ssh_path) and not shutil.which("ssh"):
+                logger.warning(f"SSH путь не существует: {ssh_path}, используем HTTPS")
+                return self._get_https_env()
+            
+            # Получаем SSH окружение
+            env = get_git_env_with_ssh()
+            
+            # Дополнительная проверка: если GIT_SSH_COMMAND установлен, проверяем что SSH доступен
+            if "GIT_SSH_COMMAND" in env:
+                ssh_cmd = env["GIT_SSH_COMMAND"]
+                # Извлекаем путь к ssh из команды
+                ssh_match = re.search(r"['\"]?([^'\"]*ssh[^'\"]*)['\"]?", ssh_cmd)
+                if ssh_match:
+                    cmd_ssh_path = ssh_match.group(1).split()[0] if ssh_match.group(1) else None
+                    if cmd_ssh_path:
+                        # Проверяем, что путь существует или доступен через which
+                        if not os.path.exists(cmd_ssh_path) and not shutil.which(cmd_ssh_path):
+                            logger.warning(f"SSH путь в GIT_SSH_COMMAND не существует: {cmd_ssh_path}, используем HTTPS")
+                            return self._get_https_env()
+            
+            return env
+        except Exception as e:
+            logger.warning(f"Ошибка при получении SSH окружения: {e}, используем HTTPS")
+            return self._get_https_env()
+    
+    def _format_ssh_error(self, error_output: str) -> str:
+        """Форматирование ошибки SSH для пользователя"""
+        if "Permission denied" in error_output or "publickey" in error_output.lower():
+            return (
+                f"Ошибка аутентификации SSH:\n{error_output}\n\n"
+                "Проверьте:\n"
+                "1. SSH ключ добавлен в настройки Git хостинга (GitHub/GitLab)\n"
+                "2. SSH ключ сгенерирован в настройках панели\n"
+                "3. Правильность URL репозитория\n"
+                "4. Попробуйте использовать HTTPS URL вместо SSH"
+            )
+        elif "Host key verification failed" in error_output:
+            return (
+                f"Ошибка проверки SSH ключа хоста:\n{error_output}\n\n"
+                "Попробуйте протестировать SSH подключение в настройках панели или используйте HTTPS URL"
+            )
+        elif "cannot run ssh" in error_output.lower() or "No such file or directory" in error_output:
+            return (
+                f"SSH клиент не найден:\n{error_output}\n\n"
+                "Установите OpenSSH клиент или используйте HTTPS URL для клонирования"
+            )
+        else:
+            return f"Ошибка клонирования через SSH:\n{error_output}\n\nПопробуйте использовать HTTPS URL"
+    
+    def _move_cloned_files(self, temp_dir: Path) -> Tuple[bool, str]:
+        """Перемещение файлов из временной директории в целевую"""
+        try:
+            # Создаем целевую директорию если не существует
+            self.path.mkdir(parents=True, exist_ok=True)
+            
+            # Перемещаем все файлы из временной директории
+            for item in temp_dir.iterdir():
+                if item.name != '.git':
+                    dest = self.path / item.name
+                    if item.is_dir():
+                        if dest.exists():
+                            shutil.rmtree(dest)
+                        shutil.copytree(item, dest)
+                    else:
+                        shutil.copy2(item, dest)
+            
+            # Перемещаем .git директорию
+            git_source = temp_dir / ".git"
+            git_dest = self.path / ".git"
+            if git_source.exists():
+                if git_dest.exists():
+                    shutil.rmtree(git_dest)
+                shutil.move(str(git_source), str(git_dest))
+            
+            # Удаляем временную директорию
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            return (True, "Репозиторий успешно клонирован")
+        except Exception as move_error:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return (False, f"Ошибка при перемещении файлов: {str(move_error)}")
     
 
     
@@ -485,7 +573,18 @@ class GitRepository:
             }
         
         try:
-            env = get_git_env_with_ssh()
+            # Определяем окружение: для панели используем HTTPS, для ботов - SSH
+            from backend.config import BASE_DIR
+            is_panel = self.path == BASE_DIR
+            
+            if is_panel:
+                # Для панели используем HTTPS окружение (без SSH)
+                env = os.environ.copy()
+                if "GIT_SSH_COMMAND" in env:
+                    del env["GIT_SSH_COMMAND"]
+            else:
+                # Для ботов используем SSH окружение
+                env = get_git_env_with_ssh()
             
             # Получаем текущую ветку
             branch_result = subprocess.run(
@@ -571,6 +670,63 @@ class GitRepository:
             )
             has_changes = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
             
+            # Проверяем наличие обновлений в удаленном репозитории
+            has_updates = False
+            if current_branch and remote_url:
+                try:
+                    # Делаем fetch для получения информации об удаленном репозитории
+                    # Для панели используем HTTPS, для ботов - SSH если настроено
+                    # env уже настроен правильно выше (HTTPS для панели, SSH для ботов)
+                    fetch_result = subprocess.run(
+                        [self.git_cmd, "fetch", "origin", current_branch],
+                        cwd=self.path,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    if fetch_result.returncode == 0:
+                        # Сравниваем локальный и удаленный коммиты
+                        local_commit_result = subprocess.run(
+                            [self.git_cmd, "rev-parse", "HEAD"],
+                            cwd=self.path,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        remote_commit_result = subprocess.run(
+                            [self.git_cmd, "rev-parse", f"origin/{current_branch}"],
+                            cwd=self.path,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        
+                        if (local_commit_result.returncode == 0 and 
+                            remote_commit_result.returncode == 0):
+                            local_commit = local_commit_result.stdout.strip()
+                            remote_commit = remote_commit_result.stdout.strip()
+                            
+                            # Если коммиты разные, есть обновления
+                            if local_commit != remote_commit:
+                                # Проверяем, что удаленный коммит новее
+                                behind_result = subprocess.run(
+                                    [self.git_cmd, "rev-list", "--count", f"HEAD..origin/{current_branch}"],
+                                    cwd=self.path,
+                                    env=env,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10
+                                )
+                                if behind_result.returncode == 0:
+                                    behind_count = int(behind_result.stdout.strip() or "0")
+                                    has_updates = behind_count > 0
+                except Exception as fetch_error:
+                    logger.warning(f"Не удалось проверить наличие обновлений: {fetch_error}")
+            
             return {
                 "is_repo": True,
                 "branch": current_branch or self.branch,
@@ -579,6 +735,7 @@ class GitRepository:
                 "last_commit": last_commit,
                 "remote": remote_url,
                 "has_changes": has_changes,
+                "has_updates": has_updates,
                 "status": "clean" if not has_changes else "dirty"
             }
         except Exception as e:
