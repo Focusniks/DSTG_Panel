@@ -29,37 +29,25 @@ logger = logging.getLogger(__name__)
 # Поддерживаемые Git хостинги
 GIT_HOSTS = {
     'github.com': {
-        'name': 'GitHub',
-        'ssh_user': 'git',
-        'supports_ssh': True
+        'ssh_port': 22,
+        'https_port': 443
     },
     'gitlab.com': {
-        'name': 'GitLab',
-        'ssh_user': 'git',
-        'supports_ssh': True
-    },
-    'bitbucket.org': {
-        'name': 'Bitbucket',
-        'ssh_user': 'git',
-        'supports_ssh': True
+        'ssh_port': 22,
+        'https_port': 443
     }
 }
 
+def is_git_repo(path: Path) -> bool:
+    """Проверка, является ли директория Git репозиторием"""
+    return (path / ".git").exists() or (path / ".git").is_dir()
 
 def parse_gitignore(gitignore_path: Path) -> List[str]:
-    """
-    Парсинг .gitignore файла и возврат списка паттернов
-    
-    Args:
-        gitignore_path: Путь к файлу .gitignore
-        
-    Returns:
-        Список паттернов для игнорирования
-    """
-    if not gitignore_path.exists():
-        return []
-    
+    """Парсинг .gitignore файла"""
     patterns = []
+    if not gitignore_path.exists():
+        return patterns
+    
     try:
         with open(gitignore_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -67,122 +55,70 @@ def parse_gitignore(gitignore_path: Path) -> List[str]:
                 # Пропускаем пустые строки и комментарии
                 if not line or line.startswith('#'):
                     continue
-                # Убираем пробелы в начале и конце
-                line = line.strip()
-                if line:
-                    patterns.append(line)
+                patterns.append(line)
     except Exception as e:
         logger.warning(f"Ошибка при чтении .gitignore: {e}")
     
     return patterns
 
-
-def matches_gitignore_pattern(file_path: Path, patterns: List[str], base_path: Path) -> bool:
-    """
-    Проверяет, соответствует ли файл паттернам из .gitignore
-    
-    Args:
-        file_path: Путь к файлу для проверки
-        patterns: Список паттернов из .gitignore
-        base_path: Базовый путь репозитория
-        
-    Returns:
-        True если файл должен быть проигнорирован
-    """
-    if not patterns:
-        return False
-    
-    # Получаем относительный путь от базового пути
+def matches_gitignore_pattern(file_path: Path, pattern: str, base_path: Path) -> bool:
+    """Проверка, соответствует ли файл паттерну .gitignore"""
     try:
+        # Нормализуем путь
         rel_path = file_path.relative_to(base_path)
-        rel_path_str = str(rel_path).replace('\\', '/')
-    except ValueError:
-        # Если файл не находится в базовом пути, не игнорируем
-        return False
-    
-    for pattern in patterns:
-        # Обрабатываем паттерны .gitignore
-        # Упрощенная версия - поддерживаем основные случаи
+        rel_str = str(rel_path).replace('\\', '/')
         
-        # Паттерн с / в начале - относительно корня репозитория
+        # Обрабатываем паттерны
         if pattern.startswith('/'):
+            # Абсолютный паттерн от корня репозитория
             pattern = pattern[1:]
-            if fnmatch.fnmatch(rel_path_str, pattern) or fnmatch.fnmatch(rel_path_str, pattern + '/*'):
-                return True
-        
-        # Паттерн с / в конце - директория
+            return fnmatch.fnmatch(rel_str, pattern) or fnmatch.fnmatch(rel_str, pattern + '/*')
         elif pattern.endswith('/'):
+            # Директория
             pattern = pattern[:-1]
-            if rel_path_str.startswith(pattern + '/') or rel_path_str == pattern:
-                return True
-        
-        # Паттерн с ** - рекурсивный поиск
-        elif '**' in pattern:
-            # Заменяем ** на * для fnmatch
-            pattern_fnmatch = pattern.replace('**', '*')
-            if fnmatch.fnmatch(rel_path_str, pattern_fnmatch):
-                return True
-            # Также проверяем вложенные пути
-            path_parts = rel_path_str.split('/')
-            for i in range(len(path_parts)):
-                sub_path = '/'.join(path_parts[i:])
-                if fnmatch.fnmatch(sub_path, pattern_fnmatch):
-                    return True
-        
-        # Обычный паттерн
+            return fnmatch.fnmatch(rel_str, pattern) or rel_str.startswith(pattern + '/')
         else:
-            # Проверяем точное совпадение или совпадение в любой части пути
-            if fnmatch.fnmatch(rel_path_str, pattern):
-                return True
-            # Проверяем совпадение с именем файла
-            if fnmatch.fnmatch(rel_path_str.split('/')[-1], pattern):
-                return True
-            # Проверяем совпадение в любой части пути
-            path_parts = rel_path_str.split('/')
-            for part in path_parts:
-                if fnmatch.fnmatch(part, pattern):
-                    return True
-    
-    return False
-
+            # Обычный паттерн
+            return fnmatch.fnmatch(rel_str, pattern) or fnmatch.fnmatch(rel_path.name, pattern) or any(
+                fnmatch.fnmatch(part, pattern) for part in rel_str.split('/')
+            )
+    except Exception:
+        return False
 
 def get_ignored_files(base_path: Path, gitignore_patterns: List[str]) -> Set[Path]:
-    """
-    Получает список файлов, которые должны быть проигнорированы согласно .gitignore
-    
-    Args:
-        base_path: Базовый путь репозитория
-        gitignore_patterns: Список паттернов из .gitignore
-        
-    Returns:
-        Множество путей к игнорируемым файлам
-    """
+    """Получение списка файлов, соответствующих паттернам .gitignore"""
     ignored = set()
     
     if not gitignore_patterns:
         return ignored
     
-    # Рекурсивно обходим все файлы
-    for root, dirs, files in os.walk(base_path):
-        root_path = Path(root)
-        
-        # Проверяем директории
-        dirs_to_remove = []
-        for dir_name in dirs:
-            dir_path = root_path / dir_name
-            if matches_gitignore_pattern(dir_path, gitignore_patterns, base_path):
-                ignored.add(dir_path)
-                dirs_to_remove.append(dir_name)  # Не обходим игнорируемые директории
-        
-        # Удаляем игнорируемые директории из списка для обхода
-        for dir_name in dirs_to_remove:
-            dirs.remove(dir_name)
-        
-        # Проверяем файлы
-        for file_name in files:
-            file_path = root_path / file_name
-            if matches_gitignore_pattern(file_path, gitignore_patterns, base_path):
-                ignored.add(file_path)
+    try:
+        for root, dirs, files in os.walk(base_path):
+            # Пропускаем .git директорию
+            if '.git' in dirs:
+                dirs.remove('.git')
+            
+            root_path = Path(root)
+            
+            # Проверяем файлы
+            for file in files:
+                file_path = root_path / file
+                for pattern in gitignore_patterns:
+                    if matches_gitignore_pattern(file_path, pattern, base_path):
+                        ignored.add(file_path)
+                        break
+            
+            # Проверяем директории
+            for dir_name in dirs[:]:  # Копируем список для безопасного удаления
+                dir_path = root_path / dir_name
+                for pattern in gitignore_patterns:
+                    if matches_gitignore_pattern(dir_path, pattern, base_path):
+                        ignored.add(dir_path)
+                        # Удаляем из dirs, чтобы не обходить содержимое
+                        dirs.remove(dir_name)
+                        break
+    except Exception as e:
+        logger.warning(f"Ошибка при получении игнорируемых файлов: {e}")
     
     return ignored
 
@@ -263,105 +199,64 @@ class GitRepository:
             return (False, "Команда Git не найдена")
         
         try:
-            # Преобразуем HTTPS в SSH если нужно
+            # Используем временную директорию для клонирования
+            temp_dir = Path(tempfile.mkdtemp(prefix="git_clone_"))
+            
+            # Конвертируем HTTPS в SSH если нужно
             ssh_url = convert_https_to_ssh(repo_url)
             env = get_git_env_with_ssh()
             
-            # Убеждаемся, что директория существует
-            self.path.mkdir(parents=True, exist_ok=True)
+            # Клонируем во временную директорию
+            result = subprocess.run(
+                [self.git_cmd, "clone", "-b", branch, "--single-branch", ssh_url, str(temp_dir)],
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
             
-            # Удаляем все содержимое директории кроме config.json и .gitkeep
-            # ВАЖНО: также удаляем .git если он существует
-            if self.path.exists():
-                for item in self.path.iterdir():
-                    if item.name not in ['config.json', '.gitkeep']:
-                        try:
-                            if item.is_dir():
-                                shutil.rmtree(item)
-                            else:
-                                item.unlink()
-                        except Exception as e:
-                            logger.warning(f"Не удалось удалить {item} перед клонированием: {e}")
+            if result.returncode != 0:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                error_msg = result.stderr or result.stdout or "Unknown error"
+                return (False, f"Ошибка клонирования: {error_msg}")
             
-            # Проверяем, что директория пуста (кроме config.json и .gitkeep)
-            remaining_items = [item.name for item in self.path.iterdir() 
-                              if item.name not in ['config.json', '.gitkeep']]
-            if remaining_items:
-                logger.warning(f"В директории остались элементы после очистки: {remaining_items}")
-                # Пытаемся удалить оставшиеся элементы еще раз
-                for item_name in remaining_items:
-                    item_path = self.path / item_name
-                    try:
-                        if item_path.is_dir():
-                            shutil.rmtree(item_path)
-                        else:
-                            item_path.unlink()
-                    except Exception as e:
-                        logger.error(f"Не удалось удалить {item_path}: {e}")
-                        return (False, f"Не удалось очистить директорию перед клонированием. Остался элемент: {item_name}")
-            
-            # Клонируем репозиторий
-            # Используем временное имя для клонирования, затем перемещаем содержимое
-            import tempfile
-            import uuid
-            temp_clone_dir = self.path.parent / f".temp_clone_{uuid.uuid4().hex[:8]}"
-            
+            # Перемещаем содержимое в целевую директорию
             try:
-                cmd = [self.git_cmd, "clone", "-b", branch, "--depth", "1", ssh_url, str(temp_clone_dir)]
-                result = subprocess.run(
-                    cmd,
-                    cwd=self.path.parent,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
+                # Создаем целевую директорию если не существует
+                self.path.mkdir(parents=True, exist_ok=True)
                 
-                if result.returncode != 0:
-                    error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
-                    return (False, f"Ошибка клонирования Git: {error_msg}")
+                # Перемещаем все файлы из временной директории
+                for item in temp_dir.iterdir():
+                    if item.name != '.git':
+                        dest = self.path / item.name
+                        if item.is_dir():
+                            if dest.exists():
+                                shutil.rmtree(dest)
+                            shutil.copytree(item, dest)
+                        else:
+                            shutil.copy2(item, dest)
                 
-                # Перемещаем содержимое из временной директории в целевую
-                if temp_clone_dir.exists():
-                    for item in temp_clone_dir.iterdir():
-                        if item.name not in ['config.json', '.gitkeep']:
-                            try:
-                                dest = self.path / item.name
-                                if dest.exists():
-                                    if dest.is_dir():
-                                        shutil.rmtree(dest)
-                                    else:
-                                        dest.unlink()
-                                shutil.move(str(item), str(dest))
-                            except Exception as e:
-                                logger.error(f"Ошибка при перемещении {item}: {e}")
-                                # Пытаемся удалить временную директорию
-                                try:
-                                    shutil.rmtree(temp_clone_dir)
-                                except:
-                                    pass
-                                return (False, f"Ошибка при перемещении файлов из временной директории: {str(e)}")
-                    
-                    # Удаляем временную директорию
-                    try:
-                        shutil.rmtree(temp_clone_dir)
-                    except Exception as e:
-                        logger.warning(f"Не удалось удалить временную директорию {temp_clone_dir}: {e}")
+                # Перемещаем .git директорию
+                git_source = temp_dir / ".git"
+                git_dest = self.path / ".git"
+                if git_source.exists():
+                    if git_dest.exists():
+                        shutil.rmtree(git_dest)
+                    shutil.move(str(git_source), str(git_dest))
+                
+                # Удаляем временную директорию
+                shutil.rmtree(temp_dir, ignore_errors=True)
                 
                 return (True, "Repository cloned successfully")
-            except Exception as clone_error:
-                # Удаляем временную директорию при ошибке
-                if temp_clone_dir.exists():
-                    try:
-                        shutil.rmtree(temp_clone_dir)
-                    except:
-                        pass
-                raise clone_error
+            except Exception as move_error:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return (False, f"Ошибка при перемещении файлов: {str(move_error)}")
         except subprocess.TimeoutExpired:
-            return (False, "Git clone timeout")
+            return (False, "Clone timeout")
         except Exception as e:
             logger.error(f"Error cloning repository: {e}", exc_info=True)
             return (False, f"Ошибка: {str(e)}")
+    
+
     
     def update(self) -> Tuple[bool, str]:
         """Обновление репозитория из удаленного источника с учетом .gitignore"""
@@ -476,116 +371,7 @@ class GitRepository:
                         pass
                 
                 error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
-                error_str = str(error_msg)
-                
-                logger.info(f"Git pull failed with error: {error_str[:200]}")
-                
-                # Улучшенная обработка ошибок SSH с fallback на HTTPS
-                if "Permission denied (publickey)" in error_str or "Permission denied" in error_str:
-                    logger.info("Обнаружена ошибка SSH аутентификации, пробуем fallback на HTTPS...")
-                    # Пробуем использовать HTTPS для публичных репозиториев
-                    try:
-                        remote_url = self._get_remote_url()
-                        logger.info(f"Текущий remote URL: {remote_url}")
-                        
-                        if remote_url:
-                            https_url = None
-                            
-                            # Конвертируем SSH URL в HTTPS
-                            if remote_url.startswith("git@"):
-                                # git@github.com:user/repo.git -> https://github.com/user/repo.git
-                                if "github.com" in remote_url:
-                                    https_url = remote_url.replace("git@github.com:", "https://github.com/")
-                                    if not https_url.endswith(".git"):
-                                        https_url += ".git"
-                                elif "gitlab.com" in remote_url:
-                                    https_url = remote_url.replace("git@gitlab.com:", "https://gitlab.com/")
-                                    if not https_url.endswith(".git"):
-                                        https_url += ".git"
-                            elif remote_url.startswith("ssh://"):
-                                # ssh://git@github.com/user/repo.git -> https://github.com/user/repo.git
-                                if "github.com" in remote_url:
-                                    https_url = remote_url.replace("ssh://git@github.com/", "https://github.com/")
-                            
-                            if https_url:
-                                logger.info(f"Конвертируем SSH URL в HTTPS: {https_url}")
-                                
-                                # Устанавливаем HTTPS URL
-                                env_no_ssh = os.environ.copy()
-                                if 'GIT_SSH_COMMAND' in env_no_ssh:
-                                    del env_no_ssh['GIT_SSH_COMMAND']
-                                
-                                set_result = subprocess.run(
-                                    [self.git_cmd, "remote", "set-url", "origin", https_url],
-                                    cwd=self.path,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10
-                                )
-                                
-                                if set_result.returncode == 0:
-                                    logger.info("Remote URL успешно изменен на HTTPS, пробуем git pull с HTTPS...")
-                                    # Пробуем снова с HTTPS
-                                    result_https = subprocess.run(
-                                        [self.git_cmd, "pull", "origin", self.branch],
-                                        cwd=self.path,
-                                        env=env_no_ssh,
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=300
-                                    )
-                                    
-                                    if result_https.returncode == 0:
-                                        logger.info("Git pull с HTTPS успешно выполнен")
-                                        # Восстанавливаем игнорируемые файлы
-                                        if backup_dir and backup_dir.exists():
-                                            logger.info("Восстановление игнорируемых файлов из .gitignore...")
-                                            for ignored_file in ignored_files:
-                                                try:
-                                                    rel_path = ignored_file.relative_to(self.path)
-                                                    backup_path = backup_dir / rel_path
-                                                    
-                                                    if backup_path.exists():
-                                                        if ignored_file.is_file() or not ignored_file.exists():
-                                                            ignored_file.parent.mkdir(parents=True, exist_ok=True)
-                                                            if backup_path.is_file():
-                                                                shutil.copy2(backup_path, ignored_file)
-                                                        elif ignored_file.is_dir() and backup_path.is_dir():
-                                                            if ignored_file.exists():
-                                                                shutil.rmtree(ignored_file)
-                                                            shutil.copytree(backup_path, ignored_file)
-                                                        
-                                                        logger.debug(f"Восстановлен игнорируемый файл: {backup_path} -> {ignored_file}")
-                                                except Exception as restore_error:
-                                                    logger.warning(f"Не удалось восстановить игнорируемый файл {ignored_file}: {restore_error}")
-                                            
-                                            try:
-                                                shutil.rmtree(backup_dir)
-                                            except Exception as cleanup_error:
-                                                logger.warning(f"Не удалось удалить временную директорию {backup_dir}: {cleanup_error}")
-                                        
-                                        return (True, "Репозиторий обновлен успешно (использован HTTPS вместо SSH)")
-                                    else:
-                                        https_error = result_https.stderr or result_https.stdout or "Неизвестная ошибка"
-                                        logger.error(f"Git pull с HTTPS также не удался: {https_error}")
-                                else:
-                                    logger.error(f"Не удалось изменить remote URL на HTTPS: {set_result.stderr}")
-                            else:
-                                logger.warning(f"Не удалось конвертировать remote URL в HTTPS: {remote_url}")
-                        else:
-                            logger.warning("Не удалось получить remote URL для fallback на HTTPS")
-                    except Exception as https_fallback_error:
-                        logger.error(f"Ошибка при попытке использовать HTTPS fallback: {https_fallback_error}", exc_info=True)
-                
-                # Формируем понятное сообщение об ошибке
-                if "Permission denied (publickey)" in error_str:
-                    return (False, "Ошибка SSH аутентификации: Permission denied (publickey). Проверьте настройки SSH ключа в настройках панели или используйте HTTPS URL для публичных репозиториев.")
-                elif "Host key verification failed" in error_str:
-                    return (False, "Ошибка проверки SSH ключа хоста. Попробуйте протестировать SSH подключение в настройках панели.")
-                elif "Could not read from remote repository" in error_str:
-                    return (False, "Не удалось прочитать удаленный репозиторий. Проверьте URL репозитория и права доступа.")
-                else:
-                    return (False, f"Ошибка Git pull: {error_msg}")
+                return (False, f"Ошибка Git pull: {error_msg}")
         except subprocess.TimeoutExpired:
             return (False, "Git pull timeout")
         except Exception as e:
@@ -606,7 +392,7 @@ class GitRepository:
         try:
             env = get_git_env_with_ssh()
             
-            # Текущая ветка
+            # Получаем текущую ветку
             branch_result = subprocess.run(
                 [self.git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=self.path,
@@ -615,37 +401,20 @@ class GitRepository:
                 text=True,
                 timeout=10
             )
-            branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
+            current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
             
-            # Если ветка не определена, пробуем другой способ
-            if not branch or branch == "":
-                # Пробуем получить ветку через symbolic-ref
-                branch_result2 = subprocess.run(
-                    [self.git_cmd, "symbolic-ref", "--short", "HEAD"],
-                    cwd=self.path,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                branch = branch_result2.stdout.strip() if branch_result2.returncode == 0 else None
-            
-            # Если все еще не определена, используем self.branch
-            if not branch or branch == "":
-                branch = self.branch
-            
-            # Последний коммит
+            # Получаем последний коммит
             commit_result = subprocess.run(
-                [self.git_cmd, "rev-parse", "HEAD"],
+                [self.git_cmd, "rev-parse", "--short", "HEAD"],
                 cwd=self.path,
                 env=env,
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            commit = commit_result.stdout.strip()[:7] if commit_result.returncode == 0 else None
+            last_commit = commit_result.stdout.strip() if commit_result.returncode == 0 else None
             
-            # Удаленный репозиторий
+            # Получаем remote URL
             remote_result = subprocess.run(
                 [self.git_cmd, "remote", "get-url", "origin"],
                 cwd=self.path,
@@ -654,9 +423,9 @@ class GitRepository:
                 text=True,
                 timeout=10
             )
-            remote = remote_result.stdout.strip() if remote_result.returncode == 0 else None
+            remote_url = remote_result.stdout.strip() if remote_result.returncode == 0 else None
             
-            # Статус изменений
+            # Проверяем статус
             status_result = subprocess.run(
                 [self.git_cmd, "status", "--porcelain"],
                 cwd=self.path,
@@ -665,137 +434,38 @@ class GitRepository:
                 text=True,
                 timeout=10
             )
-            has_changes = bool(status_result.stdout.strip())
-            
-            # Информация о последнем коммите
-            last_commit_message = None
-            last_commit_date = None
-            last_commit_hash = None
-            if commit:
-                try:
-                    # Получаем сообщение последнего коммита
-                    log_result = subprocess.run(
-                        [self.git_cmd, "log", "-1", "--pretty=format:%s", "HEAD"],
-                        cwd=self.path,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if log_result.returncode == 0:
-                        last_commit_message = log_result.stdout.strip()
-                    
-                    # Получаем дату последнего коммита
-                    date_result = subprocess.run(
-                        [self.git_cmd, "log", "-1", "--pretty=format:%cd", "--date=format:%Y-%m-%d %H:%M:%S", "HEAD"],
-                        cwd=self.path,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if date_result.returncode == 0:
-                        last_commit_date = date_result.stdout.strip()
-                    
-                    # Получаем полный хеш коммита
-                    hash_result = subprocess.run(
-                        [self.git_cmd, "rev-parse", "HEAD"],
-                        cwd=self.path,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
-                    if hash_result.returncode == 0:
-                        last_commit_hash = hash_result.stdout.strip()[:7]
-                except Exception as e:
-                    logger.warning(f"Error getting commit info: {e}")
-            
-            # Проверка наличия обновлений (fetch и сравнение с удаленной веткой)
-            has_updates = False
-            if remote and branch:
-                try:
-                    # Выполняем fetch для получения информации об удаленных изменениях
-                    fetch_result = subprocess.run(
-                        [self.git_cmd, "fetch", "origin", branch],
-                        cwd=self.path,
-                        env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-                    
-                    # Сравниваем локальный и удаленный коммиты
-                    if fetch_result.returncode == 0:
-                        # Получаем хеш локального коммита
-                        local_commit_result = subprocess.run(
-                            [self.git_cmd, "rev-parse", "HEAD"],
-                            cwd=self.path,
-                            env=env,
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
-                        local_commit = local_commit_result.stdout.strip() if local_commit_result.returncode == 0 else None
-                        
-                        # Получаем хеш удаленного коммита
-                        remote_commit_result = subprocess.run(
-                            [self.git_cmd, "rev-parse", f"origin/{branch}"],
-                            cwd=self.path,
-                            env=env,
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
-                        remote_commit = remote_commit_result.stdout.strip() if remote_commit_result.returncode == 0 else None
-                        
-                        # Если коммиты разные, есть обновления
-                        if local_commit and remote_commit and local_commit != remote_commit:
-                            has_updates = True
-                except Exception as e:
-                    logger.warning(f"Error checking for updates: {e}")
+            has_changes = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
             
             return {
                 "is_repo": True,
-                "branch": branch,
-                "current_branch": branch,
-                "commit": commit,
-                "remote": remote,
+                "branch": current_branch or self.branch,
+                "current_branch": current_branch or self.branch,
+                "commit": last_commit,
+                "remote": remote_url,
                 "has_changes": has_changes,
-                "has_updates": has_updates,
-                "status": "modified" if has_changes else "clean",
-                "last_commit": {
-                    "hash": last_commit_hash or commit,
-                    "message": last_commit_message,
-                    "date": last_commit_date
-                } if last_commit_message or last_commit_date else None
+                "status": "clean" if not has_changes else "dirty"
             }
         except Exception as e:
             logger.error(f"Error getting git status: {e}", exc_info=True)
             return {
                 "is_repo": True,
-                "branch": None,
+                "branch": self.branch,
                 "commit": None,
                 "remote": None,
-                "status": "error",
-                "error": str(e)
+                "status": "error"
             }
-
-
-# Вспомогательные функции для обратной совместимости
-
-def is_git_repo(path: Path) -> bool:
-    """Проверка, является ли директория Git репозиторием"""
-    git_dir = Path(path) / ".git"
-    return git_dir.exists() and git_dir.is_dir()
 
 
 def update_bot_from_git(bot_dir: Path, repo_url: str, branch: str = "main") -> Tuple[bool, str]:
     """Обновление бота из Git репозитория"""
     repo = GitRepository(bot_dir, repo_url, branch)
     
-    if not is_git_repo(bot_dir):
+    if not repo.is_git_installed():
+        return (False, "Git не установлен")
+    
+    if not repo.is_repo():
         return repo.clone(repo_url, branch)
+
     else:
         return repo.update()
 
@@ -804,169 +474,184 @@ def update_panel_from_git() -> Tuple[bool, str]:
     """Обновление панели из Git репозитория с сохранением папок bots/ и data/"""
     from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH, BOTS_DIR, DATA_DIR
     
+    # Находим Git команду
+    git_cmd = None
+    candidates = [shutil.which("git"), "git"]
+    if os.name != 'nt':
+        candidates.extend(["/usr/bin/git", "/usr/local/bin/git", "/bin/git"])
+    
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            result = subprocess.run(
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                git_cmd = candidate
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
+    if not git_cmd:
+        return (False, "Git не установлен. Установите Git для обновления панели.")
+    
+    if not is_git_repo(BASE_DIR):
+        return (False, "Панель не является Git репозиторием. Инициализируйте репозиторий в настройках.")
+    
+    # Убеждаемся, что используем HTTPS URL для панели
+    https_url = PANEL_REPO_URL
+    if not https_url.endswith(".git"):
+        https_url += ".git"
+    
+    logger.info(f"Используем HTTPS URL для панели: {https_url}")
+    
+    # Принудительно устанавливаем HTTPS URL
     try:
-        repo = GitRepository(BASE_DIR, PANEL_REPO_URL, PANEL_REPO_BRANCH)
-        
-        # Проверяем наличие Git
-        if not repo.is_git_installed():
-            return (False, "Git не установлен. Установите Git для обновления панели.")
-        
-        if not repo.is_repo():
-            return (False, "Панель не является Git репозиторием. Инициализируйте репозиторий в настройках.")
-        
-        # Для панели всегда используем HTTPS для публичных репозиториев
-        # Проверяем текущий remote URL и конвертируем SSH в HTTPS если нужно
+        set_url_result = subprocess.run(
+            [git_cmd, "remote", "set-url", "origin", https_url],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if set_url_result.returncode == 0:
+            logger.info("Remote URL установлен на HTTPS")
+        else:
+            # Пробуем добавить remote если его нет
+            add_result = subprocess.run(
+                [git_cmd, "remote", "add", "origin", https_url],
+                cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if add_result.returncode != 0:
+                logger.warning(f"Не удалось установить remote URL: {add_result.stderr}")
+    except Exception as e:
+        logger.warning(f"Ошибка при установке remote URL: {e}")
+    
+    # Создаем временную директорию для бэкапа защищаемых папок
+    try:
+        backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
+        logger.info(f"Создана временная директория для бэкапа: {backup_dir}")
+    except Exception as e:
+        logger.error(f"Не удалось создать временную директорию: {e}", exc_info=True)
+        return (False, f"Не удалось создать временную директорию для бэкапа: {str(e)}")
+    
+    protected_dirs = []
+    if BOTS_DIR.exists() and BOTS_DIR.is_dir():
+        protected_dirs.append(("bots", BOTS_DIR))
+    if DATA_DIR.exists() and DATA_DIR.is_dir():
+        protected_dirs.append(("data", DATA_DIR))
+    
+    # Сохраняем защищаемые директории
+    for dir_name, dir_path in protected_dirs:
         try:
-            current_remote = repo._get_remote_url()
-            if current_remote:
-                logger.info(f"Текущий remote URL панели: {current_remote}")
-                
-                # Если используется SSH URL, конвертируем в HTTPS
-                if current_remote.startswith("git@") or current_remote.startswith("ssh://"):
-                    https_url = None
-                    
-                    if "github.com" in current_remote:
-                        # git@github.com:user/repo.git -> https://github.com/user/repo.git
-                        if current_remote.startswith("git@"):
-                            https_url = current_remote.replace("git@github.com:", "https://github.com/")
-                        elif current_remote.startswith("ssh://"):
-                            https_url = current_remote.replace("ssh://git@github.com/", "https://github.com/")
-                        
-                        if https_url and not https_url.endswith(".git"):
-                            https_url += ".git"
-                    
-                    if https_url:
-                        logger.info(f"Конвертируем SSH URL в HTTPS для панели: {https_url}")
-                        env_no_ssh = os.environ.copy()
-                        if 'GIT_SSH_COMMAND' in env_no_ssh:
-                            del env_no_ssh['GIT_SSH_COMMAND']
-                        
-                        set_result = subprocess.run(
-                            [repo.git_cmd, "remote", "set-url", "origin", https_url],
-                            cwd=repo.path,
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
-                        
-                        if set_result.returncode == 0:
-                            logger.info("Remote URL панели успешно изменен на HTTPS")
-                        else:
-                            logger.warning(f"Не удалось изменить remote URL на HTTPS: {set_result.stderr}")
-        except Exception as remote_check_error:
-            logger.warning(f"Не удалось проверить/изменить remote URL: {remote_check_error}")
+            backup_path = backup_dir / dir_name
+            if dir_path.exists() and dir_path.is_dir():
+                logger.info(f"Сохранение директории {dir_name}...")
+                if backup_path.exists():
+                    shutil.rmtree(backup_path)
+                shutil.copytree(dir_path, backup_path, dirs_exist_ok=True)
+                logger.info(f"Директория {dir_name} сохранена")
+        except Exception as backup_error:
+            logger.error(f"Ошибка при сохранении директории {dir_name}: {backup_error}", exc_info=True)
+    
+    # Выполняем git pull через HTTPS (без SSH)
+    try:
+        env = os.environ.copy()
+        # Убираем SSH команду если есть
+        if 'GIT_SSH_COMMAND' in env:
+            del env['GIT_SSH_COMMAND']
         
-        # Создаем временную директорию для бэкапа защищаемых папок
-        try:
-            backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
-            logger.info(f"Создана временная директория для бэкапа: {backup_dir}")
-        except Exception as e:
-            logger.error(f"Не удалось создать временную директорию: {e}", exc_info=True)
-            return (False, f"Не удалось создать временную директорию для бэкапа: {str(e)}")
+        logger.info(f"Выполняем git pull через HTTPS (ветка: {PANEL_REPO_BRANCH})")
+        pull_result = subprocess.run(
+            [git_cmd, "pull", "origin", PANEL_REPO_BRANCH],
+            cwd=BASE_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
         
-        protected_dirs = []
-        if BOTS_DIR.exists() and BOTS_DIR.is_dir():
-            protected_dirs.append(("bots", BOTS_DIR))
-        if DATA_DIR.exists() and DATA_DIR.is_dir():
-            protected_dirs.append(("data", DATA_DIR))
-        
-        # Сохраняем защищаемые директории
-        backup_success = True
-        for dir_name, dir_path in protected_dirs:
-            try:
-                backup_path = backup_dir / dir_name
-                if dir_path.exists() and dir_path.is_dir():
-                    logger.info(f"Сохранение директории {dir_name}...")
-                    # Удаляем старый бэкап, если существует
-                    if backup_path.exists():
-                        shutil.rmtree(backup_path)
-                    shutil.copytree(dir_path, backup_path, dirs_exist_ok=True)
-                    logger.info(f"Директория {dir_name} сохранена в {backup_path}")
-            except Exception as backup_error:
-                logger.error(f"Ошибка при сохранении директории {dir_name}: {backup_error}", exc_info=True)
-                backup_success = False
-                # Продолжаем, но логируем ошибку
-        
-        if not backup_success and protected_dirs:
-            logger.warning("Не все директории были успешно сохранены, но продолжаем обновление")
-        
-        # Выполняем обновление
-        try:
-            success, message = repo.update()
-        except Exception as update_error:
-            logger.error(f"Ошибка при выполнении git update: {update_error}", exc_info=True)
-            success = False
-            message = f"Ошибка при обновлении из Git: {str(update_error)}"
-        
-        if success:
+        if pull_result.returncode == 0:
+            logger.info("Git pull успешно выполнен")
+            
             # Восстанавливаем защищаемые директории
             logger.info("Восстановление защищаемых директорий...")
-            restore_success = True
             for dir_name, dir_path in protected_dirs:
                 try:
                     backup_path = backup_dir / dir_name
                     if backup_path.exists() and backup_path.is_dir():
-                        # Удаляем директорию, если она была обновлена
                         if dir_path.exists():
                             logger.info(f"Восстановление директории {dir_name}...")
-                            # Удаляем обновленную версию
                             try:
                                 shutil.rmtree(dir_path)
                             except Exception as rmtree_error:
-                                logger.warning(f"Не удалось удалить {dir_path}, пробуем принудительно: {rmtree_error}")
-                                # Пробуем еще раз с игнорированием ошибок
+                                logger.warning(f"Не удалось удалить {dir_path}, пробуем принудительно")
                                 def handle_remove_readonly(func, path, exc):
                                     os.chmod(path, stat.S_IWRITE)
                                     func(path)
                                 shutil.rmtree(dir_path, onerror=handle_remove_readonly)
                         
-                        # Восстанавливаем из бэкапа
                         shutil.copytree(backup_path, dir_path, dirs_exist_ok=True)
                         logger.info(f"Директория {dir_name} восстановлена")
                 except Exception as restore_error:
                     logger.error(f"Ошибка при восстановлении директории {dir_name}: {restore_error}", exc_info=True)
-                    restore_success = False
-                    # Продолжаем восстановление других директорий
             
-            if not restore_success:
-                logger.warning("Не все директории были успешно восстановлены")
-        
-        # Удаляем временную директорию
-        try:
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
-                logger.info(f"Временная директория {backup_dir} удалена")
-        except Exception as cleanup_error:
-            logger.warning(f"Не удалось удалить временную директорию {backup_dir}: {cleanup_error}")
-        
-        if success:
-            return (True, f"Панель успешно обновлена. Защищенные директории (bots/, data/) сохранены.")
+            # Удаляем временную директорию
+            try:
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+            except Exception:
+                pass
+            
+            return (True, "Панель успешно обновлена. Защищенные директории (bots/, data/) сохранены.")
         else:
-            return (False, message)
+            error_msg = pull_result.stderr or pull_result.stdout or "Неизвестная ошибка"
+            logger.error(f"Git pull failed: {error_msg}")
             
+            # Восстанавливаем директории даже при ошибке
+            for dir_name, dir_path in protected_dirs:
+                try:
+                    backup_path = backup_dir / dir_name
+                    if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
+                        shutil.copytree(backup_path, dir_path)
+                except Exception:
+                    pass
+            
+            # Удаляем временную директорию
+            try:
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+            except Exception:
+                pass
+            
+            return (False, f"Ошибка Git pull: {error_msg}")
+            
+    except subprocess.TimeoutExpired:
+        logger.error("Git pull timeout")
+        return (False, "Git pull timeout")
     except Exception as e:
-        # В случае ошибки пытаемся восстановить директории
         logger.error(f"Критическая ошибка при обновлении панели: {e}", exc_info=True)
         
-        # Пытаемся восстановить директории из бэкапа, если он был создан
+        # Восстанавливаем директории при ошибке
         try:
-            if 'backup_dir' in locals() and backup_dir.exists():
-                logger.info("Попытка восстановления защищаемых директорий после ошибки...")
+            if backup_dir and backup_dir.exists():
                 for dir_name, dir_path in protected_dirs:
                     try:
                         backup_path = backup_dir / dir_name
                         if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
                             shutil.copytree(backup_path, dir_path)
-                            logger.info(f"Директория {dir_name} восстановлена после ошибки")
                     except Exception:
                         pass
-                
-                # Удаляем временную директорию
-                try:
-                    if backup_dir.exists():
-                        shutil.rmtree(backup_dir)
-                except Exception:
-                    pass
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
         except Exception:
             pass
         
