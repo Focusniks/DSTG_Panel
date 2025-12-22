@@ -7,7 +7,7 @@ import os
 import shutil
 import logging
 from pathlib import Path
-from typing import Tuple, Optional, Dict, List
+from typing import Tuple, Optional, Dict, List, Any
 from backend.config import DATA_DIR
 
 logger = logging.getLogger(__name__)
