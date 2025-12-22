@@ -1750,6 +1750,47 @@ async def change_password(request: Request, password_data: ChangePasswordRequest
     else:
         raise HTTPException(status_code=500, detail="Ошибка при сохранении нового пароля")
 
+@app.get("/api/panel/mysql-settings")
+async def get_mysql_settings_endpoint(request: Request):
+    """Получение настроек MySQL из базы данных панели"""
+    try:
+        settings = get_mysql_settings()
+        return {
+            "success": True,
+            "settings": {
+                "host": settings['host'],
+                "port": settings['port'],
+                "user": settings['user'],
+                "password": settings['password']  # Возвращаем для редактирования
+            }
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting MySQL settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка при получении настроек MySQL: {str(e)}")
+
+@app.post("/api/panel/mysql-settings")
+async def set_mysql_settings_endpoint(request: Request, settings_data: MySQLSettingsRequest):
+    """Сохранение настроек MySQL в базу данных панели"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Сохраняем настройки в базу данных панели
+        if set_mysql_settings(settings_data.host, settings_data.port, settings_data.user, settings_data.password):
+            # Очищаем кэш настроек MySQL в db_manager
+            import backend.db_manager as db_manager_module
+            db_manager_module._mysql_settings_cache = None
+            
+            logger.info(f"MySQL settings saved: host={settings_data.host}, port={settings_data.port}, user={settings_data.user}")
+            
+            return {"success": True, "message": "Настройки MySQL успешно сохранены"}
+        else:
+            raise HTTPException(status_code=500, detail="Ошибка при сохранении настроек MySQL")
+    except Exception as e:
+        logger.error(f"Error setting MySQL settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении настроек MySQL: {str(e)}")
 
 # Инициализация при старте приложения
 async def monitor_bots():
