@@ -272,8 +272,67 @@
         const memoryLimitInfo = document.getElementById('memory-limit-info');
         if (memoryLimitInfo) memoryLimitInfo.textContent = bot.memory_limit || 512;
         
+        // Информация о времени работы
+        const uptimeEl = document.getElementById('bot-uptime');
+        if (uptimeEl) {
+            if (bot.status === 'running' && bot.uptime) {
+                uptimeEl.textContent = bot.uptime;
+                uptimeEl.style.color = 'var(--neon-green, #39ff14)';
+            } else {
+                uptimeEl.textContent = 'Не запущен';
+                uptimeEl.style.color = 'var(--text-secondary)';
+            }
+        }
+        
+        const lastStartedEl = document.getElementById('bot-last-started');
+        if (lastStartedEl) {
+            if (bot.last_started_at) {
+                lastStartedEl.textContent = formatDate(bot.last_started_at);
+            } else {
+                lastStartedEl.textContent = 'Никогда';
+            }
+        }
+        
+        const lastCrashedEl = document.getElementById('bot-last-crashed');
+        if (lastCrashedEl) {
+            if (bot.last_crashed_at) {
+                lastCrashedEl.textContent = formatDate(bot.last_crashed_at);
+            } else {
+                lastCrashedEl.textContent = 'Не было';
+                lastCrashedEl.style.color = 'var(--text-secondary)';
+            }
+        }
+        
         // Загружаем README если есть
         loadReadme();
+    }
+    
+    // Функция форматирования даты (аналогичная той, что в app.js)
+    function formatDate(dateString) {
+        if (!dateString) return '';
+        try {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            
+            if (minutes < 1) return 'только что';
+            if (minutes < 60) return `${minutes} мин назад`;
+            if (hours < 24) return `${hours} ч назад`;
+            if (days < 7) return `${days} дн назад`;
+            
+            // Форматируем дату
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hoursStr = String(date.getHours()).padStart(2, '0');
+            const minutesStr = String(date.getMinutes()).padStart(2, '0');
+            return `${day}.${month}.${year} ${hoursStr}:${minutesStr}`;
+        } catch (e) {
+            return dateString;
+        }
     }
     
     // Загрузка и отображение README.md
@@ -394,13 +453,30 @@
         if (!botId) return;
         
         try {
+            // Получаем полную информацию о боте для обновления времени работы
+            const botResponse = await fetch('/api/bots/' + botId);
+            if (botResponse.ok) {
+                const bot = await botResponse.json();
+                // Обновляем информацию о времени работы
+                const uptimeEl = document.getElementById('bot-uptime');
+                if (uptimeEl) {
+                    if (bot.status === 'running' && bot.uptime) {
+                        uptimeEl.textContent = bot.uptime;
+                        uptimeEl.style.color = 'var(--neon-green, #39ff14)';
+                    } else {
+                        uptimeEl.textContent = 'Не запущен';
+                        uptimeEl.style.color = 'var(--text-secondary)';
+                    }
+                }
+            }
+            
             const response = await fetch('/api/bots/' + botId + '/status');
             if (!response.ok) return;
             
             const status = await response.json();
             
-            // Определяем статус бота из API - используем статус из status или из bot
-            let botStatus = status.status || bot.status || 'stopped';
+            // Определяем статус бота из API - используем статус из status
+            let botStatus = status.status || 'stopped';
             // Если бот запущен, но статус не установлен, устанавливаем running
             if (status.running && !['starting', 'restarting', 'installing', 'error', 'error_startup'].includes(botStatus)) {
                 botStatus = 'running';

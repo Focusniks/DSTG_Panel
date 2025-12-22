@@ -88,10 +88,24 @@ function renderBotsList(bots) {
                             <span class="status-text">${getStatusText(bot.status || 'stopped')}</span>
                         </div>
                         
-                        ${bot.start_file ? `
+                        ${bot.uptime ? `
                             <div class="bot-card-new-info">
-                                <i class="fas fa-file-code"></i>
-                                <span>${escapeHtml(bot.start_file)}</span>
+                                <i class="fas fa-clock"></i>
+                                <span>Работает: ${bot.uptime}</span>
+                            </div>
+                        ` : ''}
+                        
+                        ${bot.last_started_at ? `
+                            <div class="bot-card-new-info" style="font-size: 0.75rem; color: var(--text-secondary);">
+                                <i class="fas fa-play-circle"></i>
+                                <span>Запущен: ${formatDate(bot.last_started_at)}</span>
+                            </div>
+                        ` : ''}
+                        
+                        ${bot.last_crashed_at ? `
+                            <div class="bot-card-new-info" style="font-size: 0.75rem; color: var(--text-danger, #dc3545);">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>Упал: ${formatDate(bot.last_crashed_at)}</span>
                             </div>
                         ` : ''}
                         
@@ -513,6 +527,33 @@ function showAlert(message, type) {
 }
 
 // Экранирование HTML
+function formatDate(dateString) {
+    if (!dateString) return '';
+    try {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diff = now - date;
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+        
+        if (minutes < 1) return 'только что';
+        if (minutes < 60) return `${minutes} мин назад`;
+        if (hours < 24) return `${hours} ч назад`;
+        if (days < 7) return `${days} дн назад`;
+        
+        // Форматируем дату
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hoursStr = String(date.getHours()).padStart(2, '0');
+        const minutesStr = String(date.getMinutes()).padStart(2, '0');
+        return `${day}.${month}.${year} ${hoursStr}:${minutesStr}`;
+    } catch (e) {
+        return dateString;
+    }
+}
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -535,6 +576,8 @@ function startMetricsUpdate() {
             bots.forEach(bot => {
                 if (bot.status === 'running') {
                     loadBotMetrics(bot.id);
+                    // Обновляем время работы
+                    updateBotUptime(bot.id, bot.uptime);
                 }
             });
             
@@ -554,6 +597,20 @@ function startMetricsUpdate() {
             console.error('Error updating metrics:', error);
         }
     }, 5000);
+}
+
+// Обновление времени работы бота
+function updateBotUptime(botId, uptime) {
+    const botCard = document.querySelector(`.bot-card-new[data-bot-id="${botId}"]`);
+    if (!botCard) return;
+    
+    const uptimeElement = botCard.querySelector('.bot-card-new-info i.fa-clock');
+    if (uptimeElement && uptimeElement.parentElement) {
+        const span = uptimeElement.parentElement.querySelector('span');
+        if (span && uptime) {
+            span.textContent = `Работает: ${uptime}`;
+        }
+    }
 }
 
 // Обновление только визуальных индикаторов статуса (без кнопок)

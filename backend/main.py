@@ -294,16 +294,25 @@ async def check_auth(request: Request):
 
 @app.get("/api/bots")
 async def list_bots():
+    from backend.database import calculate_uptime
     bots = get_all_bots()
     
     # Синхронизируем статусы ботов с реальными процессами
+    from datetime import datetime
     for bot in bots:
         if bot['status'] == 'running' and bot['pid']:
             if not is_process_running(bot['pid']):
-                # Процесс не запущен, обновляем статус
-                update_bot(bot['id'], pid=None, status='stopped')
+                # Процесс не запущен (падение), обновляем статус
+                current_time = datetime.now().isoformat()
+                update_bot(bot['id'], pid=None, status='stopped', started_at=None, last_crashed_at=current_time, last_stopped_at=current_time)
                 bot['status'] = 'stopped'
                 bot['pid'] = None
+        
+        # Добавляем информацию о времени работы
+        if bot['status'] == 'running' and bot.get('started_at'):
+            bot['uptime'] = calculate_uptime(bot['started_at'])
+        else:
+            bot['uptime'] = None
     
     return bots
 
@@ -378,9 +387,17 @@ async def create_bot_endpoint(bot_data: BotCreate):
 
 @app.get("/api/bots/{bot_id}")
 async def get_bot_endpoint(bot_id: int):
+    from backend.database import calculate_uptime
     bot = get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    # Добавляем информацию о времени работы
+    if bot['status'] == 'running' and bot.get('started_at'):
+        bot['uptime'] = calculate_uptime(bot['started_at'])
+    else:
+        bot['uptime'] = None
+    
     return bot
 
 @app.put("/api/bots/{bot_id}")

@@ -81,6 +81,27 @@ def init_database():
             # Поле уже существует, игнорируем ошибку
             pass
         
+        # Миграция: добавляем поля для отслеживания времени работы
+        try:
+            cursor.execute("ALTER TABLE bots ADD COLUMN started_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE bots ADD COLUMN last_started_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE bots ADD COLUMN last_stopped_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
+        
+        try:
+            cursor.execute("ALTER TABLE bots ADD COLUMN last_crashed_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
+        
         conn.commit()
         conn.close()
     except Exception as e:
@@ -204,6 +225,32 @@ def create_bot(name: str, bot_type: str, start_file: str = None,
                 pass
         raise
 
+def calculate_uptime(started_at: Optional[str]) -> Optional[str]:
+    """Расчет времени работы бота в читаемом формате"""
+    if not started_at:
+        return None
+    
+    try:
+        from datetime import datetime
+        start_time = datetime.fromisoformat(started_at)
+        now = datetime.now()
+        delta = now - start_time
+        
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        if days > 0:
+            return f"{days}д {hours}ч {minutes}м"
+        elif hours > 0:
+            return f"{hours}ч {minutes}м"
+        elif minutes > 0:
+            return f"{minutes}м {seconds}с"
+        else:
+            return f"{seconds}с"
+    except Exception:
+        return None
+
 def get_bot(bot_id: int) -> Optional[Dict]:
     """Получение информации о боте"""
     conn = get_db_connection()
@@ -235,7 +282,8 @@ def update_bot(bot_id: int, **kwargs) -> bool:
     
     # Фильтруем только допустимые поля
     allowed_fields = ['name', 'bot_type', 'start_file', 'cpu_limit', 'memory_limit', 
-                     'status', 'pid', 'git_repo_url', 'git_branch', 'auto_start']
+                     'status', 'pid', 'git_repo_url', 'git_branch', 'auto_start',
+                     'started_at', 'last_started_at', 'last_stopped_at', 'last_crashed_at']
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
     
     # Преобразуем auto_start из bool в int для SQLite

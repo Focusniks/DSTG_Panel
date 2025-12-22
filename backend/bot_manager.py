@@ -157,12 +157,16 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
         except Exception:
             pass
         
-        update_bot(bot_id, pid=process.pid, status='running')
+        # Записываем дату запуска
+        from datetime import datetime
+        current_time = datetime.now().isoformat()
+        update_bot(bot_id, pid=process.pid, status='running', started_at=current_time, last_started_at=current_time)
         
         time.sleep(2.0)
         if process.poll() is not None:
             exit_code = process.returncode
-            update_bot(bot_id, pid=None, status='stopped')
+            current_time = datetime.now().isoformat()
+            update_bot(bot_id, pid=None, status='stopped', started_at=None, last_crashed_at=current_time, last_stopped_at=current_time)
             
             try:
                 log_file.close()
@@ -232,15 +236,20 @@ def stop_bot(bot_id: int) -> bool:
         except psutil.NoSuchProcess:
             pass
         
+        # Записываем дату остановки
+        from datetime import datetime
+        current_time = datetime.now().isoformat()
         # Обновляем статус
-        update_bot(bot_id, pid=None, status='stopped')
+        update_bot(bot_id, pid=None, status='stopped', started_at=None, last_stopped_at=current_time)
         # Очищаем кэш CPU для этого PID
         if pid in _cpu_percent_cache:
             del _cpu_percent_cache[pid]
         return True
         
     except Exception as e:
-        update_bot(bot_id, pid=None, status='stopped')
+        from datetime import datetime
+        current_time = datetime.now().isoformat()
+        update_bot(bot_id, pid=None, status='stopped', started_at=None, last_stopped_at=current_time)
         # Очищаем кэш CPU для этого PID
         if pid in _cpu_percent_cache:
             del _cpu_percent_cache[pid]
