@@ -848,26 +848,55 @@ def test_ssh_connection(host: str = "github.com") -> Tuple[bool, str]:
     Returns:
         (success, message)
     """
+    logger.info(f"Starting SSH connection test to {host}")
+    
     ssh_available, ssh_path = check_ssh_available()
     if not ssh_available:
-        return False, "SSH клиент не установлен"
+        error_msg = "SSH клиент не установлен. Установите OpenSSH клиент для работы с Git репозиториями."
+        logger.error(error_msg)
+        return False, error_msg
+    
+    logger.info(f"SSH клиент найден: {ssh_path}")
     
     if not get_ssh_key_exists():
-        return False, "SSH ключ не найден"
+        error_msg = "SSH ключ не найден. Сгенерируйте SSH ключ в настройках панели."
+        logger.error(error_msg)
+        return False, error_msg
+    
+    logger.info("SSH ключ найден")
     
     # Убеждаемся, что SSH config настроен
-    setup_ssh_config_for_github()
+    try:
+        setup_result = setup_ssh_config_for_github()
+        if not setup_result:
+            logger.warning("Не удалось настроить SSH config, продолжаем тестирование...")
+    except Exception as config_error:
+        logger.warning(f"Ошибка при настройке SSH config: {config_error}, продолжаем тестирование...")
     
     try:
         # Пробуем подключиться к хосту
         # Используем команду, которая просто проверяет доступность
         env = get_git_env_with_ssh()
         
+        # Создаем временный файл для known_hosts, чтобы избежать проблем с правами
+        known_hosts_file = SSH_DIR / "known_hosts"
+        known_hosts_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Собираем команду с опциями для автоматического принятия host key
+        ssh_command = [
+            ssh_path,
+            "-T",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", f"UserKnownHostsFile={known_hosts_file}",
+            "-o", "ConnectTimeout=10",
+            host
+        ]
+        
         result = subprocess.run(
-            [ssh_path, "-T", host],
+            ssh_command,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=15,
             env=env
         )
         
@@ -875,26 +904,160 @@ def test_ssh_connection(host: str = "github.com") -> Tuple[bool, str]:
         # GitLab и другие могут возвращать 0
         # Проверяем вывод, а не только код возврата
         output = (result.stdout + result.stderr).lower()
+        full_output = result.stdout + result.stderr
+        
+        # Проверяем на ошибки host key verification
+        if "host key verification failed" in output or "host authenticity" in output or "are you sure you want to continue connecting" in output:
+            # Пробуем еще раз с принудительным принятием ключа
+            logger.info(f"Host key verification failed, trying to add host key automatically...")
+            try:
+                # Ищем ssh-keyscan
+                ssh_keyscan_path = shutil.which("ssh-keyscan")
+                if not ssh_keyscan_path:
+                    # Пробуем найти рядом с ssh
+                    if os.path.exists(ssh_path):
+                        ssh_dir = os.path.dirname(ssh_path)
+                        ssh_keyscan_path = os.path.join(ssh_dir, "ssh-keyscan")
+                        if not os.path.exists(ssh_keyscan_path):
+                            ssh_keyscan_path = None
+                
+                if ssh_keyscan_path and os.path.exists(ssh_keyscan_path):
+                    # Используем ssh-keyscan для добавления ключа хоста
+                    keyscan_result = subprocess.run(
+                        [ssh_keyscan_path, "-H", host],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if keyscan_result.returncode == 0 and keyscan_result.stdout:
+                        # Добавляем ключ в known_hosts
+                        with open(known_hosts_file, 'a', encoding='utf-8') as f:
+                            f.write(keyscan_result.stdout)
+                        logger.info(f"Host key added to known_hosts, retrying connection...")
+                        
+                        # Повторяем попытку подключения
+                        result = subprocess.run(
+                            ssh_command,
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                            env=env
+                        )
+                        output = (result.stdout + result.stderr).lower()
+                        full_output = result.stdout + result.stderr
+                    else:
+                        # Если ssh-keyscan не сработал, пробуем с no-check
+                        logger.warning("ssh-keyscan failed, using StrictHostKeyChecking=no")
+                        ssh_command_no_check = [
+                            ssh_path,
+                            "-T",
+                            "-o", "StrictHostKeyChecking=no",
+                            "-o", "UserKnownHostsFile=/dev/null",
+                            "-o", "ConnectTimeout=10",
+                            host
+                        ]
+                        result = subprocess.run(
+                            ssh_command_no_check,
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                            env=env
+                        )
+                        output = (result.stdout + result.stderr).lower()
+                        full_output = result.stdout + result.stderr
+                else:
+                    # Если ssh-keyscan не найден, пробуем с no-check
+                    logger.warning("ssh-keyscan not found, using StrictHostKeyChecking=no")
+                    ssh_command_no_check = [
+                        ssh_path,
+                        "-T",
+                        "-o", "StrictHostKeyChecking=no",
+                        "-o", "UserKnownHostsFile=/dev/null",
+                        "-o", "ConnectTimeout=10",
+                        host
+                    ]
+                    result = subprocess.run(
+                        ssh_command_no_check,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        env=env
+                    )
+                    output = (result.stdout + result.stderr).lower()
+                    full_output = result.stdout + result.stderr
+            except Exception as keyscan_error:
+                logger.warning(f"Failed to add host key automatically: {keyscan_error}")
+                # Пробуем с no-check как последний вариант
+                ssh_command_no_check = [
+                    ssh_path,
+                    "-T",
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "ConnectTimeout=10",
+                    host
+                ]
+                result = subprocess.run(
+                    ssh_command_no_check,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    env=env
+                )
+                output = (result.stdout + result.stderr).lower()
+                full_output = result.stdout + result.stderr
+        
+        # Логируем полный вывод для отладки
+        logger.debug(f"SSH command return code: {result.returncode}")
+        logger.debug(f"SSH stdout: {result.stdout}")
+        logger.debug(f"SSH stderr: {result.stderr}")
         
         # Проверяем на ошибки аутентификации
         if "permission denied" in output or "denied" in output or "authentication failed" in output:
-            return False, "Ошибка аутентификации. Проверьте, что SSH ключ добавлен в ваш аккаунт."
+            error_msg = f"Ошибка аутентификации при подключении к {host}. Проверьте, что:\n1. SSH ключ добавлен в ваш аккаунт на {host}\n2. Публичный ключ скопирован правильно\n3. Ключ имеет правильные права доступа"
+            logger.error(f"SSH authentication failed: {full_output}")
+            return False, error_msg
+        
+        # Проверяем на другие распространенные ошибки
+        if "connection refused" in output or "connection timed out" in output:
+            error_msg = f"Не удалось подключиться к {host}. Проверьте:\n1. Доступность хоста\n2. Настройки файрвола\n3. Правильность имени хоста"
+            logger.error(f"SSH connection failed: {full_output}")
+            return False, error_msg
+        
+        if "no route to host" in output or "name or service not known" in output:
+            error_msg = f"Хост {host} недоступен. Проверьте интернет-соединение и правильность имени хоста."
+            logger.error(f"SSH host unreachable: {full_output}")
+            return False, error_msg
         
         # Проверяем на успешные ответы от Git хостов
-        success_indicators = ["hi", "successfully authenticated", "welcome", "you've successfully authenticated"]
+        success_indicators = ["hi", "successfully authenticated", "welcome", "you've successfully authenticated", "git@github.com"]
         if any(indicator in output for indicator in success_indicators):
+            logger.info(f"SSH connection to {host} successful")
             return True, f"SSH подключение к {host} успешно"
         
-        # Если код возврата 0 или 1 и нет ошибок - считаем успешным
+        # GitHub возвращает код 1 при успешном подключении с сообщением
+        # GitLab и другие могут возвращать 0
+        # Если код возврата 0 или 1 и нет явных ошибок - считаем успешным
         if result.returncode in [0, 1]:
-            return True, f"SSH подключение к {host} успешно"
+            # Проверяем, что нет явных ошибок в выводе
+            error_indicators = ["error", "failed", "fatal", "cannot", "unable"]
+            has_errors = any(indicator in output for indicator in error_indicators)
+            if not has_errors:
+                logger.info(f"SSH connection to {host} successful (return code: {result.returncode})")
+                return True, f"SSH подключение к {host} успешно"
         
-        return False, f"Ошибка подключения: {result.stderr or result.stdout or 'Неизвестная ошибка'}"
+        # Если дошли сюда, значит что-то пошло не так
+        error_msg = f"Ошибка подключения к {host}.\n\nДетали:\n{full_output.strip() if full_output.strip() else 'Неизвестная ошибка'}\n\nКод возврата: {result.returncode}"
+        logger.error(f"SSH connection test failed: {error_msg}")
+        return False, error_msg
         
     except subprocess.TimeoutExpired:
-        return False, "Превышено время ожидания при подключении"
+        error_msg = f"Превышено время ожидания при подключении к {host}. Проверьте доступность хоста и настройки сети."
+        logger.error(error_msg)
+        return False, error_msg
     except Exception as e:
-        return False, f"Ошибка тестирования SSH: {str(e)}"
+        error_msg = f"Ошибка тестирования SSH подключения к {host}: {str(e)}"
+        logger.error(f"SSH connection test exception: {error_msg}", exc_info=True)
+        return False, error_msg
 
 
 def get_ssh_key_info() -> Dict[str, Any]:

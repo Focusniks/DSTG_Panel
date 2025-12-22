@@ -63,16 +63,6 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-this-secret-key-in-production")
 SESSION_COOKIE_NAME = "panel_session"
 SESSION_COOKIE_MAX_AGE = 86400  # 24 часа
 
-# Настройки MySQL для ботов
-# Настройки MySQL теперь хранятся в базе данных панели (таблица panel_settings)
-# Их можно изменить через веб-интерфейс в разделе "Настройки"
-# Значения по умолчанию: localhost:3306, пользователь root, без пароля
-
-MYSQL_PREFIX = os.getenv("MYSQL_PREFIX", "bot_")  # Префикс для имен БД ботов
-
-# Настройки phpMyAdmin (опционально)
-PHPMYADMIN_URL = os.getenv("PHPMYADMIN_URL", "http://localhost/phpmyadmin")
-
 # Настройки панели
 PANEL_HOST = os.getenv("PANEL_HOST", "0.0.0.0")
 PANEL_PORT = int(os.getenv("PANEL_PORT", "8000"))

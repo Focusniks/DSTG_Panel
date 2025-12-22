@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Управление ботом</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="alternate icon" href="/static/favicon.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
@@ -277,6 +279,9 @@
                         <p class="text-muted mb-0 small">Управление файлами: просмотр, редактирование, создание, загрузка, удаление</p>
                     </div>
                 <div class="d-flex gap-2">
+                    <button class="btn btn-info" id="download-archive-btn">
+                        <i class="fas fa-download"></i> Скачать архив
+                    </button>
                     <button class="btn btn-primary" id="upload-file-btn">
                         <i class="fas fa-upload"></i> Загрузить файл
                     </button>
@@ -361,7 +366,7 @@
                     <i class="fas fa-database"></i>
                     Базы данных
                 </h2>
-                <p class="text-muted mb-4">Управление MySQL базами данных бота: создание, удаление, выполнение SQL запросов, интеграция с phpMyAdmin</p>
+                <p class="text-muted mb-4">Управление SQLite базами данных бота: создание, удаление, выполнение SQL запросов, работа с таблицами</p>
             </div>
 
             <!-- Форма создания новой базы данных -->
@@ -415,8 +420,8 @@
                         <button class="btn btn-primary" id="execute-query-btn">
                             <i class="fas fa-play"></i> Выполнить запрос
                         </button>
-                        <button class="btn btn-secondary" id="phpmyadmin-btn">
-                            <i class="fas fa-external-link-alt"></i> Открыть в phpMyAdmin
+                        <button class="btn btn-info" id="sqlite-editor-btn" style="display: none;">
+                            <i class="fas fa-database"></i> SQLite редактор
                         </button>
                     </div>
                     <div id="query-result" class="mt-3"></div>

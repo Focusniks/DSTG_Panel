@@ -50,11 +50,3 @@ def get_session_from_request(request: Request) -> str | None:
     
     return None
 
-async def require_auth(request: Request) -> bool:
-    """Middleware для проверки авторизации"""
-    token = get_session_from_request(request)
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return True
-
-

@@ -16,7 +16,7 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
     """Запуск бота"""
     bot = get_bot(bot_id)
     if not bot:
-        return (False, "Bot not found")
+        return (False, "Бот не найден")
     
     # Проверяем, не запущен ли уже бот
     if bot['status'] == 'running' and bot['pid']:
@@ -39,7 +39,7 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
     
     start_file_path = bot_dir / start_file
     if not start_file_path.exists():
-        return (False, f"Start file not found: {start_file}")
+        return (False, f"Стартовый файл не найден: {start_file}")
     
     # Устанавливаем статус "запускается"
     update_bot(bot_id, status='starting')
@@ -52,11 +52,11 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
             success = install_dependencies(str(bot_dir))
             if not success:
                 update_bot(bot_id, status='error_startup')
-                return (False, "Failed to install dependencies from requirements.txt")
+                return (False, "Не удалось установить зависимости из requirements.txt")
         except Exception as e:
             error_msg = str(e)
             update_bot(bot_id, status='error_startup')
-            return (False, f"Error installing dependencies: {error_msg}")
+            return (False, f"Ошибка установки зависимостей: {error_msg}")
     
     # Определяем команду запуска в зависимости от типа файла
     if start_file.endswith('.py'):
@@ -278,8 +278,8 @@ def install_dependencies(bot_dir: str) -> bool:
         )
         
         if result.returncode != 0:
-            error_msg = result.stdout if result.stdout else "Unknown error"
-            raise Exception(f"pip install failed with return code {result.returncode}: {error_msg}")
+            error_msg = result.stdout if result.stdout else "Неизвестная ошибка"
+            raise Exception(f"Ошибка pip install с кодом возврата {result.returncode}: {error_msg}")
         
         return True
     except subprocess.TimeoutExpired:
@@ -403,6 +403,10 @@ def apply_resource_limits(pid: int, cpu_limit: float, memory_limit_mb: int):
 def restore_bot_states():
     """Восстановление состояния ботов при запуске панели"""
     from backend.database import get_all_bots
+    import logging
+    import time
+    
+    logger = logging.getLogger(__name__)
     
     bots = get_all_bots()
     for bot in bots:
@@ -416,4 +420,29 @@ def restore_bot_states():
                     apply_resource_limits(bot['pid'], bot.get('cpu_limit', 50.0), bot.get('memory_limit', 512))
                 except Exception:
                     pass
+    
+    # Автозапуск ботов с включенным auto_start
+    logger.info("Проверка ботов для автозапуска...")
+    for bot in bots:
+        auto_start = bot.get('auto_start', 0)
+        # Преобразуем в int, если это bool или None
+        if isinstance(auto_start, bool):
+            auto_start = 1 if auto_start else 0
+        elif auto_start is None:
+            auto_start = 0
+        else:
+            auto_start = int(auto_start) if auto_start else 0
+        
+        if auto_start and bot['status'] == 'stopped':
+            logger.info(f"Автозапуск бота {bot['name']} (ID: {bot['id']})...")
+            try:
+                success, message = start_bot(bot['id'])
+                if success:
+                    logger.info(f"Бот {bot['name']} успешно запущен автоматически")
+                    # Небольшая задержка между запусками ботов
+                    time.sleep(1)
+                else:
+                    logger.warning(f"Не удалось автоматически запустить бота {bot['name']}: {message}")
+            except Exception as e:
+                logger.error(f"Ошибка при автозапуске бота {bot['name']}: {e}", exc_info=True)
 

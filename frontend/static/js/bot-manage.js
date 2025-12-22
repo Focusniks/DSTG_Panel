@@ -89,11 +89,6 @@
             }
         }
         
-        const phpmyadminBtn = document.getElementById('phpmyadmin-btn');
-        if (phpmyadminBtn) {
-            phpmyadminBtn.addEventListener('click', handleOpenPhpMyAdmin);
-        }
-        
         const executeQueryBtn = document.getElementById('execute-query-btn');
         if (executeQueryBtn) {
             executeQueryBtn.addEventListener('click', handleExecuteQuery);
@@ -118,6 +113,11 @@
         }
         
         // Кнопки для работы с файлами
+        const downloadArchiveBtn = document.getElementById('download-archive-btn');
+        if (downloadArchiveBtn) {
+            downloadArchiveBtn.addEventListener('click', handleDownloadArchive);
+        }
+        
         const uploadFileBtn = document.getElementById('upload-file-btn');
         if (uploadFileBtn) {
             uploadFileBtn.addEventListener('click', window.showUploadFileDialog);
@@ -233,6 +233,11 @@
         
         const gitBranchInput = document.getElementById('git-branch');
         if (gitBranchInput) gitBranchInput.value = bot.git_branch || 'main';
+        
+        const autoStartCheckbox = document.getElementById('auto-start');
+        if (autoStartCheckbox) {
+            autoStartCheckbox.checked = bot.auto_start === 1 || bot.auto_start === true;
+        }
         
         // Dashboard информация
         const typeInfo = document.getElementById('bot-type-info');
@@ -437,6 +442,61 @@
         });
     }
     
+    // Обработчик скачивания архива
+    async function handleDownloadArchive() {
+        if (!botId) return;
+        
+        const btn = document.getElementById('download-archive-btn');
+        if (!btn) return;
+        
+        // Сохраняем оригинальный текст и иконку
+        const originalHTML = btn.innerHTML;
+        
+        try {
+            // Показываем индикатор загрузки
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Создание архива...';
+            
+            // Скачиваем архив
+            const response = await fetch(`/api/bots/${botId}/download`);
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: 'Ошибка скачивания архива' }));
+                throw new Error(errorData.detail || 'Ошибка скачивания архива');
+            }
+            
+            // Получаем имя файла из заголовков
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = `bot_${botId}.zip`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+                if (filenameMatch) {
+                    filename = filenameMatch[1];
+                }
+            }
+            
+            // Создаем blob и скачиваем
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showSuccess('Архив создан', `Архив "${filename}" успешно скачан`);
+        } catch (error) {
+            console.error('Error downloading archive:', error);
+            showError('Ошибка скачивания', error.message || 'Не удалось скачать архив. См. консоль (F12).');
+        } finally {
+            // Восстанавливаем кнопку
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    }
+    
     // Запуск бота
     async function handleStartBot() {
         if (!botId) {
@@ -589,13 +649,15 @@
         e.preventDefault();
         if (!botId) return;
         
+        const autoStartCheckbox = document.getElementById('auto-start');
         const formData = {
             name: document.getElementById('bot-name').value,
             start_file: document.getElementById('start-file').value || null,
             cpu_limit: parseFloat(document.getElementById('cpu-limit').value) || 50,
             memory_limit: parseInt(document.getElementById('memory-limit').value) || 512,
             git_repo_url: document.getElementById('git-repo-url').value || null,
-            git_branch: document.getElementById('git-branch').value || 'main'
+            git_branch: document.getElementById('git-branch').value || 'main',
+            auto_start: autoStartCheckbox ? autoStartCheckbox.checked : false
         };
         
         try {
@@ -1394,9 +1456,6 @@
                                 <i class="fas fa-database"></i> ${escapeHtml(db.db_name)}
                             </div>
                             <div class="database-item-actions">
-                                <button class="database-item-btn" onclick="openPhpMyAdminForDb('${escapeHtml(db.db_name)}')" title="Открыть в phpMyAdmin">
-                                    <i class="fas fa-external-link-alt"></i>
-                                </button>
                                 <button class="database-item-btn btn-delete" onclick="deleteDatabase('${escapeHtml(db.db_name)}')" title="Удалить базу данных">
                                     <i class="fas fa-trash"></i>
                                 </button>
@@ -1435,11 +1494,11 @@
         // Очищаем список
         select.innerHTML = '<option value="">Выберите базу данных...</option>';
         
-        // Добавляем базы данных
-        databases.forEach(db => {
+        // Добавляем базы данных (databases - это массив строк с именами БД)
+        databases.forEach(dbName => {
             const option = document.createElement('option');
-            option.value = db.db_name;
-            option.textContent = db.db_name + (db.table_count ? ` (${db.table_count} таблиц)` : '');
+            option.value = dbName;
+            option.textContent = dbName;
             select.appendChild(option);
         });
     }
@@ -1452,7 +1511,7 @@
         }
         
         try {
-            const response = await fetch(`/api/bots/${botId}/databases/${encodeURIComponent(dbName)}`, {
+            const response = await fetch(`/api/bots/${botId}/sqlite/databases/${encodeURIComponent(dbName)}`, {
                 method: 'DELETE'
             });
             
@@ -1467,22 +1526,6 @@
         } catch (error) {
             console.error('Error deleting database:', error);
             showError('Ошибка удаления', 'Не удалось удалить базу данных. См. консоль (F12).', error.message);
-        }
-    }
-    
-    window.openPhpMyAdminForDb = async function(dbName) {
-        if (!botId || !dbName) return;
-        
-        try {
-            const response = await fetch(`/api/bots/${botId}/db/phpmyadmin?db_name=${encodeURIComponent(dbName)}`);
-            if (!response.ok) return;
-            
-            const result = await response.json();
-            if (result.url) {
-                window.open(result.url, '_blank');
-            }
-        } catch (error) {
-            console.error('Error opening phpMyAdmin:', error);
         }
     }
     
@@ -1501,13 +1544,13 @@
         }
         
         try {
-            const response = await fetch('/api/bots/' + botId + '/db', {
+            const response = await fetch('/api/bots/' + botId + '/sqlite/databases', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    db_name: dbName || null
+                    db_name: dbName || 'bot.db'
                 })
             });
             
@@ -1562,21 +1605,6 @@
         }
     }
     
-    // Открытие phpMyAdmin
-    async function handleOpenPhpMyAdmin() {
-        if (!botId) return;
-        
-        const dbSelect = document.getElementById('sql-db-select');
-        const dbName = dbSelect ? dbSelect.value : null;
-        
-        if (!dbName) {
-            showWarning('Внимание', 'Выберите базу данных для открытия в phpMyAdmin');
-            return;
-        }
-        
-        await openPhpMyAdminForDb(dbName);
-    }
-    
     // Выполнение SQL запроса
     async function handleExecuteQuery() {
         if (!botId) return;
@@ -1596,12 +1624,12 @@
         }
         
         try {
-            const response = await fetch('/api/bots/' + botId + '/db/query', {
+            const response = await fetch('/api/bots/' + botId + '/sqlite/execute', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     query: query,
-                    db_name: dbName
+                    db_name: dbName || 'bot.db'
                 })
             });
             
@@ -1612,20 +1640,25 @@
             
             if (result.success) {
                 if (result.type === 'select') {
-                    let html = '<div class="alert alert-success">Запрос выполнен успешно. Найдено строк: ' + result.row_count + '</div>';
+                    const rowCount = result.rows ? result.rows.length : 0;
+                    let html = '<div class="alert alert-success">Запрос выполнен успешно. Найдено строк: ' + rowCount + '</div>';
                     
                     if (result.rows && result.rows.length > 0) {
                         html += '<table class="table table-striped table-bordered"><thead><tr>';
-                        result.columns.forEach(function(col) {
-                            html += '<th>' + escapeHtml(col) + '</th>';
-                        });
+                        if (result.columns) {
+                            result.columns.forEach(function(col) {
+                                html += '<th>' + escapeHtml(col) + '</th>';
+                            });
+                        }
                         html += '</tr></thead><tbody>';
                         
                         result.rows.forEach(function(row) {
                             html += '<tr>';
-                            result.columns.forEach(function(col) {
-                                html += '<td>' + escapeHtml(String(row[col] || '')) + '</td>';
-                            });
+                            if (result.columns) {
+                                result.columns.forEach(function(col) {
+                                    html += '<td>' + escapeHtml(String(row[col] || '')) + '</td>';
+                                });
+                            }
                             html += '</tr>';
                         });
                         
@@ -1634,10 +1667,11 @@
                     
                     container.innerHTML = html;
                 } else {
-                    container.innerHTML = '<div class="alert alert-success">Запрос выполнен. Затронуто строк: ' + result.affected_rows + '</div>';
+                    const affectedRows = result.affected_rows || 0;
+                    container.innerHTML = '<div class="alert alert-success">Запрос выполнен. Затронуто строк: ' + affectedRows + '</div>';
                 }
             } else {
-                container.innerHTML = '<div class="alert alert-danger">Ошибка: ' + escapeHtml(result.error) + '</div>';
+                container.innerHTML = '<div class="alert alert-danger">Ошибка: ' + escapeHtml(result.error || 'Неизвестная ошибка') + '</div>';
             }
         } catch (error) {
             console.error('Execute query error:', error);

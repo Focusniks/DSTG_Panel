@@ -37,7 +37,6 @@ def init_database():
                 pid INTEGER,
                 cpu_limit REAL DEFAULT 50.0,
                 memory_limit INTEGER DEFAULT 512,
-                db_name TEXT,
                 git_repo_url TEXT,
                 git_branch TEXT DEFAULT 'main',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -45,23 +44,7 @@ def init_database():
             )
         """)
         
-        # Таблица баз данных ботов (для поддержки нескольких БД на бота)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS bot_databases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                bot_id INTEGER NOT NULL,
-                db_name TEXT NOT NULL,
-                db_user TEXT NOT NULL,
-                db_password TEXT NOT NULL,
-                db_host TEXT NOT NULL,
-                db_port INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
-                UNIQUE(bot_id, db_name)
-            )
-        """)
-        
-        # Таблица настроек панели (для хранения настроек MySQL)
+        # Таблица настроек панели
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS panel_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,19 +54,14 @@ def init_database():
             )
         """)
         
-        # Инициализируем настройки MySQL значениями по умолчанию, если их еще нет
-        default_settings = {
-            'mysql_host': 'localhost',
-            'mysql_port': '3306',
-            'mysql_user': 'root',
-            'mysql_password': ''
-        }
+        # Инициализация настроек панели (если нужно добавить новые настройки)
         
-        for key, value in default_settings.items():
-            cursor.execute("""
-                INSERT OR IGNORE INTO panel_settings (setting_key, setting_value)
-                VALUES (?, ?)
-            """, (key, value))
+        # Миграция: добавляем поле auto_start, если его нет
+        try:
+            cursor.execute("ALTER TABLE bots ADD COLUMN auto_start INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            # Поле уже существует, игнорируем ошибку
+            pass
         
         conn.commit()
         conn.close()
@@ -128,28 +106,6 @@ def set_panel_setting(key: str, value: str) -> bool:
     except Exception as e:
         import logging
         logging.error(f"Ошибка сохранения настройки {key}: {e}")
-        return False
-
-def get_mysql_settings() -> Dict[str, any]:
-    """Получение всех настроек MySQL из базы данных панели"""
-    return {
-        'host': get_panel_setting('mysql_host', 'localhost'),
-        'port': int(get_panel_setting('mysql_port', '3306')),
-        'user': get_panel_setting('mysql_user', 'root'),
-        'password': get_panel_setting('mysql_password', '')
-    }
-
-def set_mysql_settings(host: str, port: int, user: str, password: str) -> bool:
-    """Сохранение настроек MySQL в базу данных панели"""
-    try:
-        set_panel_setting('mysql_host', host)
-        set_panel_setting('mysql_port', str(port))
-        set_panel_setting('mysql_user', user)
-        set_panel_setting('mysql_password', password)
-        return True
-    except Exception as e:
-        import logging
-        logging.error(f"Ошибка сохранения настроек MySQL: {e}")
         return False
 
 def create_bot(name: str, bot_type: str, start_file: str = None, 
@@ -201,8 +157,8 @@ def create_bot(name: str, bot_type: str, start_file: str = None,
                 # Не критично, продолжаем создание бота
         
         cursor.execute("""
-            INSERT INTO bots (name, bot_type, start_file, bot_dir, cpu_limit, memory_limit, git_repo_url, git_branch, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
+            INSERT INTO bots (name, bot_type, start_file, bot_dir, cpu_limit, memory_limit, git_repo_url, git_branch, status, auto_start)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 0)
         """, (name, bot_type, start_file, str(bot_dir), cpu_limit, memory_limit, git_repo_url, git_branch))
         
         bot_id = cursor.lastrowid
@@ -261,8 +217,12 @@ def update_bot(bot_id: int, **kwargs) -> bool:
     
     # Фильтруем только допустимые поля
     allowed_fields = ['name', 'bot_type', 'start_file', 'cpu_limit', 'memory_limit', 
-                     'status', 'pid', 'db_name', 'git_repo_url', 'git_branch']
+                     'status', 'pid', 'git_repo_url', 'git_branch', 'auto_start']
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+    
+    # Преобразуем auto_start из bool в int для SQLite
+    if 'auto_start' in updates and isinstance(updates['auto_start'], bool):
+        updates['auto_start'] = 1 if updates['auto_start'] else 0
     
     if not updates:
         conn.close()

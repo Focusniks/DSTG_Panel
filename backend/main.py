@@ -2,7 +2,7 @@
 Главный файл FastAPI приложения - панель управления ботами
 """
 from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File, Form, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -11,18 +11,20 @@ from typing import Optional, List
 from pathlib import Path
 import shutil
 import os
+import zipfile
+import tempfile
 
 from backend.config import BASE_DIR, set_admin_password_hash, get_admin_password_hash
-from backend.auth import verify_password, create_session_token, get_session_from_request, require_auth
+from backend.auth import verify_password, create_session_token, get_session_from_request
 from backend.database import (
-    create_bot, get_bot, get_all_bots, update_bot, delete_bot,
-    get_mysql_settings, set_mysql_settings
+    create_bot, get_bot, get_all_bots, update_bot, delete_bot
 )
 from backend.bot_manager import start_bot, stop_bot, get_bot_process_info, is_process_running
-from backend.db_manager import (
-    create_bot_database, get_bot_database_info, 
-    execute_sql_query, get_phpmyadmin_url,
-    get_bot_databases, get_database_info, delete_bot_database
+from backend.sqlite_manager import (
+    get_tables, get_table_structure, get_table_data, execute_sql,
+    create_table, drop_table, insert_row, update_row, delete_row,
+    add_column, drop_column, get_databases as get_sqlite_databases,
+    create_database as create_sqlite_database, delete_database as delete_sqlite_database
 )
 from backend.git_manager import (
     update_panel_from_git, update_bot_from_git,
@@ -64,7 +66,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Обработчик для HTTPException - всегда возвращаем JSON"""
     try:
         import traceback
-        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail) if exc.detail else "Unknown error"
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail) if exc.detail else "Неизвестная ошибка"
         
         # Получаем traceback если есть
         tb_info = None
@@ -100,7 +102,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         return JSONResponse(
             status_code=exc.status_code,
             content={
-                "detail": "Internal server error in exception handler",
+                "detail": "Внутренняя ошибка сервера в обработчике исключений",
                 "handler_error": str(e),
                 "traceback": tb_info
             }
@@ -121,7 +123,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         
         # Если это HTTPException (FastAPI), возвращаем как JSON
         if isinstance(exc, HTTPException):
-            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail) if exc.detail else "Unknown error"
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail) if exc.detail else "Неизвестная ошибка"
             return JSONResponse(
                 status_code=exc.status_code,
                 content={
@@ -155,7 +157,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             return JSONResponse(
                 status_code=500,
                 content={
-                    "detail": "Internal server error in exception handler",
+                    "detail": "Внутренняя ошибка сервера в обработчике исключений",
                     "error_type": "HandlerError",
                     "handler_error": str(handler_error),
                     "original_error": str(exc),
@@ -166,7 +168,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             return JSONResponse(
                 status_code=500,
                 content={
-                    "detail": "Critical error in exception handler",
+                    "detail": "Критическая ошибка в обработчике исключений",
                     "error_type": "CriticalHandlerError"
                 }
             )
@@ -195,16 +197,11 @@ class BotUpdate(BaseModel):
     memory_limit: Optional[int] = None
     git_repo_url: Optional[str] = None
     git_branch: Optional[str] = None
+    auto_start: Optional[bool] = None
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
-
-class MySQLSettingsRequest(BaseModel):
-    host: str
-    port: int
-    user: str
-    password: str
 
 # Middleware для логирования всех запросов и ошибок
 @app.middleware("http")
@@ -238,7 +235,7 @@ async def auth_middleware(request: Request, call_next):
     token = get_session_from_request(request)
     if not token:
         if request.url.path.startswith("/api/"):
-            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+            return JSONResponse(status_code=401, content={"detail": "Не авторизован"})
         return Response(content='Redirecting to login...', status_code=302, headers={"Location": "/login"})
     
     response = await call_next(request)
@@ -257,7 +254,7 @@ async def login_page(request: Request):
 async def bot_manage_page(request: Request, bot_id: int):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     return templates.TemplateResponse("bot_manage.html", {"request": request, "bot_id": bot_id})
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -278,14 +275,14 @@ async def login(login_data: LoginRequest, response: Response):
         )
         return {"success": True, "token": token}
     else:
-        raise HTTPException(status_code=401, detail="Invalid password")
+        raise HTTPException(status_code=401, detail="Неверный пароль")
 
 @app.get("/api/auth/check")
 async def check_auth(request: Request):
     token = get_session_from_request(request)
     if token:
         return {"authenticated": True}
-    raise HTTPException(status_code=401, detail="Not authenticated")
+    raise HTTPException(status_code=401, detail="Не авторизован")
 
 @app.get("/api/bots")
 async def list_bots():
@@ -304,9 +301,6 @@ async def list_bots():
 
 @app.post("/api/bots")
 async def create_bot_endpoint(bot_data: BotCreate):
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         bot_id = create_bot(
             name=bot_data.name,
@@ -378,25 +372,25 @@ async def create_bot_endpoint(bot_data: BotCreate):
 async def get_bot_endpoint(bot_id: int):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     return bot
 
 @app.put("/api/bots/{bot_id}")
 async def update_bot_endpoint(bot_id: int, bot_data: BotUpdate):
     updates = bot_data.dict(exclude_unset=True)
     if not updates:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        raise HTTPException(status_code=400, detail="Нет полей для обновления")
     
     success = update_bot(bot_id, **updates)
     if not success:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     return {"success": True}
 
 @app.delete("/api/bots/{bot_id}")
 async def delete_bot_endpoint(bot_id: int):
     success = delete_bot(bot_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     return {"success": True}
 
 # File management endpoints
@@ -404,7 +398,7 @@ async def delete_bot_endpoint(bot_id: int):
 async def list_bot_files(bot_id: int):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     bot_dir = Path(bot['bot_dir'])
     if not bot_dir.exists():
@@ -447,17 +441,17 @@ async def get_bot_file(bot_id: int, path: str, binary: bool = False):
     """
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     file_path = Path(bot['bot_dir']) / path
     if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Файл не найден")
     
     # Проверка безопасности - файл должен быть внутри директории бота
     try:
         file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
     
     try:
         # Определяем расширение файла
@@ -562,7 +556,7 @@ async def get_bot_file(bot_id: int, path: str, binary: bool = False):
                         "is_audio": is_audio
                     }
             except (IOError, OSError, PermissionError) as e:
-                raise HTTPException(status_code=500, detail=f"Error reading file (file may be locked): {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Ошибка чтения файла (файл может быть заблокирован): {str(e)}")
         else:
             # Текстовый файл - читаем как текст
             try:
@@ -579,26 +573,26 @@ async def get_bot_file(bot_id: int, path: str, binary: bool = False):
                         tmp_path.unlink()  # Удаляем временный файл
                     except Exception:
                         # Если и это не получилось, возвращаем ошибку
-                        raise HTTPException(status_code=500, detail=f"Error reading file (file may be locked): {str(e)}")
+                        raise HTTPException(status_code=500, detail=f"Ошибка чтения файла (файл может быть заблокирован): {str(e)}")
             
             return {"content": content, "path": path, "binary": False}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка чтения файла: {str(e)}")
 
 @app.put("/api/bots/{bot_id}/file")
 async def save_bot_file(bot_id: int, request: Request):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     data = await request.json()
     path = data.get("path")
     content = data.get("content", "")
     
     if not path:
-        raise HTTPException(status_code=400, detail="Path is required")
+        raise HTTPException(status_code=400, detail="Путь обязателен")
     
     file_path = Path(bot['bot_dir']) / path
     
@@ -606,7 +600,7 @@ async def save_bot_file(bot_id: int, request: Request):
     try:
         file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
     
     # Создаем директории если нужно
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -615,20 +609,20 @@ async def save_bot_file(bot_id: int, request: Request):
         file_path.write_text(content, encoding='utf-8')
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сохранения файла: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/file")
 async def create_bot_file(bot_id: int, request: Request):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     data = await request.json()
     path = data.get("path")
     content = data.get("content", "")
     
     if not path:
-        raise HTTPException(status_code=400, detail="Path is required")
+        raise HTTPException(status_code=400, detail="Путь обязателен")
     
     file_path = Path(bot['bot_dir']) / path
     
@@ -636,10 +630,10 @@ async def create_bot_file(bot_id: int, request: Request):
     try:
         file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
     
     if file_path.exists():
-        raise HTTPException(status_code=400, detail="File already exists")
+        raise HTTPException(status_code=400, detail="Файл уже существует")
     
     # Создаем директории если нужно
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -648,13 +642,13 @@ async def create_bot_file(bot_id: int, request: Request):
         file_path.write_text(content, encoding='utf-8')
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка создания файла: {str(e)}")
 
 @app.delete("/api/bots/{bot_id}/file")
 async def delete_bot_file(bot_id: int, path: str):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     file_path = Path(bot['bot_dir']) / path
     
@@ -662,14 +656,14 @@ async def delete_bot_file(bot_id: int, path: str):
     try:
         file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
     
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Файл не найден")
     
     # Защита от удаления config.json
     if file_path.name == "config.json":
-        raise HTTPException(status_code=403, detail="Cannot delete config.json")
+        raise HTTPException(status_code=403, detail="Нельзя удалить config.json")
     
     try:
         if file_path.is_dir():
@@ -681,29 +675,29 @@ async def delete_bot_file(bot_id: int, path: str):
     except PermissionError as e:
         error_msg = str(e)
         if "WinError 32" in error_msg or "cannot access" in error_msg.lower() or "file is locked" in error_msg.lower():
-            raise HTTPException(status_code=500, detail="File is locked by another process. Stop the bot before deleting files in use.")
-        raise HTTPException(status_code=500, detail=f"Permission denied: {error_msg}")
+            raise HTTPException(status_code=500, detail="Файл заблокирован другим процессом. Остановите бота перед удалением используемых файлов.")
+        raise HTTPException(status_code=500, detail=f"Доступ запрещен: {error_msg}")
     except OSError as e:
         error_msg = str(e)
         if "WinError 32" in error_msg or "cannot access" in error_msg.lower() or "file is locked" in error_msg.lower():
-            raise HTTPException(status_code=500, detail="File is locked by another process. Stop the bot before deleting files in use.")
-        raise HTTPException(status_code=500, detail=f"Error deleting file: {error_msg}")
+            raise HTTPException(status_code=500, detail="Файл заблокирован другим процессом. Остановите бота перед удалением используемых файлов.")
+        raise HTTPException(status_code=500, detail=f"Ошибка удаления файла: {error_msg}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка удаления файла: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/file/rename")
 async def rename_bot_file(bot_id: int, request: Request):
     """Переименование файла или папки"""
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     data = await request.json()
     old_path = data.get("old_path")
     new_path = data.get("new_path")
     
     if not old_path or not new_path:
-        raise HTTPException(status_code=400, detail="old_path and new_path are required")
+        raise HTTPException(status_code=400, detail="old_path и new_path обязательны")
     
     old_file_path = Path(bot['bot_dir']) / old_path
     new_file_path = Path(bot['bot_dir']) / new_path
@@ -713,17 +707,17 @@ async def rename_bot_file(bot_id: int, request: Request):
         old_file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
         new_file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
     
     if not old_file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Файл не найден")
     
     if new_file_path.exists():
-        raise HTTPException(status_code=400, detail="Target file already exists")
+        raise HTTPException(status_code=400, detail="Целевой файл уже существует")
     
     # Защита от переименования config.json
     if old_file_path.name == "config.json":
-        raise HTTPException(status_code=403, detail="Cannot rename config.json")
+        raise HTTPException(status_code=403, detail="Нельзя переименовать config.json")
     
     try:
         # Создаем директории если нужно
@@ -731,20 +725,20 @@ async def rename_bot_file(bot_id: int, request: Request):
         old_file_path.rename(new_file_path)
         return {"success": True, "new_path": str(new_file_path.relative_to(Path(bot['bot_dir'])))}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error renaming file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка переименования файла: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/file/upload")
 async def upload_bot_file(bot_id: int, files: List[UploadFile] = File(...), path: str = Form("")):
     """Загрузка файла(ов) в директорию бота"""
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     try:
         destination_path = path if path else ""
         
         if not files:
-            raise HTTPException(status_code=400, detail="No files provided")
+            raise HTTPException(status_code=400, detail="Файлы не предоставлены")
         
         uploaded_files = []
         errors = []
@@ -808,20 +802,20 @@ async def upload_bot_file(bot_id: int, files: List[UploadFile] = File(...), path
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка загрузки: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/file/directory")
 async def create_bot_directory(bot_id: int, request: Request):
     """Создание директории"""
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     data = await request.json()
     path = data.get("path")
     
     if not path:
-        raise HTTPException(status_code=400, detail="Path is required")
+        raise HTTPException(status_code=400, detail="Путь обязателен")
     
     dir_path = Path(bot['bot_dir']) / path
     
@@ -829,23 +823,108 @@ async def create_bot_directory(bot_id: int, request: Request):
     try:
         dir_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
     
     if dir_path.exists():
-        raise HTTPException(status_code=400, detail="Directory already exists")
+        raise HTTPException(status_code=400, detail="Директория уже существует")
     
     try:
         dir_path.mkdir(parents=True, exist_ok=True)
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating directory: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка создания директории: {str(e)}")
+
+@app.get("/api/bots/{bot_id}/download")
+async def download_bot_archive(bot_id: int):
+    """Скачивание всех файлов бота в виде ZIP архива"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    bot_dir = Path(bot['bot_dir'])
+    if not bot_dir.exists():
+        raise HTTPException(status_code=404, detail="Директория бота не найдена")
+    
+    # Создаем безопасное имя файла из имени бота
+    safe_bot_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in bot['name'])
+    if not safe_bot_name:
+        safe_bot_name = f"bot_{bot_id}"
+    
+    # Создаем временный файл для архива
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+    temp_file.close()
+    
+    try:
+        # Создаем ZIP архив
+        with zipfile.ZipFile(temp_file.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Проходим по всем файлам в директории бота
+            for root, dirs, files in os.walk(bot_dir):
+                # Пропускаем некоторые системные директории
+                dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', '.venv', 'venv', 'node_modules']]
+                
+                for file in files:
+                    file_path = Path(root) / file
+                    try:
+                        # Пропускаем config.json (он содержит служебную информацию)
+                        if file_path.name == 'config.json':
+                            continue
+                        
+                        # Пропускаем временные файлы архива
+                        if file_path.suffix == '.zip' and 'temp' in str(file_path).lower():
+                            continue
+                        
+                        # Получаем относительный путь от директории бота
+                        arcname = file_path.relative_to(bot_dir)
+                        
+                        # Добавляем файл в архив
+                        zipf.write(file_path, arcname)
+                    except (PermissionError, OSError) as e:
+                        # Пропускаем файлы, которые не удалось прочитать
+                        logger.warning(f"Не удалось добавить файл {file_path} в архив: {e}")
+                        continue
+        
+        # Возвращаем файл для скачивания
+        # Используем кастомный класс для автоматической очистки временного файла
+        class ZipFileResponse(FileResponse):
+            def __init__(self, *args, **kwargs):
+                self.temp_file_path = kwargs.pop('temp_file_path', None)
+                super().__init__(*args, **kwargs)
+            
+            async def __call__(self, scope, receive, send):
+                try:
+                    await super().__call__(scope, receive, send)
+                finally:
+                    # Удаляем временный файл после отправки
+                    if self.temp_file_path and os.path.exists(self.temp_file_path):
+                        try:
+                            os.unlink(self.temp_file_path)
+                        except:
+                            pass
+        
+        return ZipFileResponse(
+            temp_file.name,
+            media_type='application/zip',
+            filename=f"{safe_bot_name}.zip",
+            temp_file_path=temp_file.name,
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_bot_name}.zip"'
+            }
+        )
+    except Exception as e:
+        # Удаляем временный файл при ошибке
+        try:
+            os.unlink(temp_file.name)
+        except:
+            pass
+        logger.error(f"Ошибка создания архива для бота {bot_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка создания архива: {str(e)}")
 
 @app.get("/api/bots/{bot_id}/logs")
 async def get_bot_logs(bot_id: int, lines: int = 500):
     """Получение логов бота из единого файла"""
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     log_dir = Path(bot['bot_dir']) / "logs"
     log_file = log_dir / "bot.log"
@@ -866,22 +945,21 @@ async def get_bot_logs(bot_id: int, lines: int = 500):
             "total_lines": total_lines
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка чтения логов: {str(e)}")
 
 # Bot process management endpoints
 @app.post("/api/bots/{bot_id}/start")
 async def start_bot_endpoint(bot_id: int):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     # Используем main.py по умолчанию, если стартовый файл не указан
     start_file = bot.get('start_file') or 'main.py'
     
-    from pathlib import Path
     start_file_path = Path(bot['bot_dir']) / start_file
     if not start_file_path.exists():
-        raise HTTPException(status_code=400, detail=f"Start file not found: {bot['start_file']}")
+        raise HTTPException(status_code=400, detail=f"Стартовый файл не найден: {bot['start_file']}")
     
     result = start_bot(bot_id)
     if isinstance(result, tuple):
@@ -928,7 +1006,7 @@ async def restart_bot_endpoint(bot_id: int):
     """Перезапуск бота"""
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     # Устанавливаем статус "перезагрузка"
     update_bot(bot_id, status='restarting')
@@ -957,18 +1035,18 @@ async def restart_bot_endpoint(bot_id: int):
 async def stop_bot_endpoint(bot_id: int):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     success = stop_bot(bot_id)
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to stop bot")
+        raise HTTPException(status_code=500, detail="Не удалось остановить бота")
     return {"success": True}
 
 @app.get("/api/bots/{bot_id}/status")
 async def get_bot_status(bot_id: int):
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     bot_status = bot.get('status', 'stopped')
     
@@ -1010,306 +1088,274 @@ async def get_bot_status(bot_id: int):
         "pid": process_info.get("pid")
     }
 
-# Database management endpoints
-@app.post("/api/bots/{bot_id}/db")
-async def create_bot_database_endpoint(bot_id: int, request: Request):
-    """Создание базы данных для бота"""
-    import traceback
-    
+# Database management endpoints - SQLite only
+
+@app.get("/api/bots/{bot_id}/sqlite/databases")
+async def get_sqlite_databases_endpoint(bot_id: int):
+    """Получение списка SQLite БД бота"""
     bot = get_bot(bot_id)
     if not bot:
-        logger.error(f"Bot {bot_id} not found for database creation")
-        return JSONResponse(
-            status_code=404,
-            content={
-                "success": False,
-                "error": "Bot not found",
-                "bot_id": bot_id
-            }
-        )
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     try:
-        # Получаем опциональное имя БД из тела запроса
-        body = await request.json() if request.headers.get("content-type") == "application/json" else {}
-        db_name = body.get("db_name") if body else None
-        
-        logger.info(f"Creating database for bot {bot_id}, custom name: {db_name}")
-        db_info = create_bot_database(bot_id, db_name=db_name)
-        logger.info(f"Database created successfully for bot {bot_id}: {db_info.get('db_name')}")
-        return {"success": True, **db_info}
+        databases = get_sqlite_databases(bot_id)
+        return {"success": True, "databases": databases}
     except Exception as e:
-        error_msg = str(e)
-        tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
-        tb_info = ''.join(tb_lines)
-        
-        logger.error(f"Error creating database for bot {bot_id}: {error_msg}", exc_info=True)
-        
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": error_msg,
-                "bot_id": bot_id,
-                "traceback": tb_info
-            }
-        )
+        logger.error(f"Error getting SQLite databases: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/bots/{bot_id}/databases")
-async def get_bot_databases_endpoint(bot_id: int):
-    """Получение списка всех баз данных бота"""
+@app.post("/api/bots/{bot_id}/sqlite/databases")
+async def create_sqlite_database_endpoint(bot_id: int, request: Request):
+    """Создание новой SQLite БД"""
     bot = get_bot(bot_id)
     if not bot:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "error": "Bot not found"}
-        )
-    
-    databases = get_bot_databases(bot_id)
-    return {"success": True, "databases": databases}
-
-@app.get("/api/bots/{bot_id}/databases/{db_name:path}")
-async def get_database_info_endpoint(bot_id: int, db_name: str):
-    """Получение информации о конкретной базе данных"""
-    bot = get_bot(bot_id)
-    if not bot:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "error": "Bot not found"}
-        )
-    
-    db_info = get_database_info(db_name)
-    return {"success": True, **db_info}
-
-@app.delete("/api/bots/{bot_id}/databases/{db_name:path}")
-async def delete_bot_database_endpoint(bot_id: int, db_name: str):
-    """Удаление базы данных бота"""
-    bot = get_bot(bot_id)
-    if not bot:
-        return JSONResponse(
-            status_code=404,
-            content={"success": False, "error": "Bot not found"}
-        )
-    
-    success, message = delete_bot_database(bot_id, db_name)
-    if success:
-        return {"success": True, "message": message}
-    else:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": message}
-        )
-
-@app.get("/api/bots/{bot_id}/db")
-async def get_bot_database_endpoint(bot_id: int):
-    """Получение информации о базе данных бота (обратная совместимость)"""
-    bot = get_bot(bot_id)
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
-    
-    db_info = get_bot_database_info(bot_id)
-    if db_info:
-        return db_info
-    else:
-        return {"db_name": None, "error": "Database not created"}
-
-@app.post("/api/bots/{bot_id}/db/query")
-async def execute_sql_endpoint(bot_id: int, request: Request):
-    bot = get_bot(bot_id)
-    if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     data = await request.json()
-    query = data.get("query")
-    db_name = data.get("db_name")  # Опциональное имя БД
+    db_name = data.get("db_name", "bot.db")
     
-    if not query:
-        raise HTTPException(status_code=400, detail="Query is required")
-    
-    result = execute_sql_query(bot_id, query, db_name=db_name)
-    if result.get("success"):
-        return result
-    else:
-        raise HTTPException(status_code=500, detail=result.get("error", "Query failed"))
-
-@app.get("/phpMyAdmin")
-@app.get("/phpMyAdmin/")
-async def phpmyadmin_proxy(request: Request):
-    """Прокси для phpMyAdmin - показывает инструкцию по установке или перенаправляет"""
-    from fastapi.responses import HTMLResponse
-    import urllib.request
-    import urllib.error
-    
-    # Проверяем, установлен ли phpMyAdmin (проверяем доступность)
     try:
-        # Пробуем подключиться к стандартному пути phpMyAdmin
-        req = urllib.request.Request("http://localhost/phpmyadmin")
-        req.add_header('User-Agent', 'Mozilla/5.0')
-        with urllib.request.urlopen(req, timeout=2) as response:
-            if response.status == 200:
-                # phpMyAdmin установлен, перенаправляем
-                base_url = str(request.base_url).rstrip('/')
-                return Response(status_code=307, headers={"Location": f"{base_url}/phpmyadmin"})
-    except (urllib.error.URLError, urllib.error.HTTPError, Exception):
-        pass
-    
-    # phpMyAdmin не установлен, показываем инструкцию
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>phpMyAdmin не установлен</title>
-        <style>
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                margin: 0;
-                padding: 20px;
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .container {
-                background: rgba(255, 255, 255, 0.1);
-                backdrop-filter: blur(10px);
-                border-radius: 20px;
-                padding: 40px;
-                max-width: 800px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            }
-            h1 {
-                margin-top: 0;
-                font-size: 2.5em;
-                text-align: center;
-            }
-            .code-block {
-                background: rgba(0, 0, 0, 0.3);
-                padding: 20px;
-                border-radius: 10px;
-                font-family: 'Courier New', monospace;
-                margin: 20px 0;
-                overflow-x: auto;
-                border-left: 4px solid #00ff88;
-            }
-            .code-block code {
-                color: #00ff88;
-                font-size: 14px;
-                line-height: 1.6;
-            }
-            .step {
-                margin: 30px 0;
-                padding: 20px;
-                background: rgba(255, 255, 255, 0.05);
-                border-radius: 10px;
-            }
-            .step h2 {
-                color: #00ff88;
-                margin-top: 0;
-            }
-            .warning {
-                background: rgba(255, 193, 7, 0.2);
-                border-left: 4px solid #ffc107;
-                padding: 15px;
-                margin: 20px 0;
-                border-radius: 5px;
-            }
-            .back-link {
-                display: inline-block;
-                margin-top: 30px;
-                padding: 10px 20px;
-                background: rgba(255, 255, 255, 0.2);
-                color: white;
-                text-decoration: none;
-                border-radius: 5px;
-                transition: background 0.3s;
-            }
-            .back-link:hover {
-                background: rgba(255, 255, 255, 0.3);
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>⚠️ phpMyAdmin не установлен</h1>
-            <p style="text-align: center; font-size: 1.2em;">Для работы с базами данных через веб-интерфейс необходимо установить phpMyAdmin.</p>
-            
-            <div class="step">
-                <h2>📦 Установка phpMyAdmin на Ubuntu/Debian</h2>
-                <p>Выполните следующие команды в терминале:</p>
-                <div class="code-block">
-                    <code>
-# Обновление списка пакетов<br>
-sudo apt update<br><br>
-# Установка Apache и PHP (если еще не установлены)<br>
-sudo apt install -y apache2 php php-mysql php-mbstring php-zip php-gd php-json php-curl<br><br>
-# Установка phpMyAdmin<br>
-sudo apt install -y phpmyadmin<br><br>
-# Во время установки выберите:<br>
-# - Веб-сервер: apache2<br>
-# - Настроить базу данных: Да<br>
-# - Пароль для phpmyadmin: (укажите пароль)
-                    </code>
-                </div>
-            </div>
-            
-            <div class="step">
-                <h2>🔧 Настройка Apache</h2>
-                <p>После установки создайте символическую ссылку:</p>
-                <div class="code-block">
-                    <code>
-sudo ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin<br><br>
-# Или если используете другой путь:<br>
-sudo ln -s /usr/share/phpmyadmin /var/www/html/phpMyAdmin
-                    </code>
-                </div>
-            </div>
-            
-            <div class="step">
-                <h2>🌐 Альтернативный вариант: Установка через Docker</h2>
-                <p>Если у вас установлен Docker, можно использовать контейнер:</p>
-                <div class="code-block">
-                    <code>
-docker run -d \\<br>
-  --name phpmyadmin \\<br>
-  -e PMA_HOST=localhost \\<br>
-  -e PMA_PORT=3306 \\<br>
-  -p 8080:80 \\<br>
-  --restart=always \\<br>
-  phpmyadmin/phpmyadmin
-                    </code>
-                </div>
-                <p>После этого phpMyAdmin будет доступен по адресу: <code>http://ваш_ip:8080</code></p>
-            </div>
-            
-            <div class="warning">
-                <strong>⚠️ Важно:</strong> После установки phpMyAdmin перезапустите панель управления ботами, чтобы изменения вступили в силу.
-            </div>
-            
-            <div style="text-align: center;">
-                <a href="/" class="back-link">← Вернуться в панель управления</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+        result = create_sqlite_database(bot_id, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error creating SQLite database: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/bots/{bot_id}/db/phpmyadmin")
-async def get_phpmyadmin_url_endpoint(request: Request, bot_id: int, db_name: Optional[str] = Query(None)):
+@app.delete("/api/bots/{bot_id}/sqlite/databases/{db_name}")
+async def delete_sqlite_database_endpoint(bot_id: int, db_name: str):
+    """Удаление SQLite БД"""
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
-    # Получаем базовый URL панели из запроса
-    base_url = str(request.base_url).rstrip('/')
-    # Формируем URL для phpMyAdmin на основе текущего запроса
-    phpmyadmin_base = f"{base_url}/phpMyAdmin"
+    try:
+        result = delete_sqlite_database(bot_id, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error deleting SQLite database: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bots/{bot_id}/sqlite/tables")
+async def get_sqlite_tables_endpoint(bot_id: int, db_name: Optional[str] = Query("bot.db")):
+    """Получение списка таблиц в SQLite БД"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
-    url = get_phpmyadmin_url(bot_id, db_name=db_name, phpmyadmin_base_url=phpmyadmin_base)
-    return {"url": url}
+    try:
+        tables = get_tables(bot_id, db_name)
+        return {"success": True, "tables": tables}
+    except Exception as e:
+        logger.error(f"Error getting tables: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bots/{bot_id}/sqlite/tables/{table_name}/structure")
+async def get_sqlite_table_structure_endpoint(bot_id: int, table_name: str, db_name: Optional[str] = Query("bot.db")):
+    """Получение структуры таблицы"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        structure = get_table_structure(bot_id, table_name, db_name)
+        return {"success": True, "structure": structure}
+    except Exception as e:
+        logger.error(f"Error getting table structure: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bots/{bot_id}/sqlite/tables/{table_name}/data")
+async def get_sqlite_table_data_endpoint(bot_id: int, table_name: str, 
+                                         db_name: Optional[str] = Query("bot.db"),
+                                         limit: int = Query(100),
+                                         offset: int = Query(0),
+                                         order_by: Optional[str] = Query(None)):
+    """Получение данных из таблицы"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        data = get_table_data(bot_id, table_name, db_name, limit, offset, order_by)
+        return {"success": True, "data": data}
+    except Exception as e:
+        logger.error(f"Error getting table data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/bots/{bot_id}/sqlite/execute")
+async def execute_sqlite_sql_endpoint(bot_id: int, request: Request):
+    """Выполнение SQL запроса"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    data = await request.json()
+    query = data.get("query", "")
+    db_name = data.get("db_name", "bot.db")
+    
+    if not query:
+        raise HTTPException(status_code=400, detail="SQL запрос обязателен")
+    
+    try:
+        result = execute_sql(bot_id, query, db_name)
+        return result
+    except Exception as e:
+        logger.error(f"Error executing SQL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/bots/{bot_id}/sqlite/tables")
+async def create_sqlite_table_endpoint(bot_id: int, request: Request):
+    """Создание новой таблицы"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    data = await request.json()
+    table_name = data.get("table_name", "")
+    columns = data.get("columns", [])
+    db_name = data.get("db_name", "bot.db")
+    
+    if not table_name:
+        raise HTTPException(status_code=400, detail="Имя таблицы обязательно")
+    
+    try:
+        result = create_table(bot_id, table_name, columns, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error creating table: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/bots/{bot_id}/sqlite/tables/{table_name}")
+async def delete_sqlite_table_endpoint(bot_id: int, table_name: str, db_name: Optional[str] = Query("bot.db")):
+    """Удаление таблицы"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        result = drop_table(bot_id, table_name, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error deleting table: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/bots/{bot_id}/sqlite/tables/{table_name}/rows")
+async def insert_sqlite_row_endpoint(bot_id: int, table_name: str, request: Request):
+    """Вставка новой строки"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    data = await request.json()
+    row_data = data.get("data", {})
+    db_name = data.get("db_name", "bot.db")
+    
+    try:
+        result = insert_row(bot_id, table_name, row_data, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error inserting row: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/bots/{bot_id}/sqlite/tables/{table_name}/rows/{row_id}")
+async def update_sqlite_row_endpoint(bot_id: int, table_name: str, row_id: int, request: Request):
+    """Обновление строки"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    data = await request.json()
+    row_data = data.get("data", {})
+    primary_key = data.get("primary_key", "id")
+    db_name = data.get("db_name", "bot.db")
+    
+    try:
+        result = update_row(bot_id, table_name, row_id, row_data, primary_key, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error updating row: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/bots/{bot_id}/sqlite/tables/{table_name}/rows/{row_id}")
+async def delete_sqlite_row_endpoint(bot_id: int, table_name: str, row_id: int,
+                                    primary_key: str = Query("id"),
+                                    db_name: str = Query("bot.db")):
+    """Удаление строки"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        result = delete_row(bot_id, table_name, row_id, primary_key, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error deleting row: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/bots/{bot_id}/sqlite/tables/{table_name}/columns")
+async def add_sqlite_column_endpoint(bot_id: int, table_name: str, request: Request):
+    """Добавление столбца в таблицу"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    data = await request.json()
+    column_name = data.get("column_name", "")
+    column_type = data.get("column_type", "TEXT")
+    notnull = data.get("notnull", False)
+    default_value = data.get("default_value", None)
+    db_name = data.get("db_name", "bot.db")
+    
+    if not column_name:
+        raise HTTPException(status_code=400, detail="Имя столбца обязательно")
+    
+    try:
+        result = add_column(bot_id, table_name, column_name, column_type, db_name, notnull, default_value)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error adding column: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/bots/{bot_id}/sqlite/tables/{table_name}/columns/{column_name}")
+async def delete_sqlite_column_endpoint(bot_id: int, table_name: str, column_name: str,
+                                       db_name: str = Query("bot.db")):
+    """Удаление столбца из таблицы"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        result = drop_column(bot_id, table_name, column_name, db_name)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error deleting column: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Bot Git endpoints
 @app.get("/api/bots/{bot_id}/git-status")
@@ -1320,7 +1366,7 @@ async def get_bot_git_status(bot_id: int):
     """
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     bot_dir = Path(bot['bot_dir'])
     repo_url = bot.get('git_repo_url')
@@ -1345,16 +1391,13 @@ async def get_bot_git_status(bot_id: int):
 @app.post("/api/bots/{bot_id}/update")
 async def update_bot_from_git_endpoint(bot_id: int):
     """Обновление бота из Git репозитория"""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         bot = get_bot(bot_id)
         if not bot:
-            raise HTTPException(status_code=404, detail="Bot not found")
+            raise HTTPException(status_code=404, detail="Бот не найден")
         
         if not bot.get('git_repo_url'):
-            raise HTTPException(status_code=400, detail="Git repository URL not set for this bot")
+            raise HTTPException(status_code=400, detail="URL Git репозитория не установлен для этого бота")
         
         bot_dir = Path(bot['bot_dir'])
         branch = bot.get('git_branch', 'main')
@@ -1394,14 +1437,12 @@ async def clone_bot_repository(bot_id: int):
     Принудительное клонирование репозитория бота
     Удаляет существующие файлы кроме config.json и клонирует репозиторий заново
     """
-    import logging
     import json
     import tempfile
-    logger = logging.getLogger(__name__)
     
     bot = get_bot(bot_id)
     if not bot:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
     
     if not bot.get('git_repo_url'):
         raise HTTPException(status_code=400, detail="Git repository URL not set for this bot")
@@ -1548,8 +1589,6 @@ async def get_panel_git_status():
         
         return status
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error getting panel git status: {str(e)}", exc_info=True)
         return {
             "is_repo": False,
@@ -1614,9 +1653,6 @@ class InitGitRepoRequest(BaseModel):
 @app.post("/api/panel/init-git")
 async def init_panel_git_repo(request: InitGitRepoRequest):
     """Инициализация Git репозитория для панели"""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         # Используем фиксированный URL репозитория панели
         from backend.config import PANEL_REPO_URL
@@ -1640,7 +1676,7 @@ async def init_panel_git_repo(request: InitGitRepoRequest):
         raise
     except Exception as e:
         logger.error(f"Exception during Git init: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error initializing Git repository: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка инициализации Git репозитория: {str(e)}")
 
 @app.get("/api/panel/ssh-key")
 async def get_panel_ssh_key():
@@ -1648,9 +1684,6 @@ async def get_panel_ssh_key():
     Получение информации о SSH ключе панели
     Включает публичный ключ, тип ключа, и другую информацию
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         key_info = get_ssh_key_info()
         
@@ -1704,8 +1737,6 @@ async def generate_panel_ssh_key():
     """
     import time
     import traceback
-    import logging
-    logger = logging.getLogger(__name__)
     
     # Обертываем ВСЁ в try-except, чтобы гарантировать JSON ответ
     try:
@@ -1849,17 +1880,27 @@ async def test_panel_ssh_connection(
     
     Принимает host из query параметра (например: ?host=github.com)
     """
-    import logging
-    logger = logging.getLogger(__name__)
-    
+    test_host = None
     try:
         # Получаем host из query параметров или используем значение по умолчанию
         test_host = host or request.query_params.get("host") or "github.com"
         logger.info(f"Testing SSH connection to {test_host}")
         
+        # Проверяем наличие SSH ключа перед тестированием
+        if not get_ssh_key_exists():
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": False,
+                    "message": "SSH ключ не найден. Сгенерируйте SSH ключ перед тестированием подключения.",
+                    "host": test_host
+                }
+            )
+        
         success, message = test_ssh_connection(test_host)
         
         if success:
+            logger.info(f"SSH connection test to {test_host} successful")
             return {
                 "success": True,
                 "message": message,
@@ -1867,6 +1908,7 @@ async def test_panel_ssh_connection(
             }
         else:
             # Возвращаем ошибку, но не как HTTPException, а как JSON с success=False
+            logger.warning(f"SSH connection test to {test_host} failed: {message}")
             return JSONResponse(
                 status_code=200,
                 content={
@@ -1876,13 +1918,14 @@ async def test_panel_ssh_connection(
                 }
             )
     except Exception as e:
-        logger.error(f"Error testing SSH connection: {e}", exc_info=True)
+        error_msg = f"Ошибка тестирования SSH подключения: {str(e)}"
+        logger.error(f"Error testing SSH connection to {test_host or 'unknown'}: {e}", exc_info=True)
         return JSONResponse(
             status_code=200,
             content={
                 "success": False,
-                "message": f"Ошибка тестирования SSH: {str(e)}",
-                "host": test_host if 'test_host' in locals() else "unknown"
+                "message": error_msg,
+                "host": test_host if test_host else "unknown"
             }
         )
 
@@ -1890,9 +1933,6 @@ async def test_panel_ssh_connection(
 @app.get("/api/panel/ssh-key/info")
 async def get_panel_ssh_key_info():
     """Получение детальной информации о SSH ключе"""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     try:
         key_info = get_ssh_key_info()
         return key_info
@@ -1920,48 +1960,6 @@ async def change_password(request: Request, password_data: ChangePasswordRequest
         return {"success": True, "message": "Пароль успешно изменен"}
     else:
         raise HTTPException(status_code=500, detail="Ошибка при сохранении нового пароля")
-
-@app.get("/api/panel/mysql-settings")
-async def get_mysql_settings_endpoint(request: Request):
-    """Получение настроек MySQL из базы данных панели"""
-    try:
-        settings = get_mysql_settings()
-        return {
-            "success": True,
-            "settings": {
-                "host": settings['host'],
-                "port": settings['port'],
-                "user": settings['user'],
-                "password": settings['password']  # Возвращаем для редактирования
-            }
-        }
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error getting MySQL settings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка при получении настроек MySQL: {str(e)}")
-
-@app.post("/api/panel/mysql-settings")
-async def set_mysql_settings_endpoint(request: Request, settings_data: MySQLSettingsRequest):
-    """Сохранение настроек MySQL в базу данных панели"""
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    try:
-        # Сохраняем настройки в базу данных панели
-        if set_mysql_settings(settings_data.host, settings_data.port, settings_data.user, settings_data.password):
-            # Очищаем кэш настроек MySQL в db_manager
-            import backend.db_manager as db_manager_module
-            db_manager_module._mysql_settings_cache = None
-            
-            logger.info(f"MySQL settings saved: host={settings_data.host}, port={settings_data.port}, user={settings_data.user}")
-            
-            return {"success": True, "message": "Настройки MySQL успешно сохранены"}
-        else:
-            raise HTTPException(status_code=500, detail="Ошибка при сохранении настроек MySQL")
-    except Exception as e:
-        logger.error(f"Error setting MySQL settings: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении настроек MySQL: {str(e)}")
 
 # Инициализация при старте приложения
 async def monitor_bots():

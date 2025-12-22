@@ -239,7 +239,7 @@ class GitRepository:
     def clone(self, repo_url: str, branch: str = "main") -> Tuple[bool, str]:
         """Клонирование репозитория"""
         if not self.git_cmd:
-            return (False, "Git command not found")
+            return (False, "Команда Git не найдена")
         
         try:
             # Преобразуем HTTPS в SSH если нужно
@@ -297,8 +297,8 @@ class GitRepository:
                 )
                 
                 if result.returncode != 0:
-                    error_msg = result.stderr or result.stdout or "Unknown error"
-                    return (False, f"Git clone failed: {error_msg}")
+                    error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
+                    return (False, f"Ошибка клонирования Git: {error_msg}")
                 
                 # Перемещаем содержимое из временной директории в целевую
                 if temp_clone_dir.exists():
@@ -340,12 +340,12 @@ class GitRepository:
             return (False, "Git clone timeout")
         except Exception as e:
             logger.error(f"Error cloning repository: {e}", exc_info=True)
-            return (False, f"Error: {str(e)}")
+            return (False, f"Ошибка: {str(e)}")
     
     def update(self) -> Tuple[bool, str]:
         """Обновление репозитория из удаленного источника с учетом .gitignore"""
         if not self.git_cmd:
-            return (False, "Git command not found")
+            return (False, "Команда Git не найдена")
         
         if not is_git_repo(self.path):
             return (False, "Not a git repository")
@@ -454,13 +454,13 @@ class GitRepository:
                     except Exception:
                         pass
                 
-                error_msg = result.stderr or result.stdout or "Unknown error"
-                return (False, f"Git pull failed: {error_msg}")
+                error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
+                return (False, f"Ошибка Git pull: {error_msg}")
         except subprocess.TimeoutExpired:
             return (False, "Git pull timeout")
         except Exception as e:
             logger.error(f"Error updating repository: {e}", exc_info=True)
-            return (False, f"Error: {str(e)}")
+            return (False, f"Ошибка: {str(e)}")
     
     def get_status(self) -> Dict[str, Any]:
         """Получение статуса репозитория"""
@@ -721,7 +721,7 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
         )
         
         if result.returncode != 0:
-            return (False, f"Git init failed: {result.stderr}")
+            return (False, f"Ошибка инициализации Git: {result.stderr}")
         
         # Если указан URL, добавляем remote
         if repo_url:
@@ -749,7 +749,7 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
                 )
                 
                 if result.returncode != 0:
-                    return (False, f"Failed to set remote URL: {result.stderr}")
+                    return (False, f"Не удалось установить remote URL: {result.stderr}")
         
         return (True, "Git repository initialized successfully")
     except Exception as e:
