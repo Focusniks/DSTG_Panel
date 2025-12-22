@@ -137,34 +137,34 @@ class GitRepository:
         
     def _find_git_command(self) -> Optional[str]:
         """Поиск команды git в системе"""
-        candidates = [
+    candidates = [
             shutil.which("git"),
             "git",
-        ]
-        
-        if os.name != 'nt':
-            candidates.extend([
-                "/usr/bin/git",
-                "/usr/local/bin/git",
-                "/bin/git"
-            ])
-        
-        for candidate in candidates:
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
             if not candidate:
                 continue
-            try:
+        try:
                 result = subprocess.run(
-                    [candidate, "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    timeout=3
-                )
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3
+            )
                 if result.returncode == 0:
                     return candidate
-            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-                continue
-        
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
         return None
     
     def is_git_installed(self) -> bool:
@@ -365,11 +365,11 @@ class GitRepository:
                                     if ignored_file.exists():
                                         shutil.rmtree(ignored_file)
                                     shutil.copytree(backup_path, ignored_file)
-                        except Exception:
-                            pass
+        except Exception:
+            pass
                     try:
                         shutil.rmtree(backup_dir)
-                    except Exception:
+            except Exception:
                         pass
                 
                 error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
@@ -410,10 +410,10 @@ class GitRepository:
                 [self.git_cmd, "rev-parse", "--short", "HEAD"],
                 cwd=self.path,
                 env=env,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
             last_commit = commit_result.stdout.strip() if commit_result.returncode == 0 else None
             
             # Получаем remote URL
@@ -421,7 +421,7 @@ class GitRepository:
                 [self.git_cmd, "remote", "get-url", "origin"],
                 cwd=self.path,
                 env=env,
-                capture_output=True,
+                        capture_output=True,
                 text=True,
                 timeout=10
             )
@@ -432,22 +432,22 @@ class GitRepository:
                 [self.git_cmd, "status", "--porcelain"],
                 cwd=self.path,
                 env=env,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
             has_changes = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
-            
-            return {
-                "is_repo": True,
+        
+        return {
+            "is_repo": True,
                 "branch": current_branch or self.branch,
                 "current_branch": current_branch or self.branch,
                 "commit": last_commit,
                 "remote": remote_url,
-                "has_changes": has_changes,
+            "has_changes": has_changes,
                 "status": "clean" if not has_changes else "dirty"
-            }
-        except Exception as e:
+        }
+    except Exception as e:
             logger.error(f"Error getting git status: {e}", exc_info=True)
             return {
                 "is_repo": True,
@@ -473,30 +473,76 @@ def update_bot_from_git(bot_dir: Path, repo_url: str, branch: str = "main") -> T
 
 
 def update_panel_from_git() -> Tuple[bool, str]:
-    """Обновление панели с GitHub без использования SSH.
+    """Обновление панели из Git репозитория по HTTPS с сохранением bots/ и data/.
 
-    Важно: для панели мы всегда используем HTTPS и не полагаемся на локальную
-    конфигурацию Git (SSH ключи, url.insteadOf и т.п.), чтобы избежать
-    ошибок Permission denied (publickey).
+    Важно:
+    - Для панели мы всегда используем HTTPS URL (`PANEL_REPO_URL`), без SSH.
+    - Git используется только локально, без SSH-ключей и без `GIT_SSH_COMMAND`.
+    - Обновляются ВСЕ отслеживаемые файлы панели, кроме директорий `bots/` и `data/`,
+      которые бэкапятся и восстанавливаются после обновления.
     """
     from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH, BOTS_DIR, DATA_DIR
 
-    # Формируем URL для скачивания ZIP-архива ветки
-    # Пример: https://github.com/Focusniks/DSTG_Panel/archive/refs/heads/main.zip
+    # Находим git
+    git_cmd = None
+    candidates = [shutil.which("git"), "git"]
+    if os.name != "nt":
+        candidates.extend(["/usr/bin/git", "/usr/local/bin/git", "/bin/git"])
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            result = subprocess.run(
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0:
+                git_cmd = candidate
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
+    if not git_cmd:
+        return (False, "Git не найден в системе. Установите git и повторите попытку.")
+
+    # Проверяем, что панель установлена как git‑репозиторий
+    if not is_git_repo(BASE_DIR):
+        return (
+            False,
+            "Панель не является Git репозиторием. "
+            "Инициализируйте Git в настройках панели или установите панель из репозитория.",
+        )
+
+    # Готовим HTTPS URL (на всякий случай отрезаем .git / добавляем его обратно)
     repo_url = PANEL_REPO_URL
-    if repo_url.endswith(".git"):
-        base_url = repo_url[:-4]
-    else:
-        base_url = repo_url
-    zip_url = f"{base_url}/archive/refs/heads/{PANEL_REPO_BRANCH}.zip"
+    if repo_url.startswith("git@") or repo_url.startswith("ssh://"):
+        # На случай, если кто-то изменил PANEL_REPO_URL
+        repo_url = repo_url.replace("git@github.com:", "https://github.com/").replace(
+            "ssh://git@github.com/", "https://github.com/"
+        )
+    if not repo_url.startswith("https://"):
+        repo_url = "https://github.com/Focusniks/DSTG_Panel.git"
+    if not repo_url.endswith(".git"):
+        repo_url += ".git"
 
-    logger.info(f"Обновление панели через ZIP архив: {zip_url}")
+    logger.info(f"Обновление панели из Git по HTTPS: {repo_url}, ветка: {PANEL_REPO_BRANCH}")
 
-    # Создаем временные пути
-    tmp_dir = Path(tempfile.mkdtemp(prefix="panel_update_zip_"))
-    zip_path = tmp_dir / "panel.zip"
+    # Подготавливаем окружение без SSH‑переменных
+    env = os.environ.copy()
+    if "GIT_SSH_COMMAND" in env:
+        logger.info(f"Удаляем GIT_SSH_COMMAND из окружения (было: {env['GIT_SSH_COMMAND']})")
+        del env["GIT_SSH_COMMAND"]
+    # Убираем любые SSH‑переменные (на всякий случай)
+    for key in list(env.keys()):
+        if "SSH" in key.upper():
+            logger.info(f"Удаляем переменную окружения: {key}")
+            del env[key]
 
-    # Создаем временную директорию для бэкапа защищаемых папок
+    # Бэкапим bots/ и data/
     try:
         backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
         logger.info(f"Создана временная директория для бэкапа: {backup_dir}")
@@ -504,13 +550,12 @@ def update_panel_from_git() -> Tuple[bool, str]:
         logger.error(f"Не удалось создать временную директорию: {e}", exc_info=True)
         return (False, f"Не удалось создать временную директорию для бэкапа: {str(e)}")
 
-    protected_dirs = []
+    protected_dirs: List[Tuple[str, Path]] = []
     if BOTS_DIR.exists() and BOTS_DIR.is_dir():
         protected_dirs.append(("bots", BOTS_DIR))
     if DATA_DIR.exists() and DATA_DIR.is_dir():
         protected_dirs.append(("data", DATA_DIR))
 
-    # Сохраняем защищаемые директории (bots/, data/)
     for dir_name, dir_path in protected_dirs:
         try:
             backup_path = backup_dir / dir_name
@@ -519,55 +564,45 @@ def update_panel_from_git() -> Tuple[bool, str]:
                 if backup_path.exists():
                     shutil.rmtree(backup_path)
                 shutil.copytree(dir_path, backup_path, dirs_exist_ok=True)
-                logger.info(f"Директория {dir_name} сохранена")
+                logger.info(f"Директория {dir_name} сохранена в бэкап")
         except Exception as backup_error:
             logger.error(f"Ошибка при сохранении директории {dir_name}: {backup_error}", exc_info=True)
 
     try:
-        # Скачиваем ZIP-архив
-        logger.info(f"Скачивание ZIP архива панели: {zip_url}")
-        urllib.request.urlretrieve(zip_url, zip_path)
-        logger.info(f"ZIP архив панели скачан: {zip_path}")
+        # 1) fetch по HTTPS напрямую с URL (обходим origin и любую SSH‑конфигурацию)
+        logger.info("Выполняем git fetch по HTTPS (без SSH)...")
+        fetch_result = subprocess.run(
+            [git_cmd, "-C", str(BASE_DIR), "fetch", repo_url, PANEL_REPO_BRANCH],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
 
-        # Распаковываем архив
-        extract_dir = tmp_dir / "extract"
-        extract_dir.mkdir(parents=True, exist_ok=True)
+        if fetch_result.returncode != 0:
+            error_msg = fetch_result.stderr or fetch_result.stdout or "Неизвестная ошибка"
+            logger.error(f"Git fetch failed: {error_msg}")
+            return (False, f"Ошибка Git fetch: {error_msg}")
 
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
+        logger.info("Git fetch успешно выполнен, выполняем reset --hard FETCH_HEAD")
 
-        # Находим корневую директорию внутри архива (обычно DSTG_Panel-main)
-        inner_dirs = [d for d in extract_dir.iterdir() if d.is_dir()]
-        if not inner_dirs:
-            raise Exception("Не удалось найти корневую директорию в архиве")
-        src_root = inner_dirs[0]
+        # 2) reset --hard FETCH_HEAD (принудительно обновляем рабочее дерево до полученного коммита)
+        reset_result = subprocess.run(
+            [git_cmd, "-C", str(BASE_DIR), "reset", "--hard", "FETCH_HEAD"],
+            env=env,
+                capture_output=True,
+                text=True,
+            timeout=300,
+        )
 
-        logger.info(f"Корневая директория архива: {src_root}")
+        if reset_result.returncode != 0:
+            error_msg = reset_result.stderr or reset_result.stdout or "Неизвестная ошибка"
+            logger.error(f"Git reset --hard failed: {error_msg}")
+            return (False, f"Ошибка Git reset: {error_msg}")
 
-        # Копируем файлы из архива в BASE_DIR, кроме bots/ и data/
-        for item in src_root.iterdir():
-            if item.name in ("bots", "data"):
-                logger.info(f"Пропускаем директорию {item.name} при обновлении")
-                continue
+        logger.info("Git reset --hard успешно выполнен")
 
-            dst = BASE_DIR / item.name
-
-            try:
-                if dst.exists():
-                    if dst.is_file() or dst.is_symlink():
-                        dst.unlink()
-                    elif dst.is_dir():
-                        shutil.rmtree(dst)
-                if item.is_dir():
-                    shutil.copytree(item, dst, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(item, dst)
-                logger.info(f"Обновлен элемент: {item.name}")
-            except Exception as copy_error:
-                logger.error(f"Ошибка при обновлении {item.name}: {copy_error}", exc_info=True)
-                # Продолжаем, чтобы попытаться обновить остальные файлы
-
-        # Восстанавливаем защищаемые директории из бэкапа
+        # 3) Восстанавливаем защищаемые директории
         logger.info("Восстановление защищаемых директорий (bots, data)...")
         for dir_name, dir_path in protected_dirs:
             try:
@@ -580,33 +615,22 @@ def update_panel_from_git() -> Tuple[bool, str]:
             except Exception as restore_error:
                 logger.error(f"Ошибка при восстановлении директории {dir_name}: {restore_error}", exc_info=True)
 
-        return (True, "Панель успешно обновлена из ZIP архива. Защищенные директории (bots/, data/) сохранены.")
+        return (
+            True,
+            "Панель успешно обновлена из Git по HTTPS. Защищенные директории (bots/, data/) сохранены.",
+        )
 
+    except subprocess.TimeoutExpired:
+        logger.error("Git операция завершилась по таймауту")
+        return (False, "Git операция завершилась по таймауту")
     except Exception as e:
-        logger.error(f"Критическая ошибка при обновлении панели из ZIP: {e}", exc_info=True)
-
-        # Восстанавливаем директории при ошибке
-        try:
-            if backup_dir and backup_dir.exists():
-                for dir_name, dir_path in protected_dirs:
-                    try:
-                        backup_path = backup_dir / dir_name
-                        if backup_path.exists() and backup_path.is_dir():
-                            if dir_path.exists():
-                                shutil.rmtree(dir_path)
-                            shutil.copytree(backup_path, dir_path)
-                            logger.info(f"Директория {dir_name} восстановлена после ошибки")
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        return (False, f"Ошибка обновления панели: {str(e)}")
+        logger.error(f"Критическая ошибка при обновлении панели из Git: {e}", exc_info=True)
+        return (False, f"Ошибка обновления панели из Git: {str(e)}")
     finally:
-        # Чистим временные файлы
+        # Чистим временный бэкап
         try:
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
+            if "backup_dir" in locals() and backup_dir.exists():
+                shutil.rmtree(backup_dir)
         except Exception:
             pass
 
@@ -625,38 +649,38 @@ def get_git_remote(path: Path) -> Optional[str]:
     try:
         # Надежный поиск Git команды
         git_cmd = None
-        candidates = [
+    candidates = [
             shutil.which("git"),
-            "git",
-        ]
-        
-        if os.name != 'nt':
-            candidates.extend([
-                "/usr/bin/git",
-                "/usr/local/bin/git",
-                "/bin/git"
-            ])
-        
-        for candidate in candidates:
+        "git",
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
             if not candidate:
                 continue
-            try:
+        try:
                 result = subprocess.run(
-                    [candidate, "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    timeout=3
-                )
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3
+            )
                 if result.returncode == 0:
-                    git_cmd = candidate
-                    break
-            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-                continue
-        
+                git_cmd = candidate
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
         if not git_cmd:
             return None
-        
+    
         env = get_git_env_with_ssh()
         result = subprocess.run(
             [git_cmd, "remote", "get-url", "origin"],
@@ -679,35 +703,35 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
     try:
         # Надежный поиск Git команды (используем тот же метод, что и в GitRepository)
         git_cmd = None
-        candidates = [
+    candidates = [
             shutil.which("git"),
-            "git",
-        ]
-        
-        if os.name != 'nt':
-            candidates.extend([
-                "/usr/bin/git",
-                "/usr/local/bin/git",
-                "/bin/git"
-            ])
-        
-        for candidate in candidates:
+        "git",
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
             if not candidate:
                 continue
-            try:
+        try:
                 result = subprocess.run(
-                    [candidate, "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    timeout=3
-                )
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3
+            )
                 if result.returncode == 0:
-                    git_cmd = candidate
-                    break
-            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-                continue
-        
+                git_cmd = candidate
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
         if not git_cmd:
             return (False, "Git не установлен. Установите Git: sudo apt-get install git (Ubuntu/Debian) или sudo yum install git (CentOS/RHEL)")
         
@@ -739,10 +763,10 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
                 # Используем HTTPS напрямую
                 remote_url = repo_url
                 env = os.environ.copy()
-            else:
+                else:
                 # Конвертируем HTTPS в SSH для приватных репозиториев ботов
                 remote_url = convert_https_to_ssh(repo_url)
-                env = get_git_env_with_ssh()
+            env = get_git_env_with_ssh()
             
             result = subprocess.run(
                 [git_cmd, "remote", "add", "origin", remote_url],
@@ -755,12 +779,12 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
             
             if result.returncode != 0:
                 # Если remote уже существует, обновляем его
-                result = subprocess.run(
+            result = subprocess.run(
                     [git_cmd, "remote", "set-url", "origin", remote_url],
                     cwd=path,
                     env=env,
-                    capture_output=True,
-                    text=True,
+                capture_output=True,
+                text=True,
                     timeout=30
                 )
                 
@@ -828,12 +852,12 @@ def set_git_remote(path: Path, repo_url: str) -> bool:
         
         # Если remote уже существует, обновляем его
         if result.returncode != 0:
-            result = subprocess.run(
+        result = subprocess.run(
                 [git_cmd, "remote", "set-url", "origin", ssh_url],
                 cwd=path,
                 env=env,
-                capture_output=True,
-                text=True,
+            capture_output=True,
+            text=True,
                 timeout=30
             )
         
