@@ -2262,6 +2262,11 @@ body::before {
 
 .database-create-body .col-md-4 button {
     margin-top: 0;
+    height: 51px;
+    padding: 0.5rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .databases-list-container {
