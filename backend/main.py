@@ -2022,17 +2022,30 @@ async def startup_event():
         logger.warning("Сервер запустится без SSH ключа. Вы можете сгенерировать его позже в настройках.")
     
     # Автоматически инициализируем Git репозиторий панели, если его нет
-    from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
-    from backend.git_manager import is_git_repo, init_git_repo, set_git_remote, get_git_remote
-    
-    if not is_git_repo(BASE_DIR):
-        # Пытаемся инициализировать репозиторий
-        success, message = init_git_repo(BASE_DIR, PANEL_REPO_URL)
-        if success:
-            # Проверяем, что remote установлен правильно
-            remote = get_git_remote(BASE_DIR)
-            if remote != PANEL_REPO_URL:
-                set_git_remote(BASE_DIR, PANEL_REPO_URL)
+    try:
+        from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
+        from backend.git_manager import is_git_repo, init_git_repo, set_git_remote, get_git_remote, GitRepository
+        
+        # Проверяем, установлен ли Git
+        test_repo = GitRepository(BASE_DIR)
+        if test_repo.is_git_installed():
+            if not is_git_repo(BASE_DIR):
+                # Пытаемся инициализировать репозиторий
+                success, message = init_git_repo(BASE_DIR, PANEL_REPO_URL)
+                if success:
+                    # Проверяем, что remote установлен правильно
+                    remote = get_git_remote(BASE_DIR)
+                    if remote != PANEL_REPO_URL:
+                        set_git_remote(BASE_DIR, PANEL_REPO_URL)
+                    logger.info("Git репозиторий панели инициализирован")
+                else:
+                    logger.warning(f"Не удалось инициализировать Git репозиторий панели: {message}")
+            else:
+                logger.info("Git репозиторий панели уже существует")
+        else:
+            logger.warning("Git не установлен. Функции работы с Git репозиториями будут недоступны. Установите Git: sudo apt-get install git (Ubuntu/Debian) или sudo yum install git (CentOS/RHEL)")
+    except Exception as git_error:
+        logger.warning(f"Ошибка при инициализации Git репозитория панели: {git_error}. Продолжаем запуск без Git.")
     
     # Запускаем фоновую задачу для мониторинга и автоперезапуска ботов
     import asyncio

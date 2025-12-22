@@ -40,14 +40,29 @@
 ssh root@ваш_IP_адрес
 ```
 
-2. **Клонируйте репозиторий или загрузите файлы:**
+2. **Обновите систему и установите базовые пакеты:**
+```bash
+# Для Ubuntu/Debian:
+sudo apt-get update && sudo apt-get upgrade -y
+sudo apt-get install -y git curl wget
+
+# Для CentOS/RHEL:
+sudo yum update -y
+sudo yum install -y git curl wget
+
+# Для Fedora:
+sudo dnf update -y
+sudo dnf install -y git curl wget
+```
+
+3. **Клонируйте репозиторий или загрузите файлы:**
 ```bash
 cd ~
 git clone https://github.com/Focusniks/DSTG_Panel.git
 cd DSTG_Panel
 ```
 
-3. **Запустите скрипт установки:**
+4. **Запустите скрипт установки:**
 ```bash
 chmod +x install_panel.sh
 sudo ./install_panel.sh
@@ -61,13 +76,13 @@ sudo ./install_panel.sh
 - ✅ Настройку systemd service для автозапуска
 - ✅ Создание необходимых директорий
 
-4. **Запустите панель:**
+5. **Запустите панель:**
 ```bash
 sudo systemctl start bot-panel
 sudo systemctl status bot-panel
 ```
 
-5. **Откройте в браузере:**
+6. **Откройте в браузере:**
 ```
 http://ваш_IP_адрес:8000
 ```

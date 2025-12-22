@@ -77,18 +77,28 @@ fi
 log_success "Python $PYTHON_VERSION установлен"
 echo ""
 
-# Шаг 3: Установка системных зависимостей
-log_info "Шаг 3/8: Установка системных зависимостей..."
+# Шаг 3: Обновление системы и установка системных зависимостей
+log_info "Шаг 3/8: Обновление системы и установка системных зависимостей..."
 if command -v apt-get &> /dev/null; then
     export DEBIAN_FRONTEND=noninteractive
+    log_info "Обновление списка пакетов..."
     apt-get update -qq
-    apt-get install -y -qq python3-pip python3-venv git openssh-client > /dev/null 2>&1
+    log_info "Обновление установленных пакетов..."
+    apt-get upgrade -y -qq > /dev/null 2>&1
+    log_info "Установка системных зависимостей..."
+    apt-get install -y -qq python3-pip python3-venv git openssh-client curl wget > /dev/null 2>&1
     log_success "Системные зависимости установлены (Debian/Ubuntu)"
 elif command -v yum &> /dev/null; then
-    yum install -y -q python3-pip python3-devel git openssh-clients > /dev/null 2>&1
+    log_info "Обновление системы..."
+    yum update -y -q > /dev/null 2>&1
+    log_info "Установка системных зависимостей..."
+    yum install -y -q python3-pip python3-devel git openssh-clients curl wget > /dev/null 2>&1
     log_success "Системные зависимости установлены (RHEL/CentOS)"
 elif command -v dnf &> /dev/null; then
-    dnf install -y -q python3-pip python3-devel git openssh-clients > /dev/null 2>&1
+    log_info "Обновление системы..."
+    dnf update -y -q > /dev/null 2>&1
+    log_info "Установка системных зависимостей..."
+    dnf install -y -q python3-pip python3-devel git openssh-clients curl wget > /dev/null 2>&1
     log_success "Системные зависимости установлены (Fedora)"
 else
     log_warning "Не удалось определить менеджер пакетов. Установите вручную:"
@@ -96,6 +106,8 @@ else
     echo "  - python3-venv (python3-devel на RHEL/CentOS)"
     echo "  - git"
     echo "  - openssh-client"
+    echo "  - curl"
+    echo "  - wget"
 fi
 echo ""
 

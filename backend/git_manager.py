@@ -689,9 +689,14 @@ def get_git_remote(path: Path) -> Optional[str]:
         return None
     
     try:
+        # Проверяем наличие Git
+        git_cmd = shutil.which("git")
+        if not git_cmd:
+            return None
+        
         env = get_git_env_with_ssh()
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
+            [git_cmd, "remote", "get-url", "origin"],
             cwd=path,
             env=env,
             capture_output=True,
@@ -709,7 +714,10 @@ def get_git_remote(path: Path) -> Optional[str]:
 def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str]:
     """Инициализация Git репозитория"""
     try:
-        git_cmd = shutil.which("git") or "git"
+        # Проверяем наличие Git
+        git_cmd = shutil.which("git")
+        if not git_cmd:
+            return (False, "Git не установлен. Установите Git: sudo apt-get install git (Ubuntu/Debian) или sudo yum install git (CentOS/RHEL)")
         
         # Инициализируем репозиторий
         result = subprocess.run(
@@ -763,18 +771,34 @@ def set_git_remote(path: Path, repo_url: str) -> bool:
         return False
     
     try:
-        git_cmd = shutil.which("git") or "git"
+        # Проверяем наличие Git
+        git_cmd = shutil.which("git")
+        if not git_cmd:
+            return False
+        
         ssh_url = convert_https_to_ssh(repo_url)
         env = get_git_env_with_ssh()
         
+        # Сначала пробуем добавить remote
         result = subprocess.run(
-            [git_cmd, "remote", "set-url", "origin", ssh_url],
+            [git_cmd, "remote", "add", "origin", ssh_url],
             cwd=path,
             env=env,
             capture_output=True,
             text=True,
             timeout=30
         )
+        
+        # Если remote уже существует, обновляем его
+        if result.returncode != 0:
+            result = subprocess.run(
+                [git_cmd, "remote", "set-url", "origin", ssh_url],
+                cwd=path,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
         
         return result.returncode == 0
     except Exception:
