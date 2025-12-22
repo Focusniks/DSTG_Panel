@@ -273,12 +273,17 @@
         if (memoryLimitInfo) memoryLimitInfo.textContent = bot.memory_limit || 512;
         
         // Информация о времени работы
-        const uptimeEl = document.getElementById('bot-uptime');
-        if (uptimeEl) {
-            if (bot.status === 'running' && bot.uptime) {
-                uptimeEl.textContent = bot.uptime;
-                uptimeEl.style.color = 'var(--neon-green, #39ff14)';
-            } else {
+        if (bot.status === 'running' && bot.started_at) {
+            botStartedAt = bot.started_at;
+            startUptimeUpdate();
+        } else {
+            botStartedAt = null;
+            if (uptimeUpdateInterval) {
+                clearInterval(uptimeUpdateInterval);
+                uptimeUpdateInterval = null;
+            }
+            const uptimeEl = document.getElementById('bot-uptime');
+            if (uptimeEl) {
                 uptimeEl.textContent = 'Не запущен';
                 uptimeEl.style.color = 'var(--text-secondary)';
             }
@@ -430,6 +435,61 @@
         }
     }
     
+    // Хранилище даты запуска для расчета времени работы
+    let botStartedAt = null;
+    let uptimeUpdateInterval = null;
+    
+    // Обновление времени работы каждую секунду
+    function startUptimeUpdate() {
+        if (uptimeUpdateInterval) {
+            clearInterval(uptimeUpdateInterval);
+        }
+        
+        function updateUptime() {
+            const uptimeEl = document.getElementById('bot-uptime');
+            if (uptimeEl && botStartedAt) {
+                const uptime = calculateUptimeClient(botStartedAt);
+                if (uptime) {
+                    uptimeEl.textContent = uptime;
+                    uptimeEl.style.color = 'var(--neon-green, #39ff14)';
+                }
+            } else if (uptimeEl) {
+                uptimeEl.textContent = 'Не запущен';
+                uptimeEl.style.color = 'var(--text-secondary)';
+            }
+        }
+        
+        updateUptime();
+        uptimeUpdateInterval = setInterval(updateUptime, 1000);
+    }
+    
+    // Расчет времени работы на клиенте
+    function calculateUptimeClient(startedAt) {
+        if (!startedAt) return null;
+        try {
+            const startTime = new Date(startedAt);
+            const now = new Date();
+            const delta = now - startTime;
+            
+            const days = Math.floor(delta / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((delta % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((delta % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((delta % (1000 * 60)) / 1000);
+            
+            if (days > 0) {
+                return `${days}д ${hours}ч ${minutes}м`;
+            } else if (hours > 0) {
+                return `${hours}ч ${minutes}м ${seconds}с`;
+            } else if (minutes > 0) {
+                return `${minutes}м ${seconds}с`;
+            } else {
+                return `${seconds}с`;
+            }
+        } catch (e) {
+            return null;
+        }
+    }
+    
     // Запуск обновления статуса
     function startStatusUpdate() {
         if (updateInterval) {
@@ -457,13 +517,18 @@
             const botResponse = await fetch('/api/bots/' + botId);
             if (botResponse.ok) {
                 const bot = await botResponse.json();
-                // Обновляем информацию о времени работы
-                const uptimeEl = document.getElementById('bot-uptime');
-                if (uptimeEl) {
-                    if (bot.status === 'running' && bot.uptime) {
-                        uptimeEl.textContent = bot.uptime;
-                        uptimeEl.style.color = 'var(--neon-green, #39ff14)';
-                    } else {
+                // Сохраняем дату запуска для расчета времени работы
+                if (bot.status === 'running' && bot.started_at) {
+                    botStartedAt = bot.started_at;
+                    startUptimeUpdate();
+                } else {
+                    botStartedAt = null;
+                    if (uptimeUpdateInterval) {
+                        clearInterval(uptimeUpdateInterval);
+                        uptimeUpdateInterval = null;
+                    }
+                    const uptimeEl = document.getElementById('bot-uptime');
+                    if (uptimeEl) {
                         uptimeEl.textContent = 'Не запущен';
                         uptimeEl.style.color = 'var(--text-secondary)';
                     }

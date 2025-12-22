@@ -562,6 +562,8 @@ function escapeHtml(text) {
 
 // Хранилище предыдущих статусов ботов
 const botStatusCache = new Map();
+// Хранилище дат запуска ботов для расчета времени работы
+const botStartedAtCache = new Map();
 
 // Обновление только метрик без перерисовки карточек
 function startMetricsUpdate() {
@@ -576,8 +578,13 @@ function startMetricsUpdate() {
             bots.forEach(bot => {
                 if (bot.status === 'running') {
                     loadBotMetrics(bot.id);
-                    // Обновляем время работы
-                    updateBotUptime(bot.id, bot.uptime);
+                    // Сохраняем дату запуска для расчета времени работы
+                    if (bot.started_at) {
+                        botStartedAtCache.set(bot.id, bot.started_at);
+                    }
+                } else {
+                    // Очищаем кэш, если бот не запущен
+                    botStartedAtCache.delete(bot.id);
                 }
             });
             
@@ -599,16 +606,59 @@ function startMetricsUpdate() {
     }, 5000);
 }
 
+// Обновление времени работы каждую секунду
+function startUptimeUpdate() {
+    setInterval(() => {
+        botStartedAtCache.forEach((startedAt, botId) => {
+            updateBotUptime(botId, startedAt);
+        });
+    }, 1000);
+}
+
+// Расчет времени работы на клиенте
+function calculateUptimeClient(startedAt) {
+    if (!startedAt) return null;
+    try {
+        const startTime = new Date(startedAt);
+        const now = new Date();
+        const delta = now - startTime;
+        
+        const days = Math.floor(delta / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((delta % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((delta % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((delta % (1000 * 60)) / 1000);
+        
+        if (days > 0) {
+            return `${days}д ${hours}ч ${minutes}м`;
+        } else if (hours > 0) {
+            return `${hours}ч ${minutes}м ${seconds}с`;
+        } else if (minutes > 0) {
+            return `${minutes}м ${seconds}с`;
+        } else {
+            return `${seconds}с`;
+        }
+    } catch (e) {
+        return null;
+    }
+}
+
 // Обновление времени работы бота
-function updateBotUptime(botId, uptime) {
+function updateBotUptime(botId, startedAt) {
     const botCard = document.querySelector(`.bot-card-new[data-bot-id="${botId}"]`);
     if (!botCard) return;
     
     const uptimeElement = botCard.querySelector('.bot-card-new-info i.fa-clock');
     if (uptimeElement && uptimeElement.parentElement) {
         const span = uptimeElement.parentElement.querySelector('span');
-        if (span && uptime) {
-            span.textContent = `Работает: ${uptime}`;
+        if (span) {
+            if (startedAt) {
+                const uptime = calculateUptimeClient(startedAt);
+                if (uptime) {
+                    span.textContent = `Работает: ${uptime}`;
+                }
+            } else {
+                span.textContent = 'Не запущен';
+            }
         }
     }
 }
