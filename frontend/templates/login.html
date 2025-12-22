@@ -9,70 +9,31 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="login-container">
-        <div class="login-card">
-            <div class="login-header">
-                <div class="login-icon">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <h1 class="login-title">
-                    DSTG Panel
-                </h1>
-                <p class="login-subtitle">Панель управления ботами для Discord и Telegram</p>
-            </div>
-            
-            <form id="login-form">
-                <div class="mb-4">
-                    <label for="password" class="form-label">
-                        <i class="fas fa-lock"></i> Пароль администратора
-                    </label>
-                    <div class="input-wrapper">
-                        <input 
-                            type="password" 
-                            class="form-control" 
-                            id="password" 
-                            required 
-                            autofocus 
-                            placeholder="Введите пароль"
-                        >
-                        <button type="button" class="password-toggle" id="password-toggle" title="Показать/скрыть пароль">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                </div>
-                
-                <button type="submit" class="btn btn-primary w-100 btn-lg">
-                    <i class="fas fa-sign-in-alt"></i> Войти
-                </button>
-            </form>
-            
-            <div id="error-message" class="alert alert-danger mt-3" style="display: none;">
-                <i class="fas fa-exclamation-circle"></i> <span id="error-text"></span>
-            </div>
-            
-            <div class="login-footer mt-4">
-                <small class="text-muted">
-                    <i class="fas fa-shield-alt"></i> Безопасный вход
-                </small>
-            </div>
-        </div>
-        
-        <!-- Animated background elements -->
-        <div class="login-background">
-            <div class="bg-circle bg-circle-1"></div>
-            <div class="bg-circle bg-circle-2"></div>
-            <div class="bg-circle bg-circle-3"></div>
-        </div>
-    </div>
-
     <style>
-        .login-container {
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-primary);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(0, 243, 255, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(176, 38, 255, 0.15) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(255, 0, 110, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(57, 255, 20, 0.1) 0px, transparent 50%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            color: var(--text-primary);
             position: relative;
             overflow: hidden;
         }
-        
+
+        /* Animated background */
         .login-background {
             position: fixed;
             top: 0;
@@ -81,199 +42,433 @@
             height: 100%;
             z-index: 0;
             pointer-events: none;
+            overflow: hidden;
         }
-        
+
         .bg-circle {
             position: absolute;
             border-radius: 50%;
             background: radial-gradient(circle, rgba(0, 243, 255, 0.1), transparent);
             animation: float 20s ease-in-out infinite;
+            filter: blur(40px);
         }
-        
+
         .bg-circle-1 {
-            width: 300px;
-            height: 300px;
+            width: 400px;
+            height: 400px;
             top: 10%;
             left: 10%;
             animation-delay: 0s;
         }
-        
+
         .bg-circle-2 {
-            width: 400px;
-            height: 400px;
+            width: 500px;
+            height: 500px;
             top: 60%;
             right: 10%;
             animation-delay: 5s;
+            background: radial-gradient(circle, rgba(176, 38, 255, 0.1), transparent);
         }
-        
+
         .bg-circle-3 {
-            width: 250px;
-            height: 250px;
+            width: 350px;
+            height: 350px;
             bottom: 10%;
             left: 50%;
             animation-delay: 10s;
+            background: radial-gradient(circle, rgba(255, 0, 110, 0.1), transparent);
         }
-        
+
+        @keyframes float {
+            0%, 100% {
+                transform: translate(0, 0) scale(1);
+            }
+            33% {
+                transform: translate(30px, -30px) scale(1.1);
+            }
+            66% {
+                transform: translate(-20px, 20px) scale(0.9);
+            }
+        }
+
+        /* Login container */
+        .login-container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 450px;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                0 0 40px rgba(0, 243, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Header */
         .login-header {
             text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: 2.5rem;
         }
-        
+
         .login-icon {
-            font-size: 4rem;
+            font-size: 4.5rem;
             margin-bottom: 1rem;
             background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            animation: float 3s ease-in-out infinite;
+            animation: iconFloat 3s ease-in-out infinite;
+            display: inline-block;
         }
-        
+
+        @keyframes iconFloat {
+            0%, 100% {
+                transform: translateY(0) scale(1);
+            }
+            50% {
+                transform: translateY(-10px) scale(1.05);
+            }
+        }
+
+        .login-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
         .login-subtitle {
             color: var(--text-secondary);
-            margin-top: 0.5rem;
             font-size: 0.95rem;
+            margin-top: 0.5rem;
         }
-        
+
+        /* Form */
+        .login-form {
+            margin-top: 2rem;
+        }
+
+        .form-label {
+            color: var(--text-primary);
+            font-weight: 500;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .form-label i {
+            color: var(--neon-cyan);
+            font-size: 0.9rem;
+        }
+
         .input-wrapper {
             position: relative;
+            margin-bottom: 1.5rem;
         }
-        
-        .input-wrapper .form-control {
-            padding-right: 45px;
+
+        .form-control {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            padding: 12px 45px 12px 15px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
         }
-        
+
+        .form-control:focus {
+            background: var(--bg-tertiary);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 0 3px rgba(0, 243, 255, 0.1), 0 0 20px rgba(0, 243, 255, 0.2);
+            outline: none;
+            color: var(--text-primary);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-muted);
+        }
+
         .password-toggle {
             position: absolute;
-            right: 10px;
+            right: 12px;
             top: 50%;
             transform: translateY(-50%);
             background: none;
             border: none;
             color: var(--text-secondary);
             cursor: pointer;
-            padding: 5px 10px;
-            transition: color var(--anim-normal) ease;
+            padding: 8px;
+            transition: color 0.3s ease;
+            z-index: 10;
         }
-        
+
         .password-toggle:hover {
             color: var(--neon-cyan);
         }
-        
+
+        .password-toggle:focus {
+            outline: none;
+        }
+
+        /* Button */
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            box-shadow: 0 4px 15px rgba(0, 243, 255, 0.3);
+        }
+
+        .btn-login:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 243, 255, 0.4);
+        }
+
+        .btn-login:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-login:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .btn-login.btn-success {
+            background: linear-gradient(135deg, var(--neon-green), #2ecc71);
+        }
+
+        /* Error message */
+        .error-message {
+            margin-top: 1.5rem;
+            padding: 12px 16px;
+            background: rgba(255, 0, 110, 0.1);
+            border: 1px solid rgba(255, 0, 110, 0.3);
+            border-radius: 10px;
+            color: var(--neon-pink);
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            animation: shake 0.5s ease-in-out;
+        }
+
+        .error-message.show {
+            display: flex;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        /* Footer */
         .login-footer {
             text-align: center;
-            padding-top: 1rem;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
             border-top: 1px solid var(--border-color);
         }
-        
-        .login-card {
-            position: relative;
-            z-index: 1;
-            animation: fade-in 0.5s ease-out, slide-in-right 0.5s ease-out;
+
+        .login-footer small {
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
-        
-        @keyframes fade-in {
-            from { opacity: 0; }
-            to { opacity: 1; }
+
+        .login-footer i {
+            color: var(--neon-green);
         }
-        
-        @keyframes slide-in-right {
-            from {
-                transform: translateX(30px);
+
+        /* Responsive */
+        @media (max-width: 576px) {
+            .login-card {
+                padding: 30px 20px;
             }
-            to {
-                transform: translateX(0);
+
+            .login-title {
+                font-size: 1.75rem;
+            }
+
+            .login-icon {
+                font-size: 3.5rem;
             }
         }
     </style>
+</head>
+<body>
+    <!-- Animated background -->
+    <div class="login-background">
+        <div class="bg-circle bg-circle-1"></div>
+        <div class="bg-circle bg-circle-2"></div>
+        <div class="bg-circle bg-circle-3"></div>
+    </div>
+
+    <!-- Login container -->
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <h1 class="login-title">DSTG Panel</h1>
+                <p class="login-subtitle">Панель управления ботами для Discord и Telegram</p>
+            </div>
+            
+            <form id="login-form" class="login-form">
+                <label for="password" class="form-label">
+                    <i class="fas fa-lock"></i>
+                    <span>Пароль администратора</span>
+                </label>
+                <div class="input-wrapper">
+                    <input 
+                        type="password" 
+                        class="form-control" 
+                        id="password" 
+                        required 
+                        autofocus 
+                        placeholder="Введите пароль"
+                        autocomplete="current-password"
+                    >
+                    <button type="button" class="password-toggle" id="password-toggle" title="Показать/скрыть пароль">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+                
+                <button type="submit" class="btn-login" id="login-btn">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>Войти</span>
+                </button>
+            </form>
+            
+            <div id="error-message" class="error-message">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="error-text"></span>
+            </div>
+            
+            <div class="login-footer">
+                <small>
+                    <i class="fas fa-shield-alt"></i>
+                    <span>Безопасный вход</span>
+                </small>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Переключение видимости пароля
-        document.getElementById('password-toggle')?.addEventListener('click', function() {
-            const passwordInput = document.getElementById('password');
-            const icon = this.querySelector('i');
-            
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                passwordInput.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
-        });
+        const passwordToggle = document.getElementById('password-toggle');
+        const passwordInput = document.getElementById('password');
+        
+        if (passwordToggle && passwordInput) {
+            passwordToggle.addEventListener('click', function() {
+                const icon = this.querySelector('i');
+                
+                if (passwordInput.type === 'password') {
+                    passwordInput.type = 'text';
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                } else {
+                    passwordInput.type = 'password';
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+            });
+        }
         
         // Обработка формы входа
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const password = document.getElementById('password').value;
-            const errorDiv = document.getElementById('error-message');
-            const errorText = document.getElementById('error-text');
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            
-            // Показываем загрузку
-            const originalText = submitBtn.innerHTML;
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...';
-            errorDiv.style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ password: password })
-                });
-                
-                if (response.ok) {
-                    // Успешный вход
-                    submitBtn.innerHTML = '<i class="fas fa-check"></i> Успешно!';
-                    submitBtn.classList.remove('btn-primary');
-                    submitBtn.classList.add('btn-success');
-                    
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 500);
-                } else {
-                    const data = await response.json();
-                    errorText.textContent = data.detail || 'Ошибка входа';
-                    errorDiv.style.display = 'block';
-                    errorDiv.classList.add('shake');
-                    setTimeout(() => {
-                        errorDiv.classList.remove('shake');
-                    }, 500);
-                    
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalText;
-                }
-            } catch (error) {
-                errorText.textContent = 'Ошибка соединения с сервером';
-                errorDiv.style.display = 'block';
-                errorDiv.classList.add('shake');
-                setTimeout(() => {
-                    errorDiv.classList.remove('shake');
-                }, 500);
-                
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalText;
-            }
-        });
+        const loginForm = document.getElementById('login-form');
+        const errorDiv = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const loginBtn = document.getElementById('login-btn');
+        const loginBtnSpan = loginBtn.querySelector('span');
+        const loginBtnIcon = loginBtn.querySelector('i');
         
-        // Анимация тряски для ошибок
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes shake {
-                0%, 100% { transform: translateX(0); }
-                25% { transform: translateX(-10px); }
-                75% { transform: translateX(10px); }
-            }
-            .shake {
-                animation: shake 0.5s ease-in-out;
-            }
-        `;
-        document.head.appendChild(style);
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const password = passwordInput.value;
+                
+                // Показываем загрузку
+                const originalText = loginBtnSpan.textContent;
+                loginBtn.disabled = true;
+                loginBtnSpan.textContent = 'Вход...';
+                loginBtnIcon.className = 'fas fa-spinner fa-spin';
+                errorDiv.classList.remove('show');
+                
+                try {
+                    const response = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ password: password })
+                    });
+                    
+                    if (response.ok) {
+                        // Успешный вход
+                        loginBtnSpan.textContent = 'Успешно!';
+                        loginBtnIcon.className = 'fas fa-check';
+                        loginBtn.classList.add('btn-success');
+                        
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 500);
+                    } else {
+                        const data = await response.json();
+                        errorText.textContent = data.detail || 'Ошибка входа';
+                        errorDiv.classList.add('show');
+                        
+                        loginBtn.disabled = false;
+                        loginBtnSpan.textContent = originalText;
+                        loginBtnIcon.className = 'fas fa-sign-in-alt';
+                    }
+                } catch (error) {
+                    errorText.textContent = 'Ошибка соединения с сервером';
+                    errorDiv.classList.add('show');
+                    
+                    loginBtn.disabled = false;
+                    loginBtnSpan.textContent = originalText;
+                    loginBtnIcon.className = 'fas fa-sign-in-alt';
+                }
+            });
+        }
     </script>
 </body>
 </html>

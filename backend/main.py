@@ -1184,6 +1184,30 @@ async def delete_sqlite_database_endpoint(bot_id: int, db_name: str):
         logger.error(f"Error deleting SQLite database: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/bots/{bot_id}/sqlite/databases/{db_name:path}/tables")
+async def get_sqlite_tables_by_db_endpoint(bot_id: int, db_name: str):
+    """Получение списка таблиц в SQLite БД (db_name в пути)"""
+    # Декодируем db_name на случай, если он был закодирован
+    from urllib.parse import unquote
+    db_name = unquote(db_name)
+    logger.info(f"Getting tables for bot_id={bot_id}, db_name={db_name}")
+    bot = get_bot(bot_id)
+    if not bot:
+        logger.warning(f"Bot {bot_id} not found")
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        tables = get_tables(bot_id, db_name)
+        # Преобразуем список словарей в список имен таблиц
+        table_names = [table['name'] if isinstance(table, dict) else table for table in tables]
+        logger.info(f"Found {len(table_names)} tables in {db_name}")
+        return {"success": True, "tables": table_names}
+    except Exception as e:
+        logger.error(f"Error getting tables for bot_id={bot_id}, db_name={db_name}: {e}", exc_info=True)
+        # В случае ошибки возвращаем пустой список вместо выброса исключения
+        # чтобы не ломать UI, если база данных не существует или есть другая проблема
+        return {"success": True, "tables": []}
+
 @app.get("/api/bots/{bot_id}/sqlite/tables")
 async def get_sqlite_tables_endpoint(bot_id: int, db_name: Optional[str] = Query("bot.db")):
     """Получение списка таблиц в SQLite БД"""
@@ -1202,6 +1226,22 @@ async def get_sqlite_tables_endpoint(bot_id: int, db_name: Optional[str] = Query
         # чтобы не ломать UI, если база данных не существует или есть другая проблема
         return {"success": True, "tables": []}
 
+@app.get("/api/bots/{bot_id}/sqlite/databases/{db_name:path}/tables/{table_name}/structure")
+async def get_sqlite_table_structure_by_db_endpoint(bot_id: int, db_name: str, table_name: str):
+    """Получение структуры таблицы (db_name в пути)"""
+    from urllib.parse import unquote
+    db_name = unquote(db_name)
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        structure = get_table_structure(bot_id, table_name, db_name)
+        return {"success": True, "structure": structure}
+    except Exception as e:
+        logger.error(f"Error getting table structure: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/bots/{bot_id}/sqlite/tables/{table_name}/structure")
 async def get_sqlite_table_structure_endpoint(bot_id: int, table_name: str, db_name: Optional[str] = Query("bot.db")):
     """Получение структуры таблицы"""
@@ -1214,6 +1254,25 @@ async def get_sqlite_table_structure_endpoint(bot_id: int, table_name: str, db_n
         return {"success": True, "structure": structure}
     except Exception as e:
         logger.error(f"Error getting table structure: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bots/{bot_id}/sqlite/databases/{db_name:path}/tables/{table_name}/data")
+async def get_sqlite_table_data_by_db_endpoint(bot_id: int, db_name: str, table_name: str,
+                                               limit: int = Query(100),
+                                               offset: int = Query(0),
+                                               order_by: Optional[str] = Query(None)):
+    """Получение данных из таблицы (db_name в пути)"""
+    from urllib.parse import unquote
+    db_name = unquote(db_name)
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        data = get_table_data(bot_id, table_name, db_name, limit, offset, order_by)
+        return {"success": True, "data": data}
+    except Exception as e:
+        logger.error(f"Error getting table data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/bots/{bot_id}/sqlite/tables/{table_name}/data")
@@ -1262,23 +1321,34 @@ async def create_sqlite_table_endpoint(bot_id: int, request: Request):
     if not bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
     
-    data = await request.json()
-    table_name = data.get("table_name", "")
-    columns = data.get("columns", [])
-    db_name = data.get("db_name", "bot.db")
-    
-    if not table_name:
-        raise HTTPException(status_code=400, detail="Имя таблицы обязательно")
-    
     try:
+        data = await request.json()
+        table_name = data.get("table_name", "")
+        columns = data.get("columns", [])
+        db_name = data.get("db_name", "bot.db")
+        
+        logger.info(f"Creating table: bot_id={bot_id}, table_name={table_name}, db_name={db_name}, columns_count={len(columns) if columns else 0}")
+        
+        if not table_name:
+            raise HTTPException(status_code=400, detail="Имя таблицы обязательно")
+        
+        if not columns or len(columns) == 0:
+            raise HTTPException(status_code=400, detail="Необходимо указать хотя бы один столбец")
+        
         result = create_table(bot_id, table_name, columns, db_name)
-        if result['success']:
+        if result.get('success'):
+            logger.info(f"Table {table_name} created successfully in {db_name}")
             return result
         else:
-            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+            error_msg = result.get('error', 'Неизвестная ошибка')
+            logger.error(f"Failed to create table {table_name}: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating table: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        error_detail = str(e) if str(e) else "Неизвестная ошибка при создании таблицы"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @app.delete("/api/bots/{bot_id}/sqlite/tables/{table_name}")
 async def delete_sqlite_table_endpoint(bot_id: int, table_name: str, db_name: Optional[str] = Query("bot.db")):

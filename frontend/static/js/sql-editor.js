@@ -886,7 +886,23 @@ async function createTable() {
             })
         });
         
-        const result = await response.json();
+        let result;
+        try {
+            result = await response.json();
+        } catch (e) {
+            // Если не удалось распарсить JSON, значит это ошибка сервера
+            console.error('Error parsing response:', e);
+            showError('Ошибка', `Ошибка сервера: ${response.status} ${response.statusText}`);
+            return;
+        }
+        
+        if (!response.ok) {
+            // Если response.ok = false, проверяем result.detail или result.error
+            const errorMessage = result.detail || result.error || `Ошибка ${response.status}: ${response.statusText}`;
+            showError('Ошибка', errorMessage);
+            return;
+        }
+        
         if (result.success) {
             showSuccess('Успех', 'Таблица успешно создана');
             const modal = bootstrap.Modal.getInstance(document.getElementById('create-table-modal'));
@@ -897,7 +913,7 @@ async function createTable() {
         }
     } catch (error) {
         console.error('Error creating table:', error);
-        showError('Ошибка', 'Не удалось создать таблицу');
+        showError('Ошибка', `Не удалось создать таблицу: ${error.message || 'Неизвестная ошибка'}`);
     }
 }
 

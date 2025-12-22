@@ -245,49 +245,89 @@ def execute_sql(bot_id: int, query: str, db_name: str = "bot.db") -> Dict[str, A
             'error': str(e)
         }
 
-def create_table(bot_id: int, table_name: str, columns: List[Dict[str, Any]], 
+def create_table(bot_id: int, table_name: str, columns: List, 
                  db_name: str = "bot.db") -> Dict[str, Any]:
-    """Создание новой таблицы"""
+    """Создание новой таблицы
+    
+    Args:
+        columns: Может быть списком словарей с полями (name, type, notnull, default_value, pk)
+                 или списком строк (SQL определений столбцов)
+    """
     try:
-        # Валидация имени таблицы
-        if not table_name or not table_name.replace('_', '').replace(' ', '').isalnum():
-            return {'success': False, 'error': 'Недопустимое имя таблицы'}
+        # Валидация имени таблицы (SQLite позволяет буквы, цифры, подчеркивания, дефисы)
+        if not table_name or not table_name.strip():
+            return {'success': False, 'error': 'Имя таблицы не может быть пустым'}
+        
+        # Проверяем, что имя содержит только допустимые символы
+        import re
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_\-]*$', table_name):
+            return {'success': False, 'error': 'Недопустимое имя таблицы. Используйте только буквы, цифры, подчеркивания и дефисы. Имя должно начинаться с буквы или подчеркивания.'}
         
         # Формируем SQL для создания таблицы
         column_defs = []
-        for col in columns:
-            col_name = col.get('name', '').strip()
-            col_type = col.get('type', 'TEXT').upper()
-            col_notnull = col.get('notnull', False)
-            col_default = col.get('default_value', None)
-            col_pk = col.get('pk', False)
-            
-            if not col_name:
-                continue
-            
-            col_def = f"{col_name} {col_type}"
-            if col_notnull:
-                col_def += " NOT NULL"
-            if col_default is not None:
-                if isinstance(col_default, str):
-                    col_def += f" DEFAULT '{col_default}'"
-                else:
-                    col_def += f" DEFAULT {col_default}"
-            if col_pk:
-                col_def += " PRIMARY KEY"
-            
-            column_defs.append(col_def)
+        
+        # Проверяем, какой формат columns: список строк или список словарей
+        if columns and len(columns) > 0:
+            # Если первый элемент - строка, значит это список SQL определений
+            if isinstance(columns[0], str):
+                column_defs = [col.strip() for col in columns if col and col.strip()]
+            else:
+                # Иначе это список словарей
+                for col in columns:
+                    if isinstance(col, dict):
+                        col_name = col.get('name', '').strip()
+                        col_type = col.get('type', 'TEXT').upper()
+                        col_notnull = col.get('notnull', False)
+                        col_default = col.get('default_value', None)
+                        col_pk = col.get('pk', False)
+                        
+                        if not col_name:
+                            continue
+                        
+                        # Валидация имени столбца
+                        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_\-]*$', col_name):
+                            logger.warning(f"Invalid column name: {col_name}")
+                            continue
+                        
+                        # Валидация типа данных
+                        valid_types = ['TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC']
+                        if col_type not in valid_types:
+                            logger.warning(f"Invalid column type: {col_type}, using TEXT")
+                            col_type = 'TEXT'
+                        
+                        col_def = f"{col_name} {col_type}"
+                        if col_notnull:
+                            col_def += " NOT NULL"
+                        if col_default is not None:
+                            if isinstance(col_default, str):
+                                # Экранируем одинарные кавычки в строковых значениях
+                                escaped_default = col_default.replace("'", "''")
+                                col_def += f" DEFAULT '{escaped_default}'"
+                            else:
+                                col_def += f" DEFAULT {col_default}"
+                        if col_pk:
+                            col_def += " PRIMARY KEY"
+                        
+                        column_defs.append(col_def)
         
         if not column_defs:
             return {'success': False, 'error': 'Не предоставлены допустимые столбцы'}
         
         sql = f"CREATE TABLE {table_name} ({', '.join(column_defs)})"
+        logger.debug(f"Creating table SQL: {sql}")
         
         result = execute_sql(bot_id, sql, db_name)
+        
+        if not result.get('success'):
+            logger.error(f"SQL execution failed: {result.get('error', 'Unknown error')}")
+        
         return result
     except Exception as e:
         logger.error(f"Error creating table: {e}", exc_info=True)
-        return {'success': False, 'error': str(e)}
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Traceback: {error_trace}")
+        return {'success': False, 'error': f'Ошибка создания таблицы: {str(e)}'}
 
 def drop_table(bot_id: int, table_name: str, db_name: str = "bot.db") -> Dict[str, Any]:
     """Удаление таблицы"""
