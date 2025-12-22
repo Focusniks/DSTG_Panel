@@ -777,8 +777,37 @@ def get_git_remote(path: Path) -> Optional[str]:
         return None
     
     try:
-        # Проверяем наличие Git
-        git_cmd = shutil.which("git")
+        # Надежный поиск Git команды
+        git_cmd = None
+        candidates = [
+            shutil.which("git"),
+            "git",
+        ]
+        
+        if os.name != 'nt':
+            candidates.extend([
+                "/usr/bin/git",
+                "/usr/local/bin/git",
+                "/bin/git"
+            ])
+        
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                result = subprocess.run(
+                    [candidate, "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    git_cmd = candidate
+                    break
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+                continue
+        
         if not git_cmd:
             return None
         
@@ -802,8 +831,37 @@ def get_git_remote(path: Path) -> Optional[str]:
 def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str]:
     """Инициализация Git репозитория"""
     try:
-        # Проверяем наличие Git
-        git_cmd = shutil.which("git")
+        # Надежный поиск Git команды (используем тот же метод, что и в GitRepository)
+        git_cmd = None
+        candidates = [
+            shutil.which("git"),
+            "git",
+        ]
+        
+        if os.name != 'nt':
+            candidates.extend([
+                "/usr/bin/git",
+                "/usr/local/bin/git",
+                "/bin/git"
+            ])
+        
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                result = subprocess.run(
+                    [candidate, "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    git_cmd = candidate
+                    break
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+                continue
+        
         if not git_cmd:
             return (False, "Git не установлен. Установите Git: sudo apt-get install git (Ubuntu/Debian) или sudo yum install git (CentOS/RHEL)")
         
@@ -859,8 +917,37 @@ def set_git_remote(path: Path, repo_url: str) -> bool:
         return False
     
     try:
-        # Проверяем наличие Git
-        git_cmd = shutil.which("git")
+        # Надежный поиск Git команды
+        git_cmd = None
+        candidates = [
+            shutil.which("git"),
+            "git",
+        ]
+        
+        if os.name != 'nt':
+            candidates.extend([
+                "/usr/bin/git",
+                "/usr/local/bin/git",
+                "/bin/git"
+            ])
+        
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                result = subprocess.run(
+                    [candidate, "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    git_cmd = candidate
+                    break
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+                continue
+        
         if not git_cmd:
             return False
         
