@@ -59,43 +59,59 @@ def create_bot(name: str, bot_type: str, start_file: str = None,
     """Создание нового бота"""
     from backend.config import BOTS_DIR
     import os
+    import logging
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    logger = logging.getLogger(__name__)
     
-    # Создаем директорию для бота
-    bot_dir = BOTS_DIR / f"bot_{name.lower().replace(' ', '_')}"
-    bot_dir.mkdir(exist_ok=True)
-    
-    # Сохраняем конфиг бота
-    config_path = bot_dir / "config.json"
-    config = {
-        "name": name,
-        "bot_type": bot_type,
-        "start_file": start_file,
-        "cpu_limit": cpu_limit,
-        "memory_limit": memory_limit,
-        "git_repo_url": git_repo_url,
-        "git_branch": git_branch
-    }
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-    
-    # Создаем шаблонные файлы, если их нет и не указан Git репозиторий
-    # (если указан репозиторий, файлы будут из него)
-    if not git_repo_url and (not start_file or not (bot_dir / start_file).exists()):
-        create_bot_templates(bot_dir, bot_type, start_file)
-    
-    cursor.execute("""
-        INSERT INTO bots (name, bot_type, start_file, bot_dir, cpu_limit, memory_limit, git_repo_url, git_branch, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
-    """, (name, bot_type, start_file, str(bot_dir), cpu_limit, memory_limit, git_repo_url, git_branch))
-    
-    bot_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    
-    return bot_id
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Создаем директорию для бота
+        bot_dir = BOTS_DIR / f"bot_{name.lower().replace(' ', '_')}"
+        bot_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Сохраняем конфиг бота
+        config_path = bot_dir / "config.json"
+        config = {
+            "name": name,
+            "bot_type": bot_type,
+            "start_file": start_file,
+            "cpu_limit": cpu_limit,
+            "memory_limit": memory_limit,
+            "git_repo_url": git_repo_url,
+            "git_branch": git_branch
+        }
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        
+        # Создаем шаблонные файлы, если их нет и не указан Git репозиторий
+        # (если указан репозиторий, файлы будут из него)
+        if not git_repo_url and (not start_file or not (bot_dir / start_file).exists()):
+            try:
+                create_bot_templates(bot_dir, bot_type, start_file)
+            except Exception as template_error:
+                logger.warning(f"Failed to create bot templates: {template_error}")
+                # Не критично, продолжаем создание бота
+        
+        cursor.execute("""
+            INSERT INTO bots (name, bot_type, start_file, bot_dir, cpu_limit, memory_limit, git_repo_url, git_branch, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
+        """, (name, bot_type, start_file, str(bot_dir), cpu_limit, memory_limit, git_repo_url, git_branch))
+        
+        bot_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return bot_id
+    except Exception as e:
+        logger.error(f"Error in create_bot: {e}", exc_info=True)
+        if 'conn' in locals():
+            try:
+                conn.close()
+            except:
+                pass
+        raise
 
 def get_bot(bot_id: int) -> Optional[Dict]:
     """Получение информации о боте"""

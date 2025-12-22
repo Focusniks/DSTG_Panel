@@ -209,6 +209,7 @@ async def create_bot_endpoint(bot_data: BotCreate):
         return {"id": bot_id, "success": True}
     except Exception as e:
         logger.error(f"Error creating bot: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка создания бота: {str(e)}")(f"Error creating bot: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка создания бота: {str(e)}")
 
 @app.get("/api/bots/{bot_id}")
