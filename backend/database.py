@@ -68,7 +68,11 @@ def create_bot(name: str, bot_type: str, start_file: str = None,
         cursor = conn.cursor()
         
         # Создаем директорию для бота
-        bot_dir = BOTS_DIR / f"bot_{name.lower().replace(' ', '_')}"
+        # Очищаем имя от недопустимых символов
+        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name.lower().replace(' ', '_'))
+        if not safe_name:
+            safe_name = "bot"
+        bot_dir = BOTS_DIR / f"bot_{safe_name}"
         bot_dir.mkdir(parents=True, exist_ok=True)
         
         # Сохраняем конфиг бота
@@ -103,11 +107,22 @@ def create_bot(name: str, bot_type: str, start_file: str = None,
         conn.commit()
         conn.close()
         
+        logger.info(f"Bot created successfully: {name} (ID: {bot_id})")
         return bot_id
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Database integrity error creating bot: {e}")
+        if 'conn' in locals():
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
+        raise ValueError(f"Бот с таким именем уже существует: {name}")
     except Exception as e:
         logger.error(f"Error in create_bot: {e}", exc_info=True)
         if 'conn' in locals():
             try:
+                conn.rollback()
                 conn.close()
             except:
                 pass

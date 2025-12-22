@@ -86,18 +86,55 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
             except Exception as e:
                 return False, f"Не удалось удалить существующие ключи: {str(e)}"
         
-        # Проверяем наличие ssh-keygen
+        # Проверяем наличие ssh-keygen - используем несколько методов
+        ssh_keygen_path = None
+        
+        # Метод 1: через which/where
         ssh_keygen_path = shutil.which("ssh-keygen")
+        
+        # Метод 2: пробуем стандартные пути
         if not ssh_keygen_path:
-            # Пробуем стандартные пути
-            if os.name != 'nt':
-                for path in ["/usr/bin/ssh-keygen", "/usr/local/bin/ssh-keygen", "/bin/ssh-keygen"]:
-                    if os.path.exists(path):
-                        ssh_keygen_path = path
-                        break
+            standard_paths = []
+            if os.name == 'nt':
+                # Windows пути
+                standard_paths = [
+                    r"C:\Program Files\Git\usr\bin\ssh-keygen.exe",
+                    r"C:\Program Files (x86)\Git\usr\bin\ssh-keygen.exe",
+                    r"C:\Windows\System32\OpenSSH\ssh-keygen.exe",
+                ]
+            else:
+                # Unix пути
+                standard_paths = [
+                    "/usr/bin/ssh-keygen",
+                    "/usr/local/bin/ssh-keygen",
+                    "/bin/ssh-keygen",
+                    "/opt/local/bin/ssh-keygen",
+                ]
+            
+            for path in standard_paths:
+                if os.path.exists(path) and os.access(path, os.X_OK):
+                    ssh_keygen_path = path
+                    break
+        
+        # Метод 3: пробуем выполнить команду напрямую
+        if not ssh_keygen_path:
+            try:
+                result = subprocess.run(
+                    ["ssh-keygen", "-V"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                # Если команда выполнилась (даже с ошибкой), значит ssh-keygen доступен
+                ssh_keygen_path = "ssh-keygen"
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+            except Exception:
+                # Любая другая ошибка означает, что команда найдена, но что-то не так
+                ssh_keygen_path = "ssh-keygen"
         
         if not ssh_keygen_path:
-            return False, "ssh-keygen не найден. Установите OpenSSH."
+            return False, "ssh-keygen не найден. Установите OpenSSH или Git for Windows."
         
         # Генерируем SSH ключ (предпочитаем ed25519, fallback на RSA)
         key_types = [

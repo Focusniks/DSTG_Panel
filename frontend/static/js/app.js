@@ -108,7 +108,7 @@ function renderBotsList(bots) {
                         </div>
                     ` : ''}
                     
-                    <div class="quick-actions mt-3">
+                    <div class="quick-actions mt-auto">
                         <button class="btn btn-sm btn-primary flex-fill" onclick="editBot(${bot.id})" title="Управление">
                             <i class="fas fa-cog"></i> Управление
                         </button>
