@@ -23,11 +23,13 @@ from backend.db_manager import (
 )
 from backend.git_manager import (
     update_panel_from_git, update_bot_from_git,
-    get_git_status, get_git_remote, is_git_repo, init_git_repo
+    get_git_status, get_git_remote, is_git_repo, init_git_repo,
+    GitRepository
 )
 from backend.ssh_manager import (
     generate_ssh_key, get_public_key, get_ssh_key_exists,
-    setup_ssh_config_for_github
+    setup_ssh_config_for_github, test_ssh_connection, get_ssh_key_info,
+    extract_host_from_url, convert_https_to_ssh
 )
 
 app = FastAPI(title="Bot Admin Panel")
@@ -172,8 +174,12 @@ async def create_bot_endpoint(bot_data: BotCreate):
         if requirements_path.exists():
             requirements_path.unlink()
         
-        # Клонируем репозиторий
-        success, message = update_bot_from_git(bot_dir, bot_data.git_repo_url.strip(), bot_data.git_branch)
+        # Используем новую систему GitRepository для клонирования
+        repo = GitRepository(bot_dir, bot_data.git_repo_url.strip(), bot_data.git_branch)
+        if not repo.is_git_installed():
+            return {"id": bot_id, "success": True, "warning": "Git не установлен. Репозиторий не клонирован."}
+        
+        success, message = repo.clone(bot_data.git_repo_url.strip(), bot_data.git_branch)
         
         # Восстанавливаем config.json
         if config_backup:
@@ -850,18 +856,42 @@ async def get_phpmyadmin_url_endpoint(bot_id: int):
 # Bot Git endpoints
 @app.get("/api/bots/{bot_id}/git-status")
 async def get_bot_git_status(bot_id: int):
-    """Получение статуса Git репозитория бота"""
+    """
+    Получение детального статуса Git репозитория бота
+    Включает информацию о ветке, коммитах, обновлениях и локальных изменениях
+    """
     bot = get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
     
     bot_dir = Path(bot['bot_dir'])
-    status = get_git_status(bot_dir)
+    repo_url = bot.get('git_repo_url')
+    branch = bot.get('git_branch', 'main')
+    
+    # Используем новую систему GitRepository
+    repo = GitRepository(bot_dir, repo_url, branch)
+    status = repo.get_status()
+    
+    # Добавляем дополнительную информацию
+    if status.get("is_repo"):
+        # Проверяем, можно ли использовать SSH
+        if repo_url:
+            normalized_url, is_ssh = repo.normalize_url(repo_url, prefer_ssh=True)
+            can_use_ssh, ssh_error = repo.can_use_ssh(normalized_url) if is_ssh else (False, None)
+            status["ssh_available"] = is_ssh and can_use_ssh
+            status["ssh_error"] = ssh_error if not can_use_ssh else None
+            status["repo_url"] = repo_url
+            status["normalized_url"] = normalized_url
+            status["using_ssh"] = is_ssh
+    
     return status
 
 @app.post("/api/bots/{bot_id}/update")
 async def update_bot_from_git_endpoint(bot_id: int):
     """Обновление бота из Git репозитория"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         bot = get_bot(bot_id)
         if not bot:
@@ -872,23 +902,42 @@ async def update_bot_from_git_endpoint(bot_id: int):
         
         bot_dir = Path(bot['bot_dir'])
         branch = bot.get('git_branch', 'main')
+        repo_url = bot.get('git_repo_url')
         
-        success, message = update_bot_from_git(bot_dir, bot.get('git_repo_url'), branch)
+        # Используем новую систему GitRepository
+        repo = GitRepository(bot_dir, repo_url, branch)
+        
+        if not repo.is_git_installed():
+            raise HTTPException(
+                status_code=500,
+                detail="Git не установлен. Установите Git для работы с репозиториями."
+            )
+        
+        # Если репозиторий не существует, клонируем
+        if not repo.is_repo():
+            logger.info(f"Репозиторий не найден, выполняю клонирование...")
+            success, message = repo.clone(repo_url, branch)
+        else:
+            logger.info(f"Обновление существующего репозитория...")
+            success, message = repo.update(repo_url, branch)
+        
         if success:
             return {"success": True, "message": message}
         else:
             raise HTTPException(status_code=500, detail=message)
+            
     except HTTPException:
         raise
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error updating bot {bot_id} from git: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error updating bot from git: {str(e)}")
+        logger.error(f"Ошибка обновления бота {bot_id} из Git: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка обновления из Git: {str(e)}")
 
 @app.post("/api/bots/{bot_id}/clone")
 async def clone_bot_repository(bot_id: int):
-    """Принудительное клонирование репозитория бота (удаляет существующие файлы кроме config.json)"""
+    """
+    Принудительное клонирование репозитория бота
+    Удаляет существующие файлы кроме config.json и клонирует репозиторий заново
+    """
     import logging
     import json
     import tempfile
@@ -908,153 +957,69 @@ async def clone_bot_repository(bot_id: int):
     config_backup = None
     
     try:
-        # Сохраняем config.json
+        # Сохраняем config.json во временный файл
         if config_path.exists():
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
                 config_backup = tmp.name
                 shutil.copy2(config_path, config_backup)
+                logger.debug(f"Config.json сохранен во временный файл: {config_backup}")
         
-        # Удаляем все файлы кроме config.json, если директория существует
-        # Git clone не может клонировать в существующую директорию, поэтому нужно временно удалить config.json
-        config_removed = False
+        # Используем новую систему GitRepository для клонирования
+        logger.info(f"Принудительное клонирование репозитория {repo_url} (ветка: {branch}) в {bot_dir}")
+        
+        repo = GitRepository(bot_dir, repo_url, branch)
+        
+        # Проверяем установку Git
+        if not repo.is_git_installed():
+            raise HTTPException(
+                status_code=500, 
+                detail="Git не установлен. Установите Git для работы с репозиториями."
+            )
+        
+        # Если репозиторий существует, удаляем .git для чистого клонирования
+        if repo.is_repo():
+            git_dir = bot_dir / ".git"
+            if git_dir.exists():
+                logger.info("Удаление существующего Git репозитория...")
+                shutil.rmtree(git_dir)
+        
+        # Удаляем все файлы кроме config.json
         if bot_dir.exists():
-            if is_git_repo(bot_dir):
-                # Если это Git репозиторий, удаляем .git
-                git_dir = bot_dir / ".git"
-                if git_dir.exists():
-                    shutil.rmtree(git_dir)
-            
-            # Удаляем все файлы кроме config.json
             for item in bot_dir.iterdir():
-                if item.name != "config.json" and item.name != ".git":
+                if item.name not in ['config.json', '.gitkeep']:
                     try:
                         if item.is_dir():
                             shutil.rmtree(item)
                         else:
                             item.unlink()
                     except Exception as e:
-                        logger.warning(f"Failed to remove {item}: {str(e)}")
-            
-            # Временно удаляем config.json, чтобы директория была полностью пустой для git clone
-            if config_path.exists() and not config_backup:
-                # Если бэкап еще не создан, создаем его
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-                    config_backup = tmp.name
-                    shutil.copy2(config_path, config_backup)
-            
-            if config_path.exists():
-                config_path.unlink()
-                config_removed = True
-            
-            # Git clone не может клонировать в существующую директорию, даже если она пустая
-            # Удаляем директорию полностью, если она пустая
-            try:
-                if bot_dir.exists():
-                    # Проверяем, что директория действительно пустая
-                    remaining_files = list(bot_dir.iterdir())
-                    if not remaining_files:
-                        # Директория пустая, можно удалить
-                        bot_dir.rmdir()
-                    elif len(remaining_files) == 1 and remaining_files[0].name == '.gitkeep':
-                        # Только .gitkeep, удаляем его и директорию
-                        remaining_files[0].unlink()
-                        bot_dir.rmdir()
-            except Exception as e:
-                logger.warning(f"Failed to remove empty directory {bot_dir}: {str(e)}")
+                        logger.warning(f"Не удалось удалить {item}: {e}")
         
-        # Клонируем репозиторий
-        logger.info(f"Cloning repository {repo_url} (branch: {branch}) to {bot_dir}")
-        try:
-            success, message = update_bot_from_git(bot_dir, repo_url, branch)
-        except Exception as git_error:
-            # Ловим исключения из update_bot_from_git
-            error_type = type(git_error).__name__
-            error_msg = str(git_error) if str(git_error) else ""
-            error_repr = repr(git_error) if not error_msg else ""
-            
-            # Формируем детальное сообщение
-            error_parts = []
-            if error_type:
-                error_parts.append(error_type)
-            if error_msg and error_msg.strip():
-                error_parts.append(error_msg.strip())
-            elif error_repr and error_repr.strip():
-                error_parts.append(error_repr.strip())
-            
-            # Если все еще пусто, используем fallback
-            if not error_parts:
-                error_parts.append("Unknown error occurred")
-            
-            error_detail = ": ".join(error_parts) if len(error_parts) > 1 else error_parts[0]
-            
-            # Дополнительная проверка - если error_detail пустой или только пробелы
-            if not error_detail or not error_detail.strip():
-                error_detail = f"Unknown error (type: {type(git_error).__name__})"
-            
-            logger.error(f"Exception in update_bot_from_git: {error_detail}", exc_info=True)
-            logger.error(f"Exception type: {type(git_error)}, args: {git_error.args if hasattr(git_error, 'args') else 'N/A'}")
-            logger.error(f"Exception str: '{str(git_error)}', repr: '{repr(git_error)}'")
-            
-            # Восстанавливаем config.json при ошибке клонирования
-            if config_backup and os.path.exists(config_backup):
-                try:
-                    if not config_path.exists():
-                        bot_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(config_backup, config_path)
-                except Exception as e:
-                    logger.error(f"Failed to restore config.json: {str(e)}")
-            
-            # Гарантируем, что detail не пустой - используем strip() для проверки
-            error_detail_clean = error_detail.strip() if error_detail else "Unknown error occurred"
-            
-            # Проверяем, что error_detail_clean не пустой
-            if not error_detail_clean or not error_detail_clean.strip():
-                error_detail_clean = "Unknown error occurred"
-            
-            final_detail = f"Error cloning repository: {error_detail_clean}"
-            
-            # Финальная проверка - проверяем, что после префикса есть текст
-            prefix = "Error cloning repository: "
-            if final_detail.startswith(prefix):
-                suffix = final_detail[len(prefix):].strip()
-                if not suffix:
-                    final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
-            
-            # Еще одна проверка на всякий случай
-            if not final_detail or not final_detail.strip() or final_detail.strip() == "Error cloning repository:":
-                final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
-            
-            logger.error(f"Raising HTTPException with detail: '{final_detail}' (length: {len(final_detail)})")
-            raise HTTPException(status_code=500, detail=final_detail)
+        # Выполняем клонирование (GitRepository автоматически обработает config.json)
+        success, message = repo.clone(repo_url, branch)
         
         if not success:
-            # Восстанавливаем config.json при ошибке клонирования
+            # Восстанавливаем config.json при ошибке
             if config_backup and os.path.exists(config_backup):
                 try:
                     if not config_path.exists():
                         bot_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(config_backup, config_path)
                 except Exception as e:
-                    logger.error(f"Failed to restore config.json: {str(e)}")
+                    logger.error(f"Не удалось восстановить config.json: {e}")
             
-            # Убеждаемся, что message не пустой
-            error_message = message if message and message.strip() else "Unknown error occurred during clone"
-            
-            # Дополнительная проверка
-            if not error_message or not error_message.strip():
-                error_message = "Unknown error occurred during clone. Check server logs for details."
-            
-            logger.error(f"Git clone failed: {error_message}")
-            logger.error(f"Raising HTTPException with detail: '{error_message}'")
-            raise HTTPException(status_code=500, detail=error_message)
+            raise HTTPException(status_code=500, detail=message)
         
         # Восстанавливаем config.json после успешного клонирования
         if config_backup and os.path.exists(config_backup):
             try:
                 if config_path.exists():
                     # Читаем существующий конфиг из клонированного репозитория
-                    with open(config_path, 'r', encoding='utf-8') as f:
-                        new_config = json.load(f)
+                    try:
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            new_config = json.load(f)
+                    except (json.JSONDecodeError, FileNotFoundError):
+                        new_config = {}
                     
                     # Читаем бэкап с нашими настройками
                     with open(config_backup, 'r', encoding='utf-8') as f:
@@ -1074,48 +1039,24 @@ async def clone_bot_repository(bot_id: int):
                 
                 # Удаляем временный файл
                 os.unlink(config_backup)
+                logger.info("Config.json успешно восстановлен")
             except Exception as e:
-                logger.error(f"Failed to merge config.json: {str(e)}")
+                logger.error(f"Ошибка при восстановлении config.json: {e}")
                 # В крайнем случае просто восстанавливаем из бэкапа
                 try:
-                    shutil.copy2(config_backup, config_path)
+                    if not config_path.exists():
+                        shutil.copy2(config_backup, config_path)
                     os.unlink(config_backup)
                 except:
                     pass
         
+        logger.info(f"Репозиторий успешно клонирован: {message}")
         return {"success": True, "message": message}
         
     except HTTPException:
         raise
     except Exception as e:
-        # Получаем детальную информацию об ошибке
-        error_type = type(e).__name__
-        error_msg = str(e) if str(e) else ""
-        error_repr = repr(e) if not error_msg else ""
-        
-        # Формируем детальное сообщение
-        error_parts = []
-        if error_type:
-            error_parts.append(error_type)
-        if error_msg and error_msg.strip():
-            error_parts.append(error_msg.strip())
-        elif error_repr and error_repr.strip():
-            error_parts.append(error_repr.strip())
-        
-        # Если все еще пусто, используем fallback
-        if not error_parts:
-            error_parts.append("Unknown error occurred")
-        
-        error_detail = ": ".join(error_parts) if len(error_parts) > 1 else error_parts[0]
-        
-        # Дополнительная проверка - если error_detail пустой или только пробелы
-        if not error_detail or not error_detail.strip():
-            error_detail = f"Unknown error (type: {error_type})"
-        
-        # Логируем с полным traceback
-        logger.error(f"Error cloning repository for bot {bot_id}: {error_detail}", exc_info=True)
-        logger.error(f"Exception type: {type(e)}, args: {e.args if hasattr(e, 'args') else 'N/A'}")
-        logger.error(f"Exception str: '{str(e)}', repr: '{repr(e)}'")
+        logger.error(f"Ошибка клонирования репозитория для бота {bot_id}: {e}", exc_info=True)
         
         # Восстанавливаем config.json при ошибке
         if config_backup and os.path.exists(config_backup):
@@ -1125,30 +1066,10 @@ async def clone_bot_repository(bot_id: int):
                 shutil.copy2(config_backup, config_path)
                 os.unlink(config_backup)
             except Exception as restore_error:
-                logger.error(f"Failed to restore config.json after error: {str(restore_error)}")
+                logger.error(f"Не удалось восстановить config.json после ошибки: {restore_error}")
         
-        # Гарантируем, что detail не пустой - используем strip() для проверки
-        error_detail_clean = error_detail.strip() if error_detail else "Unknown error occurred"
-        
-        # Проверяем, что error_detail_clean не пустой
-        if not error_detail_clean or not error_detail_clean.strip():
-            error_detail_clean = "Unknown error occurred"
-        
-        final_detail = f"Error cloning repository: {error_detail_clean}"
-        
-        # Финальная проверка - проверяем, что после префикса есть текст
-        prefix = "Error cloning repository: "
-        if final_detail.startswith(prefix):
-            suffix = final_detail[len(prefix):].strip()
-            if not suffix:
-                final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
-        
-        # Еще одна проверка на всякий случай
-        if not final_detail or not final_detail.strip() or final_detail.strip() == "Error cloning repository:":
-            final_detail = "Error cloning repository: Unknown error occurred. Check server logs for details."
-        
-        logger.error(f"Raising HTTPException with detail: '{final_detail}' (length: {len(final_detail)})")
-        raise HTTPException(status_code=500, detail=final_detail)
+        error_msg = str(e) if str(e) else "Неизвестная ошибка при клонировании репозитория"
+        raise HTTPException(status_code=500, detail=error_msg)
 
 # Panel settings endpoints
 @app.get("/api/panel/git-status")
@@ -1212,51 +1133,95 @@ async def init_panel_git_repo(request: InitGitRepoRequest):
 
 @app.get("/api/panel/ssh-key")
 async def get_panel_ssh_key():
-    """Получение публичного SSH ключа для приватных репозиториев"""
-    public_key = get_public_key()
-    key_exists = get_ssh_key_exists()
+    """
+    Получение информации о SSH ключе панели
+    Включает публичный ключ, тип ключа, и другую информацию
+    """
+    key_info = get_ssh_key_info()
     
-    if not key_exists:
+    if not key_info["exists"]:
         # Попытка сгенерировать ключ, если его нет
         success, msg = generate_ssh_key()
         if success:
-            setup_ssh_config_for_github()  # Настраиваем SSH config
-            public_key = get_public_key()
+            setup_ssh_config_for_github()
+            key_info = get_ssh_key_info()
         else:
             return {
                 "success": False,
                 "key_exists": False,
                 "error": msg,
-                "public_key": None
+                "public_key": None,
+                **key_info
             }
     
     return {
         "success": True,
         "key_exists": True,
-        "public_key": public_key
+        "public_key": key_info["public_key"],
+        "key_type": key_info["key_type"],
+        "key_size": key_info["key_size"],
+        "ssh_available": key_info["ssh_available"],
+        "ssh_path": key_info["ssh_path"]
     }
 
 @app.post("/api/panel/ssh-key/generate")
 async def generate_panel_ssh_key():
-    """Генерация нового SSH ключа для панели (перезаписывает существующий)"""
+    """
+    Генерация нового SSH ключа для панели
+    Перезаписывает существующий ключ если он есть
+    """
     import time
     
     success, message = generate_ssh_key(force=True)
     if success:
         setup_ssh_config_for_github()
         time.sleep(0.1)
-        public_key = get_public_key()
+        
+        # Получаем информацию о новом ключе
+        key_info = get_ssh_key_info()
+        public_key = key_info.get("public_key")
+        
         if not public_key:
             time.sleep(0.2)
-            public_key = get_public_key()
+            key_info = get_ssh_key_info()
+            public_key = key_info.get("public_key")
         
         return {
             "success": True,
-            "message": "SSH key generated successfully" if "generated" in message.lower() else message,
-            "public_key": public_key
+            "message": "SSH ключ успешно сгенерирован" if "generated" in message.lower() or "успешно" in message.lower() else message,
+            "public_key": public_key,
+            "key_type": key_info.get("key_type"),
+            "key_size": key_info.get("key_size")
         }
     else:
         raise HTTPException(status_code=500, detail=message)
+
+
+@app.post("/api/panel/ssh-key/test")
+async def test_panel_ssh_connection(host: str = "github.com"):
+    """
+    Тестирование SSH подключения к Git хосту
+    
+    Args:
+        host: Хост для тестирования (по умолчанию github.com)
+    """
+    success, message = test_ssh_connection(host)
+    
+    if success:
+        return {
+            "success": True,
+            "message": message,
+            "host": host
+        }
+    else:
+        raise HTTPException(status_code=500, detail=message)
+
+
+@app.get("/api/panel/ssh-key/info")
+async def get_panel_ssh_key_info():
+    """Получение детальной информации о SSH ключе"""
+    key_info = get_ssh_key_info()
+    return key_info
 
 @app.post("/api/panel/change-password")
 async def change_password(request: Request, password_data: ChangePasswordRequest):

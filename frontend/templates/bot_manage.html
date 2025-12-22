@@ -67,6 +67,7 @@
                     <i class="fas fa-chart-line"></i>
                     Мониторинг бота
                 </h2>
+                <p class="text-muted mb-0">Отслеживание статуса, использования ресурсов и производительности бота в реальном времени</p>
             </div>
 
             <div class="bot-dashboard">
@@ -126,6 +127,7 @@
                     <i class="fas fa-cog"></i>
                     Настройки бота
                 </h2>
+                <p class="text-muted mb-4">Изменение параметров работы бота: название, лимиты ресурсов, настройки Git репозитория</p>
             </div>
 
             <div class="card">
@@ -159,14 +161,14 @@
                                 <div class="mb-3">
                                     <label for="cpu-limit" class="form-label">Лимит CPU (%)</label>
                                     <input type="number" class="form-control" id="cpu-limit" min="1" max="100" value="50" step="0.1">
-                                    <small class="text-muted">Максимальное использование CPU процессором бота</small>
+                                    <small class="text-muted">Максимальное использование процессора ботом в процентах. При превышении бот будет остановлен.</small>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="memory-limit" class="form-label">Лимит памяти (MB)</label>
                                     <input type="number" class="form-control" id="memory-limit" min="64" value="512" step="64">
-                                    <small class="text-muted">Максимальное использование оперативной памяти</small>
+                                    <small class="text-muted">Максимальное использование оперативной памяти в мегабайтах. При превышении бот будет остановлен.</small>
                                 </div>
                             </div>
                         </div>
@@ -212,24 +214,46 @@
                         </div>
 
                         <hr>
-                        <h6 class="mb-3">GitHub репозиторий <small class="text-muted">(опционально)</small></h6>
+                        <h6 class="mb-3">
+                            <i class="fab fa-github"></i> Git репозиторий <small class="text-muted">(опционально)</small>
+                        </h6>
                         
                         <div class="mb-3">
                             <label for="git-repo-url" class="form-label">URL репозитория</label>
-                            <input type="text" class="form-control" id="git-repo-url" placeholder="https://github.com/user/repo.git">
-                            <small class="form-text text-muted">Оставьте пустым, если не хотите использовать Git репозиторий</small>
+                            <input type="text" class="form-control" id="git-repo-url" placeholder="https://github.com/user/repo.git или git@github.com:user/repo.git">
+                            <small class="form-text text-muted">
+                                Поддерживаются: GitHub, GitLab, Bitbucket. Можно использовать HTTPS или SSH URL.<br>
+                                Оставьте пустым, если бот не использует Git репозиторий.
+                            </small>
                         </div>
                         
                         <div class="mb-3">
-                            <label for="git-branch" class="form-label">Ветка</label>
+                            <label for="git-branch" class="form-label">Ветка репозитория</label>
                             <input type="text" class="form-control" id="git-branch" value="main" placeholder="main">
+                            <small class="form-text text-muted">Ветка для клонирования и обновления (по умолчанию: main)</small>
+                        </div>
+                        
+                        <div class="alert alert-info mb-3">
+                            <h6 class="mb-2"><i class="fas fa-lightbulb"></i> Работа с Git репозиториями:</h6>
+                            <ul class="mb-0">
+                                <li><strong>Клонирование:</strong> При сохранении URL репозитория можно клонировать его кнопкой "Клонировать репозиторий"</li>
+                                <li><strong>Обновление:</strong> Кнопка "Обновить из репозитория" загрузит последние изменения из удаленной ветки</li>
+                                <li><strong>Приватные репозитории:</strong> Для доступа к приватным репозиториям используйте SSH URL или настройте SSH ключ в <a href="/settings" class="alert-link">настройках панели</a></li>
+                                <li><strong>Локальные изменения:</strong> При обновлении локальные изменения автоматически сохраняются (git stash)</li>
+                            </ul>
                         </div>
                         
                         <div id="git-status-info" class="mb-3"></div>
                         
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 flex-wrap">
                             <button type="button" class="btn btn-secondary" id="update-git-btn">
-                                <i class="fab fa-github"></i> Обновить из GitHub
+                                <i class="fab fa-github"></i> Обновить из репозитория
+                            </button>
+                            <button type="button" class="btn btn-warning" id="clone-git-btn" style="display: none;">
+                                <i class="fas fa-download"></i> Клонировать репозиторий
+                            </button>
+                            <button type="button" class="btn btn-info" id="test-ssh-btn" style="display: none;">
+                                <i class="fas fa-plug"></i> Тест SSH подключения
                             </button>
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save"></i> Сохранить настройки
@@ -243,10 +267,13 @@
         <!-- Files Section -->
         <section id="section-files" class="content-section d-none">
             <div class="mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h2 class="section-title mb-0">
-                    <i class="fas fa-folder"></i>
-                    Файлы бота
-                </h2>
+                    <div>
+                        <h2 class="section-title mb-1">
+                            <i class="fas fa-folder"></i>
+                            Файлы бота
+                        </h2>
+                        <p class="text-muted mb-0 small">Управление файлами: просмотр, редактирование, создание, загрузка, удаление</p>
+                    </div>
                 <div class="d-flex gap-2">
                     <button class="btn btn-primary" id="upload-file-btn">
                         <i class="fas fa-upload"></i> Загрузить файл
@@ -332,6 +359,7 @@
                     <i class="fas fa-database"></i>
                     База данных
                 </h2>
+                <p class="text-muted mb-4">Управление MySQL базой данных бота: создание таблиц, выполнение SQL запросов, интеграция с phpMyAdmin</p>
             </div>
 
             <div class="card mb-3">

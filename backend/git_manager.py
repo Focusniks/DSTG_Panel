@@ -1,75 +1,477 @@
 """
-Управление Git репозиториями для обновления панели и бото
+Продвинутая система управления Git репозиториями для ботов
+Поддерживает SSH ключи, автоматическое определение типа репозитория,
+и улучшенную обработку ошибок
 """
 import subprocess
 import os
 import shutil
 import logging
+import re
 from pathlib import Path
-from typing import Optional, Dict, Tuple, Any
+from typing import Optional, Dict, Tuple, Any, List
 from backend.config import BASE_DIR
-from backend.ssh_manager import convert_https_to_ssh, get_git_env_with_ssh, setup_ssh_config_for_github, get_ssh_key_exists
+from backend.ssh_manager import (
+    convert_https_to_ssh, 
+    get_git_env_with_ssh, 
+    setup_ssh_config_for_github, 
+    get_ssh_key_exists,
+    check_ssh_available,
+    SSH_PRIVATE_KEY
+)
 
 logger = logging.getLogger(__name__)
 
-def get_git_command() -> str:
-    """Получение команды git с учетом платформы"""
-    # Сначала пробуем найти через which
-    git_cmd = shutil.which("git")
-    if git_cmd:
-        return git_cmd
+# Поддерживаемые Git хостинги
+GIT_HOSTS = {
+    'github.com': {
+        'name': 'GitHub',
+        'ssh_user': 'git',
+        'supports_ssh': True
+    },
+    'gitlab.com': {
+        'name': 'GitLab',
+        'ssh_user': 'git',
+        'supports_ssh': True
+    },
+    'bitbucket.org': {
+        'name': 'Bitbucket',
+        'ssh_user': 'git',
+        'supports_ssh': True
+    }
+}
+
+
+class GitRepository:
+    """Класс для работы с Git репозиторием"""
     
-    # Если не найдено, пробуем стандартные пути для Unix
+    def __init__(self, path: Path, repo_url: Optional[str] = None, branch: str = "main"):
+        self.path = Path(path)
+        self.repo_url = repo_url
+        self.branch = branch
+        self.git_cmd = self._find_git_command()
+        self._host_info = None
+        
+    def _find_git_command(self) -> Optional[str]:
+        """Поиск команды git в системе"""
+        candidates = [
+            shutil.which("git"),
+            "git",
+        ]
+        
     if os.name != 'nt':
-        standard_paths = [
+            candidates.extend([
             "/usr/bin/git",
             "/usr/local/bin/git",
             "/bin/git"
-        ]
-        for path in standard_paths:
-            if os.path.exists(path) and os.access(path, os.X_OK):
-                return path
+            ])
+        
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                result = subprocess.run(
+                    [candidate, "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    return candidate
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+                continue
+        
+        return None
     
-    # В крайнем случае просто "git" - пусть система сама найдет
-    return "git"
-
-def run_git_command(path: Path, *args, **kwargs) -> subprocess.CompletedProcess:
-    """Выполнение Git команды с автоматическим определением пути к git"""
-    git_cmd = get_git_command()
-    cmd = [git_cmd] + list(args)
-    cwd = kwargs.pop('cwd', str(path))
-    return subprocess.run(cmd, cwd=cwd, **kwargs)
-
-def is_git_repo(path: Path) -> bool:
+    def _get_host_info(self, url: str) -> Optional[Dict]:
+        """Получение информации о Git хосте"""
+        if self._host_info:
+            return self._host_info
+        
+        # Извлекаем хост из URL
+        host = None
+        if url.startswith('https://'):
+            host = url.split('/')[2]
+        elif url.startswith('git@'):
+            host = url.split('@')[1].split(':')[0]
+        elif url.startswith('http://'):
+            host = url.split('/')[2]
+        
+        if host:
+            # Убираем порт если есть
+            host = host.split(':')[0]
+            self._host_info = GIT_HOSTS.get(host)
+        
+        return self._host_info
+    
+    def is_git_installed(self) -> bool:
+        """Проверка установки Git"""
+        return self.git_cmd is not None
+    
+    def is_repo(self) -> bool:
     """Проверка, является ли директория Git репозиторием"""
-    git_dir = path / ".git"
+        git_dir = self.path / ".git"
     return git_dir.exists() and git_dir.is_dir()
 
-def get_git_remote(path: Path) -> Optional[str]:
+    def get_remote_url(self) -> Optional[str]:
     """Получение URL удаленного репозитория"""
+        if not self.is_repo() or not self.git_cmd:
+            return None
+        
     try:
-        git_cmd = get_git_command()
         result = subprocess.run(
-            [git_cmd, "remote", "get-url", "origin"],
-            cwd=str(path),
+                [self.git_cmd, "remote", "get-url", "origin"],
+                cwd=str(self.path),
             capture_output=True,
             text=True,
             timeout=10
         )
         if result.returncode == 0:
             return result.stdout.strip()
-        return None
     except Exception:
+            pass
         return None
 
-def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
+    def normalize_url(self, url: str, prefer_ssh: bool = True) -> Tuple[str, bool]:
+        """
+        Нормализация URL репозитория
+        Returns: (normalized_url, is_ssh)
+        """
+        url = url.strip()
+        
+        # Если уже SSH формат
+        if url.startswith('git@'):
+            return url, True
+        
+        # Если HTTPS формат
+        if url.startswith('https://'):
+            if prefer_ssh:
+                # Преобразуем в SSH
+                ssh_url = convert_https_to_ssh(url)
+                return ssh_url, True
+            return url, False
+        
+        # Если HTTP формат, преобразуем в HTTPS
+        if url.startswith('http://'):
+            url = url.replace('http://', 'https://', 1)
+            if prefer_ssh:
+                ssh_url = convert_https_to_ssh(url)
+                return ssh_url, True
+            return url, False
+        
+        # Если формат не распознан, возвращаем как есть
+        return url, url.startswith('git@')
+    
+    def can_use_ssh(self, url: str) -> Tuple[bool, Optional[str]]:
+        """
+        Проверка возможности использования SSH
+        Returns: (can_use, error_message)
+        """
+        host_info = self._get_host_info(url)
+        if not host_info:
+            return True, None  # Неизвестный хост, пробуем SSH
+        
+        if not host_info.get('supports_ssh', False):
+            return False, f"{host_info['name']} не поддерживает SSH"
+        
+        # Проверяем наличие SSH клиента
+        ssh_available, _ = check_ssh_available()
+        if not ssh_available:
+            return False, "SSH клиент не установлен"
+        
+        # Проверяем наличие SSH ключа
+        if not get_ssh_key_exists():
+            return False, "SSH ключ не найден. Сгенерируйте ключ в настройках панели"
+        
+        return True, None
+    
+    def prepare_ssh_environment(self) -> Dict[str, str]:
+        """Подготовка окружения для SSH операций"""
+        env = os.environ.copy()
+        
+        # Настраиваем SSH config
+        if get_ssh_key_exists():
+            setup_ssh_config_for_github()
+            env = get_git_env_with_ssh()
+        
+        return env
+    
+    def clone(self, url: Optional[str] = None, branch: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Клонирование репозитория
+        
+        Args:
+            url: URL репозитория (если None, используется self.repo_url)
+            branch: Ветка для клонирования (если None, используется self.branch)
+        
+        Returns:
+            (success, message)
+        """
+        if not self.git_cmd:
+            return False, "Git не установлен. Установите Git для работы с репозиториями."
+        
+        # Используем переданные параметры или значения из объекта
+        clone_url = url if url is not None else self.repo_url
+        clone_branch = branch if branch is not None else self.branch
+        
+        if not clone_url:
+            return False, "URL репозитория не указан"
+        
+        try:
+            # Нормализуем URL (предпочитаем SSH для приватных репозиториев)
+            normalized_url, is_ssh = self.normalize_url(clone_url, prefer_ssh=True)
+            
+            # Проверяем возможность использования SSH
+            if is_ssh:
+                can_use, error = self.can_use_ssh(normalized_url)
+                if not can_use:
+                    # Если SSH недоступен, пробуем HTTPS
+                    logger.warning(f"SSH недоступен: {error}. Пробуем HTTPS...")
+                    normalized_url, is_ssh = self.normalize_url(clone_url, prefer_ssh=False)
+                    is_ssh = False
+            
+            # Подготавливаем окружение
+            env = self.prepare_ssh_environment() if is_ssh else os.environ.copy()
+            
+            # Убеждаемся, что родительская директория существует
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Если директория существует и не пуста, очищаем её
+            if self.path.exists():
+                # Проверяем, что это не Git репозиторий
+                if not self.is_repo():
+                    # Удаляем содержимое, кроме config.json
+                    for item in self.path.iterdir():
+                        if item.name not in ['config.json', '.gitkeep']:
+                            try:
+                                if item.is_dir():
+                                    shutil.rmtree(item)
+                                else:
+                                    item.unlink()
+                            except Exception as e:
+                                logger.warning(f"Не удалось удалить {item}: {e}")
+                    
+                    # Если директория пуста (кроме config.json), удаляем её для git clone
+                    remaining = [f for f in self.path.iterdir() if f.name != 'config.json']
+                    if not remaining:
+                        try:
+                            if (self.path / 'config.json').exists():
+                                # Временно перемещаем config.json
+                                temp_config = self.path.parent / f"config_{self.path.name}.tmp"
+                                shutil.move(str(self.path / 'config.json'), str(temp_config))
+                            self.path.rmdir()
+                        except Exception:
+                            pass
+            
+            # Логируем операцию
+            logger.info(f"Клонирование репозитория: {normalized_url} (ветка: {clone_branch}) в {self.path}")
+            logger.debug(f"Используется SSH: {is_ssh}")
+            
+            # Выполняем клонирование
+            cmd = [self.git_cmd, "clone", "-b", clone_branch, "--depth", "1", normalized_url, str(self.path)]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=env
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"Репозиторий успешно клонирован")
+                return True, f"Репозиторий успешно клонирован (ветка: {clone_branch})"
+            
+            # Обработка ошибок
+            error_msg = self._parse_clone_error(result.stderr, result.stdout, is_ssh)
+            logger.error(f"Ошибка клонирования: {error_msg}")
+            return False, error_msg
+            
+        except subprocess.TimeoutExpired:
+            return False, "Превышено время ожидания при клонировании репозитория (5 минут)"
+        except Exception as e:
+            logger.error(f"Исключение при клонировании: {e}", exc_info=True)
+            return False, f"Ошибка клонирования: {str(e)}"
+    
+    def _parse_clone_error(self, stderr: str, stdout: str, used_ssh: bool) -> str:
+        """Парсинг и форматирование ошибок клонирования"""
+        combined = f"{stderr} {stdout}".strip()
+        
+        # Проверка на отсутствие SSH клиента
+        if "ssh: not found" in combined or "ssh: command not found" in combined:
+            return (
+                "SSH клиент не установлен.\n\n"
+                "Установите OpenSSH клиент:\n"
+                "  • Debian/Ubuntu: sudo apt-get install openssh-client\n"
+                "  • CentOS/RHEL: sudo yum install openssh-clients\n"
+                "  • Alpine: apk add openssh-client\n"
+                "  • Windows: Установите Git for Windows (включает SSH)"
+            )
+        
+        # Проверка на проблемы с аутентификацией SSH
+        if "Permission denied" in combined or "Host key verification failed" in combined:
+            if used_ssh:
+                return (
+                    "Ошибка SSH аутентификации.\n\n"
+                    "Проверьте:\n"
+                    "  1. SSH ключ добавлен в ваш GitHub/GitLab аккаунт\n"
+                    "  2. Ключ сгенерирован в настройках панели\n"
+                    "  3. У вас есть доступ к репозиторию"
+                )
+            else:
+                return "Ошибка доступа к репозиторию. Проверьте URL и права доступа."
+        
+        # Проверка на несуществующий репозиторий
+        if "repository not found" in combined.lower() or "not found" in combined.lower():
+            return (
+                "Репозиторий не найден.\n\n"
+                "Проверьте:\n"
+                "  1. URL репозитория правильный\n"
+                "  2. Репозиторий существует\n"
+                "  3. У вас есть доступ к репозиторию"
+            )
+        
+        # Проверка на проблемы с сетью
+        if "Could not resolve hostname" in combined or "Connection refused" in combined:
+            return "Ошибка подключения. Проверьте интернет-соединение и доступность Git хостинга."
+        
+        # Проверка на проблемы с веткой
+        if "not found in upstream origin" in combined or "branch" in combined.lower():
+            return f"Ветка '{self.branch}' не найдена в репозитории. Проверьте название ветки."
+        
+        # Общая ошибка
+        error_lines = stderr.split('\n') if stderr else []
+        fatal_lines = [line for line in error_lines if 'fatal:' in line.lower()]
+        
+        if fatal_lines:
+            # Берем последнюю строку с fatal
+            last_fatal = fatal_lines[-1].replace('fatal:', '').strip()
+            if last_fatal:
+                return f"Ошибка Git: {last_fatal}"
+        
+        # Если ничего не подошло, возвращаем общее сообщение
+        return f"Ошибка клонирования репозитория. Детали: {combined[:200]}"
+    
+    def update(self, url: Optional[str] = None, branch: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Обновление репозитория из удаленного источника
+        
+        Args:
+            url: URL репозитория (если None, используется текущий remote)
+            branch: Ветка для обновления (если None, используется self.branch)
+        
+        Returns:
+            (success, message)
+        """
+        if not self.git_cmd:
+            return False, "Git не установлен. Установите Git для работы с репозиториями."
+        
+        if not self.is_repo():
+            # Если репозиторий не инициализирован, клонируем
+            update_url = url if url is not None else self.repo_url
+            if update_url:
+                return self.clone(update_url, branch)
+            return False, "Репозиторий не инициализирован и URL не указан"
+        
+        update_branch = branch if branch is not None else self.branch
+        update_url = url if url is not None else self.repo_url
+        
+        try:
+            # Нормализуем URL если указан
+            is_ssh = False
+            if update_url:
+                normalized_url, is_ssh = self.normalize_url(update_url, prefer_ssh=True)
+                if is_ssh:
+                    can_use, error = self.can_use_ssh(normalized_url)
+                    if not can_use:
+                        normalized_url, is_ssh = self.normalize_url(update_url, prefer_ssh=False)
+                
+                # Обновляем remote если нужно
+                current_remote = self.get_remote_url()
+                if current_remote != normalized_url:
+                    self._set_remote(normalized_url)
+            
+            # Подготавливаем окружение
+            env = self.prepare_ssh_environment() if is_ssh else os.environ.copy()
+            
+            # Сохраняем локальные изменения
+            logger.info(f"Сохранение локальных изменений...")
+            stash_result = subprocess.run(
+                [self.git_cmd, "stash", "push", "-m", "Panel auto-stash"],
+                cwd=str(self.path),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env
+            )
+            # Не критично, если stash не удался
+            
+            # Получаем обновления
+            logger.info(f"Получение обновлений из удаленного репозитория...")
+            fetch_result = subprocess.run(
+                [self.git_cmd, "fetch", "origin"],
+                cwd=str(self.path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=env
+            )
+            
+            if fetch_result.returncode != 0:
+                error_msg = fetch_result.stderr or "Неизвестная ошибка"
+                return False, f"Ошибка получения обновлений: {error_msg}"
+            
+            # Проверяем, есть ли обновления
+            check_result = subprocess.run(
+                [self.git_cmd, "rev-list", "--count", f"HEAD..origin/{update_branch}"],
+                cwd=str(self.path),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=env
+            )
+            
+            commits_ahead = 0
+            if check_result.returncode == 0:
+                try:
+                    commits_ahead = int(check_result.stdout.strip() or "0")
+                except ValueError:
+                    pass
+            
+            if commits_ahead == 0:
+                return True, "Репозиторий уже актуален, обновлений нет"
+            
+            # Выполняем обновление
+            logger.info(f"Применение обновлений ({commits_ahead} коммитов)...")
+            pull_result = subprocess.run(
+                [self.git_cmd, "pull", "origin", update_branch],
+                cwd=str(self.path),
+                capture_output=True,
+                text=True,
+                timeout=180,
+                env=env
+            )
+            
+            if pull_result.returncode == 0:
+                return True, f"Репозиторий успешно обновлен ({commits_ahead} коммитов применено)"
+            
+            error_msg = pull_result.stderr or "Неизвестная ошибка"
+            return False, f"Ошибка обновления: {error_msg}"
+            
+        except subprocess.TimeoutExpired:
+            return False, "Превышено время ожидания при обновлении репозитория"
+        except Exception as e:
+            logger.error(f"Исключение при обновлении: {e}", exc_info=True)
+            return False, f"Ошибка обновления: {str(e)}"
+    
+    def _set_remote(self, url: str) -> Tuple[bool, str]:
     """Установка удаленного репозитория"""
     try:
-        git_cmd = get_git_command()
         # Проверяем существование remote
         result = subprocess.run(
-            [git_cmd, "remote", "get-url", "origin"],
-            cwd=str(path),
+                [self.git_cmd, "remote", "get-url", "origin"],
+                cwd=str(self.path),
             capture_output=True,
             timeout=5
         )
@@ -77,8 +479,8 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
         if result.returncode == 0:
             # Обновляем существующий remote
             result = subprocess.run(
-                [git_cmd, "remote", "set-url", "origin", url],
-                cwd=str(path),
+                    [self.git_cmd, "remote", "set-url", "origin", url],
+                    cwd=str(self.path),
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -86,207 +488,60 @@ def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
         else:
             # Создаем новый remote
             result = subprocess.run(
-                [git_cmd, "remote", "add", "origin", url],
-                cwd=str(path),
+                    [self.git_cmd, "remote", "add", "origin", url],
+                    cwd=str(self.path),
                 capture_output=True,
                 text=True,
                 timeout=10
             )
         
         if result.returncode == 0:
-            return True, "Remote updated"
-        return False, result.stderr or "Unknown error"
-    except subprocess.TimeoutExpired:
-        return False, "Timeout"
-    except FileNotFoundError:
-        return False, "Git not installed"
+                return True, "Remote обновлен"
+            return False, result.stderr or "Неизвестная ошибка"
     except Exception as e:
         return False, str(e)
 
-def check_git_installed() -> bool:
-    """Проверка, установлен ли Git"""
-    # Пробуем несколько способов проверки
-    methods = [
-        # Способ 1: Через get_git_command()
-        lambda: _try_git_command(get_git_command()),
-        # Способ 2: Прямо через "git" (может быть в PATH)
-        lambda: _try_git_command("git"),
-        # Способ 3: Через shell на Unix (если предыдущие не сработали)
-        lambda: _try_git_via_shell() if os.name != 'nt' else False
-    ]
-    
-    for method in methods:
-        try:
-            if method():
-                return True
-        except Exception:
-            continue
-    
-    return False
-
-def _try_git_command(git_cmd: str) -> bool:
-    """Попытка выполнить git --version с указанной командой"""
-    try:
-        result = subprocess.run(
-            [git_cmd, "--version"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,  # Игнорируем stderr
-            text=True,
-            timeout=5
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return False
-
-def _try_git_via_shell() -> bool:
-    """Попытка найти git через shell команды (только для Unix)"""
-    try:
-        # Пробуем через which
-        result = subprocess.run(
-            ["which", "git"],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            git_path = result.stdout.strip()
-            return _try_git_command(git_path)
-    except Exception:
-        pass
-    
-    try:
-        # Пробуем через whereis (если which не сработал)
-        result = subprocess.run(
-            ["whereis", "-b", "git"],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
-        if result.returncode == 0:
-            output = result.stdout.strip()
-            # whereis выводит "git: /usr/bin/git /usr/local/bin/git"
-            if ":" in output:
-                paths = output.split(":", 1)[1].strip().split()
-                for path in paths:
-                    if os.path.exists(path) and os.access(path, os.X_OK):
-                        if _try_git_command(path):
-                            return True
-    except Exception:
-        pass
-    
-    return False
-
-def get_git_status(path: Path) -> Dict[str, Any]:
-    """Получение статуса Git репозитория"""
-    # Сначала проверяем, является ли путь Git репозиторием
-    if not is_git_repo(path):
+    def get_status(self) -> Dict[str, Any]:
+        """Получение статуса репозитория"""
+        if not self.is_repo():
         return {
             "is_repo": False,
             "error": "Not a Git repository"
         }
     
-    # Пробуем выполнить git команду напрямую, без предварительной проверки
-    git_cmd = None
-    git_found = False
-    
-    # Пробуем несколько способов найти git
-    candidates = [
-        get_git_command(),  # Через нашу функцию
-        "git",  # Прямо через PATH
-    ]
-    
-    # Добавляем стандартные пути для Unix
-    if os.name != 'nt':
-        candidates.extend([
-            "/usr/bin/git",
-            "/usr/local/bin/git",
-            "/bin/git"
-        ])
-    
-    # Пробуем найти рабочий git
-    for candidate in candidates:
-        try:
-            # Пробуем выполнить простую команду
-            test_result = subprocess.run(
-                [candidate, "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=3
-            )
-            if test_result.returncode == 0:
-                git_cmd = candidate
-                git_found = True
-                break
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            continue
-    
-    # Если git не найден, возвращаем ошибку
-    if not git_found:
+        if not self.git_cmd:
         return {
             "is_repo": False,
-            "error": "Git не установлен. Установите Git для работы с репозиториями.",
+                "error": "Git не установлен",
             "git_not_installed": True
         }
     
     try:
-        # Проверяем, есть ли изменения
-        try:
+            # Проверяем локальные изменения
             result = subprocess.run(
-                [git_cmd, "status", "--porcelain"],
-                cwd=str(path),
+                [self.git_cmd, "status", "--porcelain"],
+                cwd=str(self.path),
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             has_changes = bool(result.stdout.strip())
-        except Exception:
-            has_changes = False
         
         # Получаем текущую ветку
-        current_branch = None
-        try:
             result = subprocess.run(
-                [git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(path),
+                [self.git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=str(self.path),
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             current_branch = result.stdout.strip() if result.returncode == 0 else None
-        except Exception:
-            pass
-        
-        # Если ветка не определена (нет коммитов), пробуем получить имя ветки из .git/HEAD
-        if not current_branch:
-            try:
-                head_file = path / ".git" / "HEAD"
-                if head_file.exists():
-                    head_content = head_file.read_text().strip()
-                    if head_content.startswith("ref: refs/heads/"):
-                        current_branch = head_content.replace("ref: refs/heads/", "")
-                    elif not head_content:
-                        current_branch = "main"  # Дефолтная ветка
-            except Exception:
-                current_branch = "main"  # Дефолтная ветка
         
         # Получаем последний коммит
         last_commit = None
-        try:
-            # Проверяем, есть ли коммиты
             result = subprocess.run(
-                [git_cmd, "rev-list", "--count", "HEAD"],
-                cwd=str(path),
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            has_commits = result.returncode == 0 and result.stdout.strip() and int(result.stdout.strip() or "0") > 0
-            
-            if has_commits:
-                result = subprocess.run(
-                    [git_cmd, "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
-                    cwd=str(path),
+                [self.git_cmd, "log", "-1", "--format=%H|%s|%ar", "--no-decorate"],
+                cwd=str(self.path),
                     capture_output=True,
                     text=True,
                     timeout=10
@@ -299,37 +554,22 @@ def get_git_status(path: Path) -> Dict[str, Any]:
                             "message": parts[1],
                             "date": parts[2]
                         }
-        except Exception:
-            # Игнорируем ошибки при получении коммитов
-            pass
         
-        # Проверяем, есть ли обновления
+            # Проверяем наличие обновлений
         has_updates = False
-        remote_url = None
-        try:
-            remote_url = get_git_remote(path)
+            remote_url = self.get_remote_url()
             if remote_url:
                 try:
+                    # Быстрая проверка без fetch
                     result = subprocess.run(
-                        [git_cmd, "fetch", "origin"],
-                        cwd=str(path),
-                        capture_output=True,
-                        timeout=30
-                    )
-                    if result.returncode == 0:
-                        result = subprocess.run(
-                            [git_cmd, "rev-list", "--count", "HEAD..origin/" + (current_branch or "main")],
-                            cwd=str(path),
+                        [self.git_cmd, "rev-list", "--count", f"HEAD..origin/{current_branch or self.branch}"],
+                        cwd=str(self.path),
                             capture_output=True,
                             text=True,
                             timeout=10
                         )
                         has_updates = result.returncode == 0 and int(result.stdout.strip() or "0") > 0
                 except Exception:
-                    # Игнорируем ошибки при проверке обновлений
-                    pass
-        except Exception:
-            # Игнорируем ошибки при получении remote
             pass
         
         return {
@@ -340,75 +580,64 @@ def get_git_status(path: Path) -> Dict[str, Any]:
             "has_updates": has_updates,
             "remote": remote_url
         }
-    except FileNotFoundError:
-        return {
-            "is_repo": False,
-            "error": "Git не установлен. Установите Git для работы с репозиториями.",
-            "git_not_installed": True
-        }
     except Exception as e:
-        error_msg = str(e)
-        # Проверяем, является ли это ошибкой отсутствия Git
-        if "No such file or directory" in error_msg or "git" in error_msg.lower():
             return {
                 "is_repo": False,
-                "error": "Git не установлен. Установите Git для работы с репозиториями.",
-                "git_not_installed": True
+                "error": str(e)
             }
-        return {
-            "is_repo": False,
-            "error": error_msg
-        }
+
+
+# Функции для обратной совместимости
+def get_git_command() -> str:
+    """Получение команды git"""
+    repo = GitRepository(Path.cwd())
+    return repo.git_cmd or "git"
+
+
+def is_git_repo(path: Path) -> bool:
+    """Проверка, является ли директория Git репозиторием"""
+    repo = GitRepository(path)
+    return repo.is_repo()
+
+
+def get_git_remote(path: Path) -> Optional[str]:
+    """Получение URL удаленного репозитория"""
+    repo = GitRepository(path)
+    return repo.get_remote_url()
+
+
+def set_git_remote(path: Path, url: str) -> Tuple[bool, str]:
+    """Установка удаленного репозитория"""
+    repo = GitRepository(path)
+    return repo._set_remote(url)
+
+
+def check_git_installed() -> bool:
+    """Проверка установки Git"""
+    repo = GitRepository(Path.cwd())
+    return repo.is_git_installed()
+
+
+def get_git_status(path: Path) -> Dict[str, Any]:
+    """Получение статуса Git репозитория"""
+    repo = GitRepository(path)
+    return repo.get_status()
+
 
 def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str]:
     """Инициализация Git репозитория"""
-    if is_git_repo(path):
+    repo = GitRepository(path, repo_url)
+    
+    if repo.is_repo():
         return True, "Already a Git repository"
     
-    # Пробуем найти git напрямую, без предварительной проверки
-    git_cmd = None
-    git_found = False
-    
-    # Пробуем несколько способов найти git
-    candidates = [
-        get_git_command(),  # Через нашу функцию
-        "git",  # Прямо через PATH
-    ]
-    
-    # Добавляем стандартные пути для Unix
-    if os.name != 'nt':
-        candidates.extend([
-            "/usr/bin/git",
-            "/usr/local/bin/git",
-            "/bin/git"
-        ])
-    
-    # Пробуем найти рабочий git
-    for candidate in candidates:
-        try:
-            # Пробуем выполнить простую команду
-            test_result = subprocess.run(
-                [candidate, "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=3
-            )
-            if test_result.returncode == 0:
-                git_cmd = candidate
-                git_found = True
-                break
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            continue
-    
-    # Если git не найден, возвращаем ошибку
-    if not git_found:
+    if not repo.git_cmd:
         return False, "Git не установлен. Установите Git для работы с репозиториями."
     
     try:
         # Инициализируем репозиторий
         result = subprocess.run(
-            [git_cmd, "init"],
+            [repo.git_cmd, "init"],
             cwd=str(path),
             capture_output=True,
             text=True,
@@ -416,488 +645,58 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
         )
         
         if result.returncode != 0:
-            return False, f"Failed to initialize Git repository: {result.stderr}"
+            return False, f"Failed to initialize: {result.stderr}"
         
-        # Настраиваем имя пользователя и email для коммитов (если не настроено)
-        # Проверяем, настроены ли git config
-        result = subprocess.run(
-            [git_cmd, "config", "user.name"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            # Устанавливаем дефолтные значения
-            subprocess.run(
-                [git_cmd, "config", "user.name", "Panel User"],
-                cwd=str(path),
-                capture_output=True,
-                timeout=5
-            )
-        
-        result = subprocess.run(
-            [git_cmd, "config", "user.email"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            subprocess.run(
-                [git_cmd, "config", "user.email", "panel@localhost"],
-                cwd=str(path),
-                capture_output=True,
-                timeout=5
-            )
-        
-        # Создаем начальный коммит, если есть файлы для коммита
+        # Настраиваем git config
         subprocess.run(
-            [git_cmd, "add", "."],
+            [repo.git_cmd, "config", "user.name", "Panel User"],
             cwd=str(path),
             capture_output=True,
-            text=True,
-            timeout=30
+            timeout=5
         )
-        
-        # Проверяем, есть ли что-то для коммита
-        result = subprocess.run(
-            [git_cmd, "status", "--porcelain"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        if result.stdout.strip():
-            # Есть изменения для коммита
             subprocess.run(
-                [git_cmd, "commit", "-m", "Initial commit"],
-                cwd=str(path),
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            # Не критично, если коммит не удался (может быть пустой репозиторий)
+            [repo.git_cmd, "config", "user.email", "panel@localhost"],
+            cwd=str(path),
+            capture_output=True,
+            timeout=5
+        )
         
         # Если указан URL, добавляем remote
         if repo_url:
-            success, msg = set_git_remote(path, repo_url)
+            success, msg = repo._set_remote(repo_url)
             if not success:
                 return False, f"Failed to set remote: {msg}"
         
         return True, "Git repository initialized successfully"
-    except subprocess.TimeoutExpired:
-        return False, "Timeout"
-    except FileNotFoundError:
-        return False, "Git не установлен. Установите Git для работы с репозиториями."
     except Exception as e:
-        error_msg = str(e)
-        if "No such file or directory" in error_msg or "git" in error_msg.lower():
-            return False, "Git не установлен. Установите Git для работы с репозиториями."
         return False, str(e)
+
 
 def update_panel_from_git() -> Tuple[bool, str]:
     """Обновление панели из GitHub репозитория"""
-    if not is_git_repo(BASE_DIR):
-        return False, "Not a Git repository"
+    from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH
     
-    # Пробуем найти git напрямую
-    git_cmd = None
-    git_found = False
-    
-    candidates = [
-        get_git_command(),
-        "git",
-    ]
-    
-    if os.name != 'nt':
-        candidates.extend([
-            "/usr/bin/git",
-            "/usr/local/bin/git",
-            "/bin/git"
-        ])
-    
-    for candidate in candidates:
-        try:
-            test_result = subprocess.run(
-                [candidate, "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=3
-            )
-            if test_result.returncode == 0:
-                git_cmd = candidate
-                git_found = True
-                break
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            continue
-    
-    if not git_found:
-        return False, "Git не установлен. Установите Git для работы с репозиториями."
-    
-    try:
-        # Используем SSH окружение для приватных репозиториев
-        env = get_git_env_with_ssh()
-        
-        # Сохраняем изменения перед обновлением
-        result = subprocess.run(
-            [git_cmd, "stash"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env
-        )
-        
-        # Получаем обновления
-        result = subprocess.run(
-            [git_cmd, "fetch", "origin"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=env
-        )
-        if result.returncode != 0:
-            return False, f"Fetch failed: {result.stderr}"
-        
-        # Определяем текущую ветку
-        result = subprocess.run(
-            [git_cmd, "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-            env=env
-        )
-        branch = result.stdout.strip() if result.returncode == 0 else "main"
-        
-        # Обновляем код
-        result = subprocess.run(
-            [git_cmd, "pull", "origin", branch],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env
-        )
-        
-        if result.returncode == 0:
-            return True, "Panel updated successfully"
-        return False, result.stderr or "Pull failed"
-        
-    except subprocess.TimeoutExpired:
-        return False, "Timeout"
-    except FileNotFoundError:
-        return False, "Git не установлен. Установите Git для работы с репозиториями."
-    except Exception as e:
-        error_msg = str(e)
-        if "No such file or directory" in error_msg or "git" in error_msg.lower():
-            return False, "Git не установлен. Установите Git для работы с репозиториями."
-        return False, str(e)
+    repo = GitRepository(BASE_DIR, PANEL_REPO_URL, PANEL_REPO_BRANCH)
+    return repo.update(PANEL_REPO_URL, PANEL_REPO_BRANCH)
+
 
 def update_bot_from_git(bot_dir: Path, repo_url: Optional[str] = None, branch: str = "main") -> Tuple[bool, str]:
-    """Обновление файлов бота из GitHub репозитория"""
-    # Пробуем найти git напрямую
-    git_cmd = None
-    git_found = False
+    """
+    Обновление файлов бота из GitHub репозитория
     
-    candidates = [
-        get_git_command(),
-        "git",
-    ]
+    Это основная функция для работы с репозиториями ботов.
+    Автоматически определяет, нужно ли клонировать или обновлять репозиторий.
+    """
+    repo = GitRepository(bot_dir, repo_url, branch)
     
-    if os.name != 'nt':
-        candidates.extend([
-            "/usr/bin/git",
-            "/usr/local/bin/git",
-            "/bin/git"
-        ])
-    
-    for candidate in candidates:
-        try:
-            test_result = subprocess.run(
-                [candidate, "--version"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=3
-            )
-            if test_result.returncode == 0:
-                git_cmd = candidate
-                git_found = True
-                break
-        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            continue
-    
-    if not git_found:
+    if not repo.is_git_installed():
         return False, "Git не установлен. Установите Git для работы с репозиториями."
     
-    try:
-        # Если репозиторий не инициализирован
-        if not is_git_repo(bot_dir):
+    # Если репозиторий не существует, клонируем
+    if not repo.is_repo():
             if not repo_url:
-                return False, "Repository URL required for initialization"
-            
-            # Убеждаемся, что родительская директория существует
-            try:
-                bot_dir.parent.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                return False, f"Failed to create parent directory: {str(e)}"
-            
-            # Клонируем репозиторий
-            # Проверяем, не пуста ли директория (игнорируем .gitkeep, .git и config.json)
-            if bot_dir.exists():
-                files = [f for f in bot_dir.iterdir() if f.name not in ['.gitkeep', '.git', 'config.json']]
-                if files:
-                    return False, f"Directory is not empty and not a Git repository. Found files: {', '.join([f.name for f in files[:5]])}"
-                
-                # Git clone не может клонировать в существующую директорию в большинстве версий Git
-                # Удаляем пустую директорию, чтобы git clone мог создать её заново
-                try:
-                    remaining = list(bot_dir.iterdir())
-                    if not remaining or (len(remaining) == 1 and remaining[0].name == '.gitkeep'):
-                        # Удаляем .gitkeep если есть
-                        for item in remaining:
-                            if item.name == '.gitkeep':
-                                item.unlink()
-                        # Удаляем пустую директорию
-                        if not any(bot_dir.iterdir()):
-                            bot_dir.rmdir()
-                except Exception as e:
-                    # Если не удалось удалить, попробуем клонировать в temp и переместить
-                    logger.warning(f"Could not remove empty directory {bot_dir}: {str(e)}")
-            
-            # Преобразуем HTTPS URL в SSH для приватных репозиториев
-            clone_url = repo_url
-            will_use_ssh = False
-            if repo_url.startswith('https://'):
-                # Автоматически конвертируем HTTPS в SSH для приватных репозиториев
-                clone_url = convert_https_to_ssh(repo_url)
-                will_use_ssh = True
-            elif repo_url.startswith('git@'):
-                will_use_ssh = True
-            
-            # Проверяем наличие SSH клиента ПЕРЕД использованием (это критично)
-            from backend.ssh_manager import check_ssh_available
-            ssh_available, ssh_path = check_ssh_available()
-            if will_use_ssh and not ssh_available:
-                error_msg = "SSH client is not installed.\n"
-                error_msg += "Please install OpenSSH client:\n"
-                error_msg += "  - Debian/Ubuntu: sudo apt-get install openssh-client\n"
-                error_msg += "  - CentOS/RHEL: sudo yum install openssh-clients\n"
-                error_msg += "  - Alpine: apk add openssh-client"
-                return False, error_msg
-            
-            # Убеждаемся, что SSH config настроен и ключ существует
-            if will_use_ssh:
-                if get_ssh_key_exists():
-                    setup_ssh_config_for_github()
-                else:
-                    # Если ключа нет, но используется SSH URL, предупреждаем
-                    return False, "SSH key not found. Please generate SSH key in panel settings first."
-            
-            # Используем SSH окружение для Git команд
-            env = get_git_env_with_ssh()
-            
-            # Логируем информацию о клонировании
-            logger.info(f"Cloning repository: {clone_url} (branch: {branch}) to {bot_dir}")
-            logger.debug(f"SSH key exists: {get_ssh_key_exists()}")
-            logger.debug(f"GIT_SSH_COMMAND: {env.get('GIT_SSH_COMMAND', 'Not set')}")
-            
-            result = subprocess.run(
-                [git_cmd, "clone", "-b", branch, clone_url, str(bot_dir)],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=env
-            )
-            
-            logger.debug(f"Git clone exit code: {result.returncode}")
-            if result.stderr:
-                logger.debug(f"Git clone stderr: {result.stderr}")
-            if result.stdout:
-                logger.debug(f"Git clone stdout: {result.stdout}")
-            
-            if result.returncode == 0:
-                return True, "Repository cloned successfully"
-            
-            # Формируем детальное сообщение об ошибке
-            error_parts = []
-            stderr_text = (result.stderr or "").strip()
-            stdout_text = (result.stdout or "").strip()
-            
-            # Объединяем stderr и stdout для проверки
-            combined_output = f"{stderr_text} {stdout_text}".strip()
-            
-            # Логируем сырой вывод для отладки
-            logger.error(f"Git clone failed with exit code {result.returncode}")
-            if stderr_text:
-                logger.error(f"Git stderr: {stderr_text}")
-            if stdout_text:
-                logger.error(f"Git stdout: {stdout_text}")
-            
-            # Проверяем типичные ошибки SSH в порядке приоритета
-            # Сначала проверяем критические ошибки (SSH не установлен)
-            # Проверяем в обоих stderr и stdout, так как git может выводить в разные потоки
-            ssh_not_found_patterns = [
-                "ssh: not found",
-                "ssh: command not found",
-                "/bin/sh.*ssh.*not found",
-                "ssh.*:.*not found"
-            ]
-            
-            ssh_not_found = any(pattern in combined_output for pattern in ssh_not_found_patterns)
-            
-            if ssh_not_found:
-                # Это критическая ошибка - SSH не установлен
-                # Не добавляем другие ошибки, так как это основная проблема
-                error_parts.clear()  # Очищаем все предыдущие ошибки
-                error_parts.append("SSH client is not installed.")
-                error_parts.append("")
-                error_parts.append("Please install OpenSSH client:")
-                error_parts.append("  • Debian/Ubuntu: sudo apt-get install openssh-client")
-                error_parts.append("  • CentOS/RHEL: sudo yum install openssh-clients")
-                error_parts.append("  • Alpine: apk add openssh-client")
-                error_parts.append("")
-                error_parts.append("After installation, try cloning again.")
-            elif "Permission denied" in combined_output:
-                error_parts.append("SSH authentication failed. Check if SSH key is added to your GitHub account.")
-            elif "Host key verification failed" in combined_output:
-                error_parts.append("SSH host key verification failed. Try accepting the host key manually.")
-            elif "Could not resolve hostname" in combined_output:
-                error_parts.append("Could not resolve hostname. Check your internet connection.")
-            elif "Could not read from remote repository" in combined_output:
-                # Эта ошибка может быть из-за разных причин, проверяем детали
-                if "ssh:" in combined_output:
-                    # Если есть упоминание ssh, это может быть проблема с SSH
-                    error_parts.append("Could not connect via SSH. Check SSH configuration and key permissions.")
-                else:
-                    error_parts.append("Could not read from remote repository. Check repository URL and access rights.")
-            elif "repository not found" in combined_output.lower():
-                # Проверяем, не является ли это маскировкой проблемы с SSH
-                if "ssh:" not in combined_output.lower():
-                    error_parts.append("Repository not found. Check if the repository exists and you have access to it.")
-                else:
-                    error_parts.append("Repository access failed. This might be due to SSH configuration issues.")
-            elif "fatal:" in stderr_text:
-                # Извлекаем сообщение после "fatal:"
-                fatal_msg = stderr_text.split("fatal:")[-1].strip()
-                if fatal_msg and "ssh:" not in fatal_msg.lower():
-                    error_parts.append(fatal_msg)
-            
-            # Добавляем детали из stderr только если это не критическая ошибка SSH
-            # Проверяем, является ли это ошибкой отсутствия SSH
-            is_ssh_not_found_error = any(
-                "SSH client is not installed" in part or 
-                "ssh: not found" in part.lower() or 
-                "ssh: command not found" in part.lower()
-                for part in error_parts
-            )
-            
-            if not is_ssh_not_found_error:
-                # Если это не ошибка отсутствия SSH, добавляем детали
-                if stderr_text:
-                    stderr_already_included = any(stderr_text in part for part in error_parts)
-                    if not stderr_already_included:
-                        # Берем последние 300 символов, чтобы не перегружать сообщение
-                        stderr_short = stderr_text[-300:] if len(stderr_text) > 300 else stderr_text
-                        # Убираем дублирующиеся части
-                        if "fatal:" in stderr_short and "fatal:" not in " ".join(error_parts):
-                            fatal_part = stderr_short.split("fatal:")[-1].strip()
-                            if fatal_part and "ssh:" not in fatal_part.lower():
-                                error_parts.append(f"Details: {fatal_part}")
-                        elif "ssh:" not in stderr_short.lower():
-                            error_parts.append(f"Details: {stderr_short}")
-            
-            # Если все еще нет сообщения, создаем базовое
-            if not error_parts:
-                error_parts.append(f"Git clone failed with exit code {result.returncode}")
-                if stderr_text:
-                    error_parts.append(f"Error: {stderr_text[:200]}")
-                else:
-                    error_parts.append("No error message from git command")
-            
-            # Формируем финальное сообщение
-            # Если это многострочное сообщение (например, инструкции по установке SSH), используем переносы строк
-            is_multiline = (
-                len(error_parts) > 1 and 
-                any("sudo" in part or "apt-get" in part or "yum" in part or "apk" in part or "Please install" in part for part in error_parts)
-            )
-            
-            if is_multiline:
-                error_msg = "\n".join(error_parts)
-            else:
-                error_msg = " | ".join(error_parts)
-            
-            logger.error(f"Git clone failed: {error_msg}")
-            return False, error_msg
-        
-        # Если репозиторий уже существует, обновляем его
-        # Используем SSH окружение для всех Git операций
-        env = get_git_env_with_ssh()
-        
-        # Сохраняем изменения
-        result = subprocess.run(
-            [git_cmd, "stash"],
-            cwd=str(bot_dir),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env
-        )
-        
-        # Обновляем remote если нужно
-        if repo_url:
-            remote_url = get_git_remote(bot_dir)
-            if remote_url != repo_url:
-                success, msg = set_git_remote(bot_dir, repo_url)
-                if not success:
-                    return False, f"Failed to update remote: {msg}"
-        
-        # Получаем обновления (используем SSH окружение для приватных репозиториев)
-        result = subprocess.run(
-            [git_cmd, "fetch", "origin"],
-            cwd=str(bot_dir),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=env
-        )
-        if result.returncode != 0:
-            return False, f"Fetch failed: {result.stderr}"
-        
-        # Обновляем код (используем SSH окружение для приватных репозиториев)
-        result = subprocess.run(
-            [git_cmd, "pull", "origin", branch],
-            cwd=str(bot_dir),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env
-        )
-        
-        if result.returncode == 0:
-            return True, "Bot updated successfully"
-        return False, result.stderr or "Pull failed"
-        
-    except subprocess.TimeoutExpired as e:
-        error_msg = str(e) if str(e) else 'Operation timed out'
-        logger.error(f"Git command timeout: {error_msg}")
-        return False, f"Timeout while executing git command: {error_msg}"
-    except FileNotFoundError as e:
-        logger.error(f"Git not found: {str(e)}")
-        return False, "Git не установлен. Установите Git для работы с репозиториями."
-    except Exception as e:
-        error_type = type(e).__name__
-        error_msg = str(e) if str(e) else repr(e)
-        error_detail = f"{error_type}: {error_msg}" if error_msg else f"{error_type} occurred"
-        
-        logger.error(f"Unexpected error in update_bot_from_git: {error_detail}", exc_info=True)
-        
-        if "No such file or directory" in error_detail or "git" in error_detail.lower():
-            return False, "Git не установлен. Установите Git для работы с репозиториями."
-        return False, error_detail
-
+            return False, "URL репозитория не указан для клонирования"
+        return repo.clone(repo_url, branch)
+    
+    # Если репозиторий существует, обновляем
+    return repo.update(repo_url, branch)

@@ -102,6 +102,18 @@
             updateGitBtn.addEventListener('click', handleUpdateFromGit);
         }
         
+        // Кнопка клонирования репозитория
+        const cloneGitBtn = document.getElementById('clone-git-btn');
+        if (cloneGitBtn) {
+            cloneGitBtn.addEventListener('click', handleCloneRepository);
+        }
+        
+        // Кнопка тестирования SSH
+        const testSshBtn = document.getElementById('test-ssh-btn');
+        if (testSshBtn) {
+            testSshBtn.addEventListener('click', handleTestSshConnection);
+        }
+        
         // Кнопки для работы с файлами
         const uploadFileBtn = document.getElementById('upload-file-btn');
         if (uploadFileBtn) {
@@ -1423,47 +1435,112 @@
             
             const status = await response.json();
             const container = document.getElementById('git-status-info');
+            const updateBtn = document.getElementById('update-git-btn');
+            const cloneBtn = document.getElementById('clone-git-btn');
+            const testSshBtn = document.getElementById('test-ssh-btn');
             
             if (container) {
                 if (status.is_repo) {
                     let html = '<div class="alert alert-info">';
-                    html += '<strong>Репозиторий:</strong> ' + escapeHtml(status.remote || 'Локальный') + '<br>';
-                    html += '<strong>Ветка:</strong> ' + escapeHtml(status.current_branch || status.branch || 'N/A') + '<br>';
-                    if (status.has_changes) {
-                        html += '<span class="text-warning">Есть несохраненные изменения</span>';
-                    } else {
-                        html += '<span class="text-success">Ветка синхронизирована</span>';
+                    html += '<div class="d-flex justify-content-between align-items-start mb-2">';
+                    html += '<div>';
+                    html += '<h6 class="mb-2"><i class="fab fa-github"></i> Git репозиторий</h6>';
+                    html += '<p class="mb-1"><strong>URL:</strong> <code>' + escapeHtml(status.remote || status.repo_url || 'Локальный') + '</code></p>';
+                    html += '<p class="mb-1"><strong>Ветка:</strong> <span class="badge bg-secondary">' + escapeHtml(status.current_branch || 'N/A') + '</span></p>';
+                    
+                    if (status.last_commit) {
+                        html += '<p class="mb-1"><strong>Последний коммит:</strong> ' + escapeHtml(status.last_commit.hash) + ' - ' + escapeHtml(status.last_commit.message) + '</p>';
+                        html += '<p class="mb-1 text-muted"><small>' + escapeHtml(status.last_commit.date) + '</small></p>';
+                    }
+                    
+                    html += '</div>';
+                    html += '<div class="text-end">';
+                    if (status.using_ssh !== undefined) {
+                        if (status.using_ssh) {
+                            html += '<span class="badge bg-success mb-2"><i class="fas fa-key"></i> SSH</span><br>';
+                        } else {
+                            html += '<span class="badge bg-info mb-2"><i class="fas fa-lock"></i> HTTPS</span><br>';
+                        }
+                    }
+                    if (status.ssh_available === false && status.ssh_error) {
+                        html += '<span class="badge bg-warning"><i class="fas fa-exclamation-triangle"></i> SSH недоступен</span>';
                     }
                     html += '</div>';
+                    html += '</div>';
+                    
+                    if (status.has_changes) {
+                        html += '<div class="alert alert-warning mt-2 mb-0">';
+                        html += '<i class="fas fa-exclamation-triangle"></i> <strong>Внимание:</strong> Есть несохраненные локальные изменения';
+                        html += '</div>';
+                    }
+                    
+                    if (status.has_updates) {
+                        html += '<div class="alert alert-success mt-2 mb-0">';
+                        html += '<i class="fas fa-arrow-down"></i> <strong>Доступны обновления!</strong> Нажмите "Обновить из репозитория"';
+                        html += '</div>';
+                    } else if (!status.has_changes) {
+                        html += '<div class="alert alert-success mt-2 mb-0">';
+                        html += '<i class="fas fa-check-circle"></i> Репозиторий синхронизирован';
+                        html += '</div>';
+                    }
+                    
+                    html += '</div>';
                     container.innerHTML = html;
+                    
+                    // Показываем кнопки
+                    if (updateBtn) updateBtn.style.display = 'inline-block';
+                    if (cloneBtn) cloneBtn.style.display = 'none';
+                    if (testSshBtn && status.using_ssh) {
+                        testSshBtn.style.display = 'inline-block';
+                    } else if (testSshBtn) {
+                        testSshBtn.style.display = 'none';
+                    }
                 } else {
                     // Проверяем, указан ли URL репозитория в настройках бота
                     const botInfo = await fetch('/api/bots/' + botId).then(r => r.ok ? r.json() : null).catch(() => null);
-                    const repoUrl = botInfo?.git_repo_url;
+                    const repoUrl = botInfo?.git_repo_url || status.repo_url;
                     
                     if (repoUrl) {
+                        const normalizedUrl = status.normalized_url || repoUrl;
+                        const isSsh = normalizedUrl.startsWith('git@');
+                        
                         container.innerHTML = `
                             <div class="alert alert-warning">
                                 <h6><i class="fas fa-exclamation-triangle"></i> Git репозиторий не клонирован</h6>
                                 <p class="mb-2">Репозиторий указан в настройках, но не клонирован в директорию бота.</p>
-                                <p class="mb-2"><strong>URL:</strong> ${escapeHtml(repoUrl)}</p>
-                                <button class="btn btn-primary btn-sm" onclick="handleCloneRepository()">
-                                    <i class="fas fa-download"></i> Клонировать репозиторий
-                                </button>
+                                <p class="mb-2"><strong>URL:</strong> <code>${escapeHtml(repoUrl)}</code></p>
+                                ${normalizedUrl !== repoUrl ? `<p class="mb-2 text-muted"><small>Будет использован: <code>${escapeHtml(normalizedUrl)}</code></small></p>` : ''}
+                                ${status.ssh_error ? `<div class="alert alert-danger mt-2 mb-0"><i class="fas fa-exclamation-circle"></i> ${escapeHtml(status.ssh_error)}</div>` : ''}
                             </div>
                         `;
+                        
+                        // Показываем кнопки
+                        if (updateBtn) updateBtn.style.display = 'none';
+                        if (cloneBtn) cloneBtn.style.display = 'inline-block';
+                        if (testSshBtn && isSsh) {
+                            testSshBtn.style.display = 'inline-block';
+                        } else if (testSshBtn) {
+                            testSshBtn.style.display = 'none';
+                        }
                     } else {
-                        container.innerHTML = '<div class="alert alert-secondary">Git репозиторий не найден</div>';
+                        container.innerHTML = '<div class="alert alert-secondary"><i class="fas fa-info-circle"></i> Git репозиторий не настроен. Укажите URL репозитория выше.</div>';
+                        if (updateBtn) updateBtn.style.display = 'none';
+                        if (cloneBtn) cloneBtn.style.display = 'none';
+                        if (testSshBtn) testSshBtn.style.display = 'none';
                     }
                 }
             }
         } catch (error) {
             console.error('Error loading git status:', error);
+            const container = document.getElementById('git-status-info');
+            if (container) {
+                container.innerHTML = '<div class="alert alert-danger">Ошибка загрузки статуса Git репозитория</div>';
+            }
         }
     }
     
-    // Клонирование репозитория (глобальная функция для onclick)
-    window.handleCloneRepository = async function() {
+    // Клонирование репозитория
+    async function handleCloneRepository() {
         if (!botId) return;
         
         const confirmed = await showConfirm(
@@ -1476,9 +1553,12 @@
         }
         
         const container = document.getElementById('git-status-info');
+        const cloneBtn = document.getElementById('clone-git-btn');
+        
         if (container) {
             container.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Клонирование репозитория...</div>';
         }
+        if (cloneBtn) cloneBtn.disabled = true;
         
         try {
             // Получаем информацию о боте
@@ -1502,13 +1582,14 @@
             if (response.ok) {
                 const result = await response.json();
                 if (result.success) {
-                    showSuccess('Репозиторий клонирован', 'Репозиторий успешно клонирован в директорию бота');
+                    showSuccess('Репозиторий клонирован', result.message || 'Репозиторий успешно клонирован в директорию бота');
+                    // Перезагружаем файлы и статус
                     setTimeout(() => {
                         loadGitStatus();
+                        if (window.loadFiles) loadFiles();
                     }, 1000);
                 } else {
-                    const error = await response.json().catch(() => ({ detail: 'Неизвестная ошибка' }));
-                    showError('Ошибка клонирования', error.detail || 'Не удалось клонировать репозиторий');
+                    showError('Ошибка клонирования', result.message || 'Не удалось клонировать репозиторий');
                     loadGitStatus();
                 }
             } else {
@@ -1528,32 +1609,115 @@
             console.error('Error cloning repository:', error);
             showError('Ошибка клонирования', error.message || 'Неизвестная ошибка');
             loadGitStatus();
+        } finally {
+            if (cloneBtn) cloneBtn.disabled = false;
         }
-    };
+    }
+    
+    // Экспортируем для глобального доступа
+    window.handleCloneRepository = handleCloneRepository;
+    
+    // Тестирование SSH подключения
+    async function handleTestSshConnection() {
+        if (!botId) return;
+        
+        const testBtn = document.getElementById('test-ssh-btn');
+        if (testBtn) testBtn.disabled = true;
+        
+        try {
+            // Получаем информацию о боте для определения хоста
+            const botResponse = await fetch('/api/bots/' + botId);
+            if (!botResponse.ok) {
+                throw new Error('Не удалось получить информацию о боте');
+            }
+            const bot = await botResponse.json();
+            
+            if (!bot.git_repo_url) {
+                showError('Ошибка', 'URL репозитория не указан');
+                if (testBtn) testBtn.disabled = false;
+                return;
+            }
+            
+            // Извлекаем хост из URL
+            let host = 'github.com';
+            if (bot.git_repo_url.includes('github.com')) {
+                host = 'github.com';
+            } else if (bot.git_repo_url.includes('gitlab.com')) {
+                host = 'gitlab.com';
+            } else if (bot.git_repo_url.includes('bitbucket.org')) {
+                host = 'bitbucket.org';
+            }
+            
+            // Тестируем SSH подключение
+            const response = await fetch(`/api/panel/ssh-key/test?host=${encodeURIComponent(host)}`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    showSuccess('SSH подключение успешно', result.message || `SSH подключение к ${host} работает корректно`);
+                } else {
+                    showError('Ошибка SSH подключения', result.message || 'Не удалось подключиться через SSH');
+                }
+            } else {
+                const error = await response.json().catch(() => ({ detail: 'Неизвестная ошибка' }));
+                showError('Ошибка SSH подключения', error.detail || 'Не удалось протестировать SSH подключение');
+            }
+        } catch (error) {
+            console.error('Error testing SSH connection:', error);
+            showError('Ошибка тестирования SSH', error.message || 'Неизвестная ошибка');
+        } finally {
+            if (testBtn) testBtn.disabled = false;
+        }
+    }
     
     // Обновление из Git
     async function handleUpdateFromGit() {
         if (!botId) return;
         
+        const confirmed = await showConfirm(
+            'Обновление из репозитория',
+            'Обновить бота из Git репозитория? Локальные изменения будут сохранены (stash).',
+            'btn-primary'
+        );
+        if (!confirmed) return;
+        
         const btn = document.getElementById('update-git-btn');
+        const container = document.getElementById('git-status-info');
+        
         if (btn) btn.disabled = true;
+        if (container) {
+            container.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Обновление из репозитория...</div>';
+        }
         
         try {
             const response = await fetch('/api/bots/' + botId + '/update', {
                 method: 'POST'
             });
             
-            const result = await response.json();
-            
-            if (result.success) {
-                showSuccess('Бот обновлен', 'Бот успешно обновлен из Git');
-                loadGitStatus();
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    showSuccess('Бот обновлен', result.message || 'Бот успешно обновлен из репозитория');
+                    // Перезагружаем файлы и статус
+                    setTimeout(() => {
+                        loadGitStatus();
+                        if (window.loadFiles) loadFiles();
+                    }, 1000);
+                } else {
+                    showError('Ошибка обновления', result.message || result.error || 'Неизвестная ошибка');
+                    loadGitStatus();
+                }
             } else {
-                showError('Ошибка обновления', result.error || 'Неизвестная ошибка', result.error);
+                const error = await response.json().catch(() => ({ detail: 'Неизвестная ошибка' }));
+                showError('Ошибка обновления', error.detail || error.message || 'Не удалось обновить бота');
+                loadGitStatus();
             }
         } catch (error) {
             console.error('Update bot error:', error);
             showError('Ошибка обновления', 'Не удалось обновить бота. См. консоль (F12).', error.message);
+            loadGitStatus();
         } finally {
             if (btn) btn.disabled = false;
         }

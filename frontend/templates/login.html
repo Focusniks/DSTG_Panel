@@ -3,35 +3,218 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вход в панель управления</title>
+    <title>Вход в панель управления - DSTG Panel</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="login-container">
         <div class="login-card">
-            <h1 class="login-title">
-                <i class="fas fa-robot"></i> Панель управления ботами
-            </h1>
-            <form id="login-form">
-                <div class="mb-3">
-                    <label for="password" class="form-label">Пароль</label>
-                    <input type="password" class="form-control" id="password" required autofocus placeholder="Введите пароль">
+            <div class="login-header">
+                <div class="login-icon">
+                    <i class="fas fa-robot"></i>
                 </div>
-                <button type="submit" class="btn btn-primary w-100">
+                <h1 class="login-title">
+                    DSTG Panel
+                </h1>
+                <p class="login-subtitle">Панель управления ботами для Discord и Telegram</p>
+            </div>
+            
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="password" class="form-label">
+                        <i class="fas fa-lock"></i> Пароль администратора
+                    </label>
+                    <div class="input-wrapper">
+                        <input 
+                            type="password" 
+                            class="form-control" 
+                            id="password" 
+                            required 
+                            autofocus 
+                            placeholder="Введите пароль"
+                        >
+                        <button type="button" class="password-toggle" id="password-toggle" title="Показать/скрыть пароль">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-100 btn-lg">
                     <i class="fas fa-sign-in-alt"></i> Войти
                 </button>
             </form>
-            <div id="error-message" class="alert alert-danger mt-3" style="display: none;"></div>
+            
+            <div id="error-message" class="alert alert-danger mt-3" style="display: none;">
+                <i class="fas fa-exclamation-circle"></i> <span id="error-text"></span>
+            </div>
+            
+            <div class="login-footer mt-4">
+                <small class="text-muted">
+                    <i class="fas fa-shield-alt"></i> Безопасный вход
+                </small>
+            </div>
+        </div>
+        
+        <!-- Animated background elements -->
+        <div class="login-background">
+            <div class="bg-circle bg-circle-1"></div>
+            <div class="bg-circle bg-circle-2"></div>
+            <div class="bg-circle bg-circle-3"></div>
         </div>
     </div>
 
+    <style>
+        .login-container {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .login-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+        
+        .bg-circle {
+            position: absolute;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(0, 243, 255, 0.1), transparent);
+            animation: float 20s ease-in-out infinite;
+        }
+        
+        .bg-circle-1 {
+            width: 300px;
+            height: 300px;
+            top: 10%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+        
+        .bg-circle-2 {
+            width: 400px;
+            height: 400px;
+            top: 60%;
+            right: 10%;
+            animation-delay: 5s;
+        }
+        
+        .bg-circle-3 {
+            width: 250px;
+            height: 250px;
+            bottom: 10%;
+            left: 50%;
+            animation-delay: 10s;
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .login-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        .login-subtitle {
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            font-size: 0.95rem;
+        }
+        
+        .input-wrapper {
+            position: relative;
+        }
+        
+        .input-wrapper .form-control {
+            padding-right: 45px;
+        }
+        
+        .password-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 5px 10px;
+            transition: color var(--anim-normal) ease;
+        }
+        
+        .password-toggle:hover {
+            color: var(--neon-cyan);
+        }
+        
+        .login-footer {
+            text-align: center;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .login-card {
+            position: relative;
+            z-index: 1;
+            animation: fade-in 0.5s ease-out, slide-in-right 0.5s ease-out;
+        }
+        
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slide-in-right {
+            from {
+                transform: translateX(30px);
+            }
+            to {
+                transform: translateX(0);
+            }
+        }
+    </style>
+
     <script>
+        // Переключение видимости пароля
+        document.getElementById('password-toggle')?.addEventListener('click', function() {
+            const passwordInput = document.getElementById('password');
+            const icon = this.querySelector('i');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        });
+        
+        // Обработка формы входа
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const password = document.getElementById('password').value;
             const errorDiv = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            
+            // Показываем загрузку
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...';
+            errorDiv.style.display = 'none';
             
             try {
                 const response = await fetch('/api/login', {
@@ -43,18 +226,52 @@
                 });
                 
                 if (response.ok) {
-                    window.location.href = '/';
+                    // Успешный вход
+                    submitBtn.innerHTML = '<i class="fas fa-check"></i> Успешно!';
+                    submitBtn.classList.remove('btn-primary');
+                    submitBtn.classList.add('btn-success');
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 500);
                 } else {
                     const data = await response.json();
-                    errorDiv.textContent = data.detail || 'Ошибка входа';
+                    errorText.textContent = data.detail || 'Ошибка входа';
                     errorDiv.style.display = 'block';
+                    errorDiv.classList.add('shake');
+                    setTimeout(() => {
+                        errorDiv.classList.remove('shake');
+                    }, 500);
+                    
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
                 }
             } catch (error) {
-                errorDiv.textContent = 'Ошибка соединения';
+                errorText.textContent = 'Ошибка соединения с сервером';
                 errorDiv.style.display = 'block';
+                errorDiv.classList.add('shake');
+                setTimeout(() => {
+                    errorDiv.classList.remove('shake');
+                }, 500);
+                
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
             }
         });
+        
+        // Анимация тряски для ошибок
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-10px); }
+                75% { transform: translateX(10px); }
+            }
+            .shake {
+                animation: shake 0.5s ease-in-out;
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
-

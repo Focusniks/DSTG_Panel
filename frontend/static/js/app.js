@@ -32,19 +32,22 @@ async function loadBots() {
     }
 }
 
-// Отрисовка списка ботов в компактном виде (таблица)
+// Отрисовка списка ботов в виде карточек
 function renderBotsList(bots) {
     const container = document.getElementById('bots-list');
     if (!container) return;
+
+    // Обновляем статистику
+    updateStats(bots);
 
     if (bots.length === 0) {
         container.innerHTML = `
             <div class="card">
                 <div class="card-body text-center py-5">
-                    <i class="fas fa-robot fa-3x text-muted mb-3"></i>
+                    <i class="fas fa-robot fa-4x mb-4" style="background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></i>
                     <h4 class="text-white mb-3">Боты не созданы</h4>
-                    <p class="text-muted">Создайте первого бота, чтобы начать работу</p>
-                    <button class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#createBotModal">
+                    <p class="text-muted mb-4">Создайте первого бота для Discord или Telegram, чтобы начать работу</p>
+                    <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#createBotModal">
                         <i class="fas fa-plus"></i> Создать бота
                     </button>
                 </div>
@@ -53,84 +56,80 @@ function renderBotsList(bots) {
         return;
     }
 
-    // Компактная таблица ботов
+    // Карточки ботов
     container.innerHTML = `
-        <div class="card">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover table-dark mb-0">
-                        <thead>
-                            <tr>
-                                <th style="width: 40px;"></th>
-                                <th>Название</th>
-                                <th style="width: 120px;">Тип</th>
-                                <th style="width: 130px;">Статус</th>
-                                <th style="width: 100px;">CPU</th>
-                                <th style="width: 100px;">RAM</th>
-                                <th style="width: 80px;">PID</th>
-                                <th style="width: 200px;">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${bots.map(bot => `
-                                <tr>
-                                    <td>
-                                        <span class="bot-status ${bot.status}"></span>
-                                    </td>
-                                    <td>
-                                        <strong>${escapeHtml(bot.name)}</strong>
-                                        ${bot.start_file ? `<br><small class="text-muted">${escapeHtml(bot.start_file)}</small>` : ''}
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-secondary">${bot.bot_type === 'discord' ? 'Discord' : 'Telegram'}</span>
-                                    </td>
-                                    <td>
-                                        ${bot.status === 'running' 
-                                            ? '<span class="badge bg-success">Запущен</span>'
-                                            : bot.status === 'installing'
-                                                ? '<span class="badge bg-warning"><i class="fas fa-spinner fa-spin"></i> Установка</span>'
-                                                : bot.status === 'error'
-                                                    ? '<span class="badge bg-danger">Ошибка</span>'
-                                                    : '<span class="badge bg-secondary">Остановлен</span>'
-                                        }
-                                    </td>
-                                    <td>
-                                        <span id="cpu-${bot.id}" class="text-nowrap">-</span>
-                                    </td>
-                                    <td>
-                                        <span id="ram-${bot.id}" class="text-nowrap">-</span>
-                                    </td>
-                                    <td>
-                                        <span class="text-muted">${bot.pid || '-'}</span>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex gap-1 flex-wrap">
-                                            <button class="btn btn-sm btn-primary" onclick="editBot(${bot.id})" title="Управление">
-                                                <i class="fas fa-cog"></i>
-                                            </button>
-                                            ${bot.status === 'running' 
-                                                ? `<button class="btn btn-sm btn-warning" onclick="stopBot(${bot.id})" title="Остановить">
-                                                     <i class="fas fa-stop"></i>
-                                                   </button>`
-                                                : bot.status === 'installing'
-                                                    ? `<button class="btn btn-sm btn-secondary" disabled title="Установка зависимостей">
-                                                         <i class="fas fa-spinner fa-spin"></i>
-                                                       </button>`
-                                                    : `<button class="btn btn-sm btn-success" onclick="startBot(${bot.id})" title="Запустить">
-                                                         <i class="fas fa-play"></i>
-                                                       </button>`
-                                            }
-                                            <button class="btn btn-sm btn-danger" onclick="deleteBot(${bot.id})" title="Удалить">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+        <div class="bots-grid">
+            ${bots.map(bot => `
+                <div class="bot-card" data-bot-id="${bot.id}">
+                    <div class="bot-card-header">
+                        <div>
+                            <h3 class="bot-card-title mb-1">${escapeHtml(bot.name)}</h3>
+                            <span class="badge ${bot.bot_type === 'discord' ? 'bg-primary' : 'bg-info'}">
+                                <i class="fab fa-${bot.bot_type === 'discord' ? 'discord' : 'telegram'}"></i> 
+                                ${bot.bot_type === 'discord' ? 'Discord' : 'Telegram'}
+                            </span>
+                        </div>
+                        <span class="bot-status ${bot.status}"></span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <span class="status-badge ${bot.status}">
+                            <i class="fas ${bot.status === 'running' ? 'fa-play-circle' : bot.status === 'installing' ? 'fa-spinner fa-spin' : bot.status === 'error' ? 'fa-exclamation-circle' : 'fa-stop-circle'}"></i>
+                            ${bot.status === 'running' ? 'Запущен' : bot.status === 'installing' ? 'Установка' : bot.status === 'error' ? 'Ошибка' : 'Остановлен'}
+                        </span>
+                    </div>
+                    
+                    ${bot.start_file ? `
+                        <div class="mb-3">
+                            <small class="text-muted">
+                                <i class="fas fa-file-code"></i> ${escapeHtml(bot.start_file)}
+                            </small>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="bot-card-stats">
+                        <div class="stat-item">
+                            <div class="stat-value" id="cpu-${bot.id}">-</div>
+                            <div class="stat-label">CPU</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="ram-${bot.id}">-</div>
+                            <div class="stat-label">RAM</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value text-muted">${bot.pid || '-'}</div>
+                            <div class="stat-label">PID</div>
+                        </div>
+                    </div>
+                    
+                    ${bot.status === 'running' ? `
+                        <div class="progress-bar-container mt-3">
+                            <div class="progress-bar" id="cpu-progress-${bot.id}" style="width: 0%"></div>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="quick-actions mt-3">
+                        <button class="btn btn-sm btn-primary flex-fill" onclick="editBot(${bot.id})" title="Управление">
+                            <i class="fas fa-cog"></i> Управление
+                        </button>
+                        ${bot.status === 'running' 
+                            ? `<button class="btn btn-sm btn-warning flex-fill" onclick="stopBot(${bot.id})" title="Остановить">
+                                 <i class="fas fa-stop"></i> Остановить
+                               </button>`
+                            : bot.status === 'installing'
+                                ? `<button class="btn btn-sm btn-secondary flex-fill" disabled title="Установка зависимостей">
+                                     <i class="fas fa-spinner fa-spin"></i> Установка
+                                   </button>`
+                                : `<button class="btn btn-sm btn-success flex-fill" onclick="startBot(${bot.id})" title="Запустить">
+                                     <i class="fas fa-play"></i> Запустить
+                                   </button>`
+                        }
+                        <button class="btn btn-sm btn-danger" onclick="deleteBot(${bot.id})" title="Удалить">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
-            </div>
+            `).join('')}
         </div>
     `;
 
@@ -144,10 +143,29 @@ function renderBotsList(bots) {
     // Обновляем статусы ботов периодически (особенно для installing)
     bots.forEach(bot => {
         if (bot.status === 'installing') {
-            // Периодически проверяем статус ботов в состоянии установки
             setTimeout(() => loadBots(), 2000);
         }
     });
+}
+
+// Обновление статистики
+function updateStats(bots) {
+    const statsContainer = document.getElementById('stats-overview');
+    if (!statsContainer) return;
+    
+    const total = bots.length;
+    const running = bots.filter(b => b.status === 'running').length;
+    const stopped = bots.filter(b => b.status === 'stopped').length;
+    const errors = bots.filter(b => b.status === 'error').length;
+    
+    document.getElementById('total-bots').textContent = total;
+    document.getElementById('running-bots').textContent = running;
+    document.getElementById('stopped-bots').textContent = stopped;
+    document.getElementById('error-bots').textContent = errors;
+    
+    if (total > 0) {
+        statsContainer.style.display = 'block';
+    }
 }
 
 // Загрузка метрик бота
@@ -161,8 +179,23 @@ async function loadBotMetrics(botId) {
         if (cpuEl) {
             if (status.running && status.cpu_percent !== null && status.cpu_percent !== undefined) {
                 cpuEl.textContent = status.cpu_percent.toFixed(1) + '%';
+                cpuEl.className = 'stat-value';
+                if (status.cpu_percent > 80) {
+                    cpuEl.style.color = 'var(--neon-pink)';
+                } else if (status.cpu_percent > 50) {
+                    cpuEl.style.color = 'var(--neon-orange)';
+                } else {
+                    cpuEl.style.color = 'var(--neon-cyan)';
+                }
+                
+                // Обновляем прогресс-бар
+                const progressBar = document.getElementById(`cpu-progress-${botId}`);
+                if (progressBar) {
+                    progressBar.style.width = Math.min(status.cpu_percent, 100) + '%';
+                }
             } else {
                 cpuEl.textContent = '-';
+                cpuEl.className = 'stat-value text-muted';
             }
         }
         
@@ -170,8 +203,11 @@ async function loadBotMetrics(botId) {
         if (ramEl) {
             if (status.running && status.memory_mb !== null && status.memory_mb !== undefined) {
                 ramEl.textContent = Math.round(status.memory_mb) + ' MB';
+                ramEl.className = 'stat-value';
+                ramEl.style.color = 'var(--neon-cyan)';
             } else {
                 ramEl.textContent = '-';
+                ramEl.className = 'stat-value text-muted';
             }
         }
     } catch (error) {

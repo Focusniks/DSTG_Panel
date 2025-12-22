@@ -3,72 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель управления ботами</title>
+    <title>Панель управления ботами - DSTG Panel</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <nav class="navbar">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg">
         <div class="container-fluid">
             <span class="navbar-brand">
-                <i class="fas fa-robot"></i> Панель управления ботами
+                <i class="fas fa-robot"></i> 
+                <span class="d-none d-md-inline">DSTG Panel</span>
             </span>
-            <div>
-                <button class="btn btn-outline-light me-2" onclick="window.location.href='/settings'">
-                    <i class="fas fa-cog"></i> Настройки
+            <button class="mobile-menu-toggle d-lg-none" id="mobile-menu-toggle">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="navbar-nav ms-auto d-flex flex-row gap-2">
+                <button class="btn btn-outline-light" onclick="window.location.href='/settings'" title="Настройки">
+                    <i class="fas fa-cog"></i>
+                    <span class="d-none d-md-inline ms-1">Настройки</span>
                 </button>
-                <button class="btn btn-outline-light" onclick="window.location.href='/login'; document.cookie='panel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'">
-                    <i class="fas fa-sign-out-alt"></i> Выход
+                <button class="btn btn-outline-danger" onclick="logout()" title="Выход">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span class="d-none d-md-inline ms-1">Выход</span>
                 </button>
             </div>
         </div>
     </nav>
 
-    <div class="container mt-5">
+    <div class="container mt-4">
         <div id="alerts-container"></div>
         
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="text-white">Боты</h1>
+        <!-- Header Section -->
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+            <div>
+                <h1 class="text-white mb-2">
+                    <i class="fas fa-robot text-neon-cyan"></i> Управление ботами
+                </h1>
+                <p class="text-muted mb-0">Управляйте ботами для Discord и Telegram: запуск, мониторинг, редактирование кода, работа с Git репозиториями</p>
+            </div>
             <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#createBotModal">
                 <i class="fas fa-plus"></i> Создать бота
             </button>
         </div>
 
+        <!-- Stats Overview -->
+        <div class="row mb-4" id="stats-overview" style="display: none;">
+            <div class="col-md-3 col-sm-6 mb-3">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <h5 class="text-white mb-2">Всего ботов</h5>
+                    <div class="stat-value" id="total-bots">0</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6 mb-3">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-play-circle"></i>
+                    </div>
+                    <h5 class="text-white mb-2">Запущено</h5>
+                    <div class="stat-value text-success" id="running-bots">0</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6 mb-3">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-stop-circle"></i>
+                    </div>
+                    <h5 class="text-white mb-2">Остановлено</h5>
+                    <div class="stat-value text-muted" id="stopped-bots">0</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6 mb-3">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h5 class="text-white mb-2">Ошибки</h5>
+                    <div class="stat-value text-danger" id="error-bots">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bots List -->
         <div id="bots-list">
-            <div class="text-center">
-                <div class="spinner-border text-white" role="status">
+            <div class="text-center py-5">
+                <div class="spinner-border text-neon-cyan" role="status" style="width: 3rem; height: 3rem;">
                     <span class="visually-hidden">Загрузка...</span>
                 </div>
+                <p class="text-muted mt-3">Загрузка ботов...</p>
             </div>
         </div>
     </div>
 
     <!-- Modal создания бота -->
     <div class="modal fade" id="createBotModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Создать нового бота</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus-circle text-neon-cyan"></i> Создать нового бота
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <form id="create-bot-form">
-                        <div class="mb-3">
-                            <label for="create-bot-name" class="form-label">Название бота</label>
-                            <input type="text" class="form-control" id="create-bot-name" required placeholder="Мой бот">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="create-bot-name" class="form-label">
+                                        <i class="fas fa-tag"></i> Название бота
+                                    </label>
+                                    <input type="text" class="form-control" id="create-bot-name" required placeholder="Мой бот">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="create-bot-type" class="form-label">
+                                        <i class="fas fa-code-branch"></i> Тип бота
+                                    </label>
+                                    <select class="form-select" id="create-bot-type" required>
+                                        <option value="discord">Discord</option>
+                                        <option value="telegram">Telegram</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                         
                         <div class="mb-3">
-                            <label for="create-bot-type" class="form-label">Тип бота</label>
-                            <select class="form-select" id="create-bot-type" required>
-                                <option value="discord">Discord</option>
-                                <option value="telegram">Telegram</option>
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="create-start-file" class="form-label">Стартовый файл</label>
+                            <label for="create-start-file" class="form-label">
+                                <i class="fas fa-file-code"></i> Стартовый файл
+                            </label>
                             <input type="text" class="form-control" id="create-start-file" placeholder="main.py">
                             <small class="form-text text-muted">Файл, который будет запускаться при старте бота</small>
                         </div>
@@ -76,28 +144,51 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="create-cpu-limit" class="form-label">Лимит CPU (%)</label>
+                                    <label for="create-cpu-limit" class="form-label">
+                                        <i class="fas fa-microchip"></i> Лимит CPU (%)
+                                    </label>
                                     <input type="number" class="form-control" id="create-cpu-limit" min="1" max="100" value="50">
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="create-memory-limit" class="form-label">Лимит памяти (MB)</label>
+                                    <label for="create-memory-limit" class="form-label">
+                                        <i class="fas fa-memory"></i> Лимит памяти (MB)
+                                    </label>
                                     <input type="number" class="form-control" id="create-memory-limit" min="64" value="512">
                                 </div>
                             </div>
                         </div>
                         
-                        <hr>
-                        <h6>GitHub репозиторий (опционально)</h6>
+                        <hr class="my-4" style="border-color: var(--border-color);">
+                        
+                        <h6 class="mb-3">
+                            <i class="fab fa-github"></i> Git репозиторий <small class="text-muted">(опционально)</small>
+                        </h6>
                         <div class="mb-3">
                             <label for="create-git-repo-url" class="form-label">URL репозитория</label>
-                            <input type="text" class="form-control" id="create-git-repo-url" placeholder="https://github.com/user/repo.git">
+                            <input type="text" class="form-control" id="create-git-repo-url" placeholder="https://github.com/user/repo.git или git@github.com:user/repo.git">
+                            <small class="form-text text-muted">
+                                Поддерживаются: GitHub, GitLab, Bitbucket и другие Git хостинги.<br>
+                                Можно использовать HTTPS или SSH URL. Для приватных репозиториев система автоматически использует SSH (если настроен SSH ключ в настройках панели).
+                            </small>
                         </div>
                         
                         <div class="mb-3">
                             <label for="create-git-branch" class="form-label">Ветка</label>
                             <input type="text" class="form-control" id="create-git-branch" value="main" placeholder="main">
+                            <small class="form-text text-muted">Ветка репозитория для клонирования (по умолчанию: main)</small>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> 
+                            <strong>Как это работает:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Если указать URL репозитория, он будет автоматически клонирован при создании бота</li>
+                                <li>Если репозиторий не указан, будет создан бот из шаблона (базовый код для Discord/Telegram)</li>
+                                <li>Файлы можно также загрузить вручную в разделе "Файлы" после создания бота</li>
+                                <li>Для приватных репозиториев необходимо настроить SSH ключ в <a href="/settings" class="alert-link">настройках панели</a></li>
+                            </ul>
                         </div>
                     </form>
                 </div>
@@ -117,7 +208,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="confirmModalTitle">Подтверждение</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <p id="confirmModalMessage">Вы уверены?</p>
@@ -166,17 +257,10 @@
                 const result = await response.json();
                 
                 if (response.ok && result.id) {
-                    // Закрываем модальное окно
                     const modal = bootstrap.Modal.getInstance(document.getElementById('createBotModal'));
                     modal.hide();
-                    
-                    // Очищаем форму
                     document.getElementById('create-bot-form').reset();
-                    
-                    // Показываем сообщение
                     showAlert('Бот успешно создан!', 'success');
-                    
-                    // Переходим на страницу управления ботом
                     window.location.href = `/bot/${result.id}`;
                 } else {
                     let errorMsg = result.detail || 'Неизвестная ошибка';
@@ -196,6 +280,17 @@
                 showAlert('Ошибка создания бота: ' + errorMsg, 'danger');
             }
         }
+        
+        // Выход
+        function logout() {
+            document.cookie = 'panel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            window.location.href = '/login';
+        }
+        
+        // Mobile menu toggle
+        document.getElementById('mobile-menu-toggle')?.addEventListener('click', function() {
+            // Для мобильного меню можно добавить функционал позже
+        });
     </script>
 </body>
 </html>

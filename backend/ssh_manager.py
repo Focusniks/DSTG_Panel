@@ -1,12 +1,16 @@
 """
-Управление SSH ключами для доступа к приватным Git репозиториям
+Продвинутое управление SSH ключами для доступа к приватным Git репозиториям
+Поддерживает GitHub, GitLab, Bitbucket и другие Git хостинги
 """
 import subprocess
 import os
 import shutil
+import logging
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, List
 from backend.config import DATA_DIR
+
+logger = logging.getLogger(__name__)
 
 # Директория для хранения SSH ключей панели
 SSH_DIR = DATA_DIR / "ssh"
@@ -14,17 +18,50 @@ SSH_PRIVATE_KEY = SSH_DIR / "panel_deploy_key"
 SSH_PUBLIC_KEY = SSH_DIR / "panel_deploy_key.pub"
 SSH_CONFIG_FILE = SSH_DIR / "config"
 
+# Поддерживаемые Git хостинги и их SSH настройки
+GIT_HOSTS_CONFIG = {
+    'github.com': {
+        'name': 'GitHub',
+        'hostname': 'github.com',
+        'user': 'git',
+        'port': 22
+    },
+    'gitlab.com': {
+        'name': 'GitLab',
+        'hostname': 'gitlab.com',
+        'user': 'git',
+        'port': 22
+    },
+    'bitbucket.org': {
+        'name': 'Bitbucket',
+        'hostname': 'bitbucket.org',
+        'user': 'git',
+        'port': 22
+    },
+    'gitea.com': {
+        'name': 'Gitea',
+        'hostname': 'gitea.com',
+        'user': 'git',
+        'port': 22
+    }
+}
+
+
 def ensure_ssh_dir() -> Path:
-    """Создание директории для SSH ключей, если её нет"""
+    """Создание директории для SSH ключей с правильными правами"""
     SSH_DIR.mkdir(parents=True, exist_ok=True)
-    # Устанавливаем правильные права доступа (700)
-    if os.name != 'nt':  # Unix-like системы
-        os.chmod(SSH_DIR, 0o700)
+    # Устанавливаем правильные права доступа (700) для Unix
+    if os.name != 'nt':
+        try:
+            os.chmod(SSH_DIR, 0o700)
+        except Exception:
+            pass
     return SSH_DIR
+
 
 def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
     """
-    Генерация SSH ключа для панели (если ещё не существует)
+    Генерация SSH ключа для панели
     
     Args:
         force: Если True, перезаписывает существующий ключ
@@ -35,11 +72,11 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
     try:
         ensure_ssh_dir()
         
-        # Проверяем, существует ли уже ключ
+        # Проверяем существование ключа
         if not force and SSH_PRIVATE_KEY.exists() and SSH_PUBLIC_KEY.exists():
-            return True, "SSH key already exists"
+            return True, "SSH ключ уже существует"
         
-        # Если force=True, удаляем существующие ключи
+        # Удаляем существующие ключи если force=True
         if force:
             try:
                 if SSH_PRIVATE_KEY.exists():
@@ -47,58 +84,70 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
                 if SSH_PUBLIC_KEY.exists():
                     SSH_PUBLIC_KEY.unlink()
             except Exception as e:
-                return False, f"Failed to remove existing keys: {str(e)}"
+                return False, f"Не удалось удалить существующие ключи: {str(e)}"
         
-        # Генерируем новый SSH ключ
-        # Используем тип ed25519 (более безопасный и современный)
-        result = subprocess.run(
-            [
-                "ssh-keygen",
-                "-t", "ed25519",
-                "-f", str(SSH_PRIVATE_KEY),
-                "-N", "",  # Без пароля
-                "-C", "ds-tg-panel-bot-deploy-key"
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        # Проверяем наличие ssh-keygen
+        ssh_keygen_path = shutil.which("ssh-keygen")
+        if not ssh_keygen_path:
+            # Пробуем стандартные пути
+            if os.name != 'nt':
+                for path in ["/usr/bin/ssh-keygen", "/usr/local/bin/ssh-keygen", "/bin/ssh-keygen"]:
+                    if os.path.exists(path):
+                        ssh_keygen_path = path
+                        break
         
-        if result.returncode == 0:
-            # Устанавливаем правильные права доступа для приватного ключа
-            if os.name != 'nt':  # Unix-like системы
-                os.chmod(SSH_PRIVATE_KEY, 0o600)
-            return True, "SSH key generated successfully"
-        else:
-            error_msg = result.stderr or "Unknown error"
-            # Если ed25519 не поддерживается, пробуем RSA
-            if "unknown key type" in error_msg.lower() or "invalid" in error_msg.lower():
+        if not ssh_keygen_path:
+            return False, "ssh-keygen не найден. Установите OpenSSH."
+        
+        # Генерируем SSH ключ (предпочитаем ed25519, fallback на RSA)
+        key_types = [
+            ("ed25519", []),  # Современный и безопасный
+            ("rsa", ["-b", "4096"])  # Fallback для старых систем
+        ]
+        
+        for key_type, extra_args in key_types:
+            try:
+                cmd = [
+                    ssh_keygen_path,
+                    "-t", key_type,
+                    "-f", str(SSH_PRIVATE_KEY),
+                    "-N", "",  # Без пароля
+                    "-C", "dstg-panel-deploy-key"
+                ] + extra_args
+                
                 result = subprocess.run(
-                    [
-                        "ssh-keygen",
-                        "-t", "rsa",
-                        "-b", "4096",
-                        "-f", str(SSH_PRIVATE_KEY),
-                        "-N", "",
-                        "-C", "ds-tg-panel-bot-deploy-key"
-                    ],
+                    cmd,
                     capture_output=True,
                     text=True,
                     timeout=30
                 )
+                
                 if result.returncode == 0:
+                    # Устанавливаем правильные права доступа
                     if os.name != 'nt':
-                        os.chmod(SSH_PRIVATE_KEY, 0o600)
-                    return True, "SSH key (RSA) generated successfully"
-            
-            return False, error_msg
-            
-    except subprocess.TimeoutExpired:
-        return False, "Timeout while generating SSH key"
+                        try:
+                            os.chmod(SSH_PRIVATE_KEY, 0o600)
+                            os.chmod(SSH_PUBLIC_KEY, 0o644)
+                        except Exception:
+                            pass
+                    
+                    logger.info(f"SSH ключ успешно сгенерирован (тип: {key_type})")
+                    return True, f"SSH ключ успешно сгенерирован (тип: {key_type})"
+            except subprocess.TimeoutExpired:
+                return False, "Превышено время ожидания при генерации ключа"
+            except Exception as e:
+                # Пробуем следующий тип ключа
+                logger.debug(f"Не удалось сгенерировать {key_type} ключ: {e}")
+                continue
+        
+        return False, "Не удалось сгенерировать SSH ключ ни одного типа"
+        
     except FileNotFoundError:
-        return False, "ssh-keygen not found. Please install OpenSSH."
+        return False, "ssh-keygen не найден. Установите OpenSSH."
     except Exception as e:
-        return False, str(e)
+        logger.error(f"Ошибка генерации SSH ключа: {e}", exc_info=True)
+        return False, f"Ошибка генерации ключа: {str(e)}"
+
 
 def get_public_key() -> Optional[str]:
     """Получение публичного SSH ключа"""
@@ -109,70 +158,153 @@ def get_public_key() -> Optional[str]:
         if not SSH_PUBLIC_KEY.exists():
             success, msg = generate_ssh_key()
             if not success:
+                logger.warning(f"Не удалось автоматически сгенерировать ключ: {msg}")
                 return None
         
-        # Проверяем существование файла перед чтением
         if not SSH_PUBLIC_KEY.exists():
             return None
         
-        # Читаем файл заново каждый раз (без кэширования)
+        # Читаем публичный ключ
         with open(SSH_PUBLIC_KEY, 'r', encoding='utf-8') as f:
             content = f.read().strip()
             return content if content else None
-        
-    except Exception:
+            
+    except Exception as e:
+        logger.error(f"Ошибка чтения публичного ключа: {e}")
         return None
+
 
 def get_ssh_key_exists() -> bool:
     """Проверка существования SSH ключа"""
     return SSH_PRIVATE_KEY.exists() and SSH_PUBLIC_KEY.exists()
 
+
+def extract_host_from_url(url: str) -> Optional[str]:
+    """
+    Извлечение хоста из URL репозитория
+    
+    Examples:
+        https://github.com/user/repo.git -> github.com
+        git@github.com:user/repo.git -> github.com
+        https://gitlab.com/user/repo.git -> gitlab.com
+    """
+    if url.startswith('git@'):
+        # SSH формат: git@host:path
+        try:
+            host = url.split('@')[1].split(':')[0]
+            return host
+        except IndexError:
+            return None
+    elif url.startswith('https://') or url.startswith('http://'):
+        # HTTPS формат: https://host/path
+        try:
+            host = url.split('/')[2]
+            # Убираем порт если есть
+            host = host.split(':')[0]
+            return host
+        except IndexError:
+            return None
+    
+    return None
+
+
 def convert_https_to_ssh(url: str) -> str:
     """
-    Преобразование HTTPS URL в SSH URL для GitHub/GitLab
-    Пример: https://github.com/user/repo.git -> git@github.com:user/repo.git
+    Преобразование HTTPS URL в SSH URL
+    
+    Examples:
+        https://github.com/user/repo.git -> git@github.com:user/repo.git
+        https://gitlab.com/user/repo.git -> git@gitlab.com:user/repo.git
     """
     if url.startswith('git@'):
         return url  # Уже SSH формат
     
     if url.startswith('https://'):
-        # Убираем https://
-        url = url.replace('https://', '')
-        # Убираем .git в конце если есть
-        if url.endswith('.git'):
-            url = url[:-4]
-        # Разделяем на части
-        parts = url.split('/', 1)
-        if len(parts) == 2:
-            host = parts[0]
-            path = parts[1]
-            return f"git@{host}:{path}.git"
+        url = url.replace('https://', '', 1)
+    elif url.startswith('http://'):
+        url = url.replace('http://', '', 1)
+    else:
+        return url  # Неизвестный формат
+    
+    # Убираем .git в конце если есть
+    if url.endswith('.git'):
+        url = url[:-4]
+    
+    # Разделяем на хост и путь
+    parts = url.split('/', 1)
+    if len(parts) == 2:
+        host = parts[0]
+        path = parts[1]
+        return f"git@{host}:{path}.git"
     
     return url
 
-def setup_ssh_config_for_github():
-    """Настройка SSH config для использования ключа панели с GitHub"""
+
+def setup_ssh_config_for_github() -> bool:
+    """
+    Настройка SSH config для всех поддерживаемых Git хостингов
+    
+    Returns:
+        True если config успешно создан
+    """
     try:
         ensure_ssh_dir()
-        # Используем абсолютный путь для надежности на всех платформах
+        
+        if not SSH_PRIVATE_KEY.exists():
+            logger.warning("SSH приватный ключ не найден, не могу настроить SSH config")
+            return False
+        
         identity_file_path = str(SSH_PRIVATE_KEY.resolve())
-        config_content = f"""Host github.com
-    HostName github.com
-    User git
-    IdentityFile {identity_file_path}
-    IdentitiesOnly yes
-    StrictHostKeyChecking accept-new
-"""
+        
+        # Создаем конфигурацию для всех поддерживаемых хостов
+        config_lines = []
+        config_lines.append("# SSH config для DSTG Panel")
+        config_lines.append("# Автоматически сгенерировано")
+        config_lines.append("")
+        
+        for host_key, host_config in GIT_HOSTS_CONFIG.items():
+            config_lines.append(f"Host {host_key}")
+            config_lines.append(f"    HostName {host_config['hostname']}")
+            config_lines.append(f"    User {host_config['user']}")
+            config_lines.append(f"    IdentityFile {identity_file_path}")
+            config_lines.append("    IdentitiesOnly yes")
+            config_lines.append("    StrictHostKeyChecking accept-new")
+            config_lines.append("    UserKnownHostsFile /dev/null")  # Не сохраняем known_hosts
+            if host_config.get('port') and host_config['port'] != 22:
+                config_lines.append(f"    Port {host_config['port']}")
+            config_lines.append("")
+        
+        # Добавляем общую конфигурацию для всех остальных Git хостов
+        config_lines.append("# Общая конфигурация для других Git хостов")
+        config_lines.append("Host *")
+        config_lines.append(f"    IdentityFile {identity_file_path}")
+        config_lines.append("    IdentitiesOnly yes")
+        config_lines.append("    StrictHostKeyChecking accept-new")
+        config_lines.append("    UserKnownHostsFile /dev/null")
+        
+        config_content = "\n".join(config_lines)
+        
         with open(SSH_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            f.write(config_content.strip())
+            f.write(config_content)
+        
+        # Устанавливаем правильные права доступа
         if os.name != 'nt':
-            os.chmod(SSH_CONFIG_FILE, 0o600)
-    except Exception:
-        pass
+            try:
+                os.chmod(SSH_CONFIG_FILE, 0o600)
+            except Exception:
+                pass
+        
+        logger.info("SSH config успешно настроен для всех Git хостингов")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Ошибка настройки SSH config: {e}", exc_info=True)
+        return False
+
 
 def check_ssh_available() -> Tuple[bool, Optional[str]]:
     """
-    Проверяет, доступна ли команда ssh в системе
+    Проверка доступности SSH клиента в системе
     
     Returns:
         (is_available, ssh_path)
@@ -180,7 +312,6 @@ def check_ssh_available() -> Tuple[bool, Optional[str]]:
     # Пробуем найти ssh в PATH
     ssh_path = shutil.which("ssh")
     if ssh_path:
-        # Дополнительно проверяем, что файл действительно существует и исполняемый
         if os.path.exists(ssh_path) and os.access(ssh_path, os.X_OK):
             return True, ssh_path
     
@@ -195,8 +326,7 @@ def check_ssh_available() -> Tuple[bool, Optional[str]]:
             if os.path.exists(path) and os.access(path, os.X_OK):
                 return True, path
     
-    # Дополнительная проверка: пробуем выполнить ssh --version
-    # Это более надежный способ проверки
+    # Дополнительная проверка: пробуем выполнить ssh -V
     try:
         result = subprocess.run(
             ["ssh", "-V"],
@@ -204,63 +334,175 @@ def check_ssh_available() -> Tuple[bool, Optional[str]]:
             text=True,
             timeout=2
         )
-        if result.returncode == 0 or "OpenSSH" in result.stderr or "OpenSSH" in result.stdout:
-            # SSH доступен, находим путь
+        # SSH выводит версию в stderr
+        if "OpenSSH" in result.stderr or "OpenSSH" in result.stdout:
             ssh_path = shutil.which("ssh") or "/usr/bin/ssh"
             return True, ssh_path
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     except Exception:
-        # Любая другая ошибка означает, что SSH недоступен
         pass
     
     return False, None
 
+
 def get_git_env_with_ssh() -> dict:
     """
     Возвращает переменные окружения для Git команд с SSH
+    
+    Настраивает GIT_SSH_COMMAND для использования SSH ключа панели
     """
     env = os.environ.copy()
     
-    # Проверяем наличие SSH перед использованием
+    # Проверяем наличие SSH
     ssh_available, ssh_path = check_ssh_available()
     if not ssh_available:
-        # Если SSH не найден, не устанавливаем GIT_SSH_COMMAND
-        # Git попробует использовать системный SSH, и мы получим понятную ошибку
+        logger.warning("SSH клиент не найден, Git будет использовать системные настройки")
         return env
     
-    # Устанавливаем переменную SSH для использования нашего ключа
-    if SSH_PRIVATE_KEY.exists():
-        ssh_key_path = str(SSH_PRIVATE_KEY.resolve())
-        
-        # Используем найденный путь к ssh, если он не в PATH
-        ssh_cmd_base = ssh_path if ssh_path and ssh_path != "ssh" else "ssh"
-        
-        # Используем GIT_SSH_COMMAND для всех платформ (поддерживается в Git 2.3+)
-        # Это более надежный способ, чем GIT_SSH
-        if SSH_CONFIG_FILE.exists():
-            ssh_config_path = str(SSH_CONFIG_FILE.resolve())
-            
-            # Экранируем пути для безопасности (на случай пробелов)
-            # На Unix используем одинарные кавычки, на Windows - двойные
-            if os.name == 'nt':
-                # Windows - используем двойные кавычки и экранируем обратные слеши
-                ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
-                ssh_config_path_escaped = ssh_config_path.replace('\\', '\\\\')
-                ssh_cmd = f'{ssh_cmd_base} -F "{ssh_config_path_escaped}" -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
-            else:
-                # Unix-like (Linux, macOS)
-                # Используем одинарные кавычки для экранирования путей
-                ssh_cmd = f"{ssh_cmd_base} -F '{ssh_config_path}' -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
-        else:
-            # Если config файла нет, используем только ключ
-            if os.name == 'nt':
-                ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
-                ssh_cmd = f'{ssh_cmd_base} -i "{ssh_key_path_escaped}" -o StrictHostKeyChecking=accept-new'
-            else:
-                ssh_cmd = f"{ssh_cmd_base} -i '{ssh_key_path}' -o StrictHostKeyChecking=accept-new"
-        
-        env['GIT_SSH_COMMAND'] = ssh_cmd
+    # Проверяем наличие SSH ключа
+    if not SSH_PRIVATE_KEY.exists():
+        logger.warning("SSH ключ не найден, Git будет использовать системные настройки")
+        return env
+    
+    # Убеждаемся, что SSH config настроен
+    if not SSH_CONFIG_FILE.exists():
+        setup_ssh_config_for_github()
+    
+    ssh_key_path = str(SSH_PRIVATE_KEY.resolve())
+    ssh_config_path = str(SSH_CONFIG_FILE.resolve())
+    
+    # Формируем команду SSH
+    # Используем найденный путь к ssh
+    ssh_cmd_base = ssh_path if ssh_path and ssh_path != "ssh" else "ssh"
+    
+    # Экранируем пути для безопасности
+    if os.name == 'nt':
+        # Windows - используем двойные кавычки
+        ssh_key_path_escaped = ssh_key_path.replace('\\', '\\\\')
+        ssh_config_path_escaped = ssh_config_path.replace('\\', '\\\\')
+        ssh_cmd = (
+            f'{ssh_cmd_base} '
+            f'-F "{ssh_config_path_escaped}" '
+            f'-i "{ssh_key_path_escaped}" '
+            f'-o StrictHostKeyChecking=accept-new '
+            f'-o UserKnownHostsFile=NUL'
+        )
+    else:
+        # Unix-like (Linux, macOS)
+        # Используем одинарные кавычки для экранирования путей
+        ssh_cmd = (
+            f"{ssh_cmd_base} "
+            f"-F '{ssh_config_path}' "
+            f"-i '{ssh_key_path}' "
+            f"-o StrictHostKeyChecking=accept-new "
+            f"-o UserKnownHostsFile=/dev/null"
+        )
+    
+    env['GIT_SSH_COMMAND'] = ssh_cmd
+    logger.debug(f"GIT_SSH_COMMAND установлен: {ssh_cmd}")
     
     return env
 
+
+def test_ssh_connection(host: str = "github.com") -> Tuple[bool, str]:
+    """
+    Тестирование SSH подключения к Git хосту
+    
+    Args:
+        host: Хост для тестирования (по умолчанию github.com)
+    
+    Returns:
+        (success, message)
+    """
+    ssh_available, ssh_path = check_ssh_available()
+    if not ssh_available:
+        return False, "SSH клиент не установлен"
+    
+    if not get_ssh_key_exists():
+        return False, "SSH ключ не найден"
+    
+    # Убеждаемся, что SSH config настроен
+    setup_ssh_config_for_github()
+    
+    try:
+        # Пробуем подключиться к хосту
+        # Используем команду, которая просто проверяет доступность
+        env = get_git_env_with_ssh()
+        
+        result = subprocess.run(
+            [ssh_path, "-T", host],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env
+        )
+        
+        # GitHub возвращает код 1 при успешном подключении с сообщением
+        # GitLab и другие могут возвращать 0
+        if result.returncode in [0, 1]:
+            # Проверяем, что это не ошибка аутентификации
+            if "Permission denied" in result.stderr or "denied" in result.stderr.lower():
+                return False, "Ошибка аутентификации. Проверьте, что SSH ключ добавлен в ваш аккаунт."
+            
+            # Успешное подключение
+            return True, f"SSH подключение к {host} успешно"
+        
+        return False, f"Ошибка подключения: {result.stderr or 'Неизвестная ошибка'}"
+        
+    except subprocess.TimeoutExpired:
+        return False, "Превышено время ожидания при подключении"
+    except Exception as e:
+        return False, f"Ошибка тестирования SSH: {str(e)}"
+
+
+def get_ssh_key_info() -> Dict[str, Any]:
+    """
+    Получение информации о SSH ключе
+    
+    Returns:
+        Словарь с информацией о ключе
+    """
+    info = {
+        "exists": get_ssh_key_exists(),
+        "private_key_path": str(SSH_PRIVATE_KEY) if SSH_PRIVATE_KEY.exists() else None,
+        "public_key_path": str(SSH_PUBLIC_KEY) if SSH_PUBLIC_KEY.exists() else None,
+        "public_key": None,
+        "key_type": None,
+        "key_size": None,
+        "ssh_available": False,
+        "ssh_path": None
+    }
+    
+    if info["exists"]:
+        # Получаем публичный ключ
+        info["public_key"] = get_public_key()
+        
+        # Пытаемся определить тип и размер ключа из публичного ключа
+        if info["public_key"]:
+            if "ssh-ed25519" in info["public_key"]:
+                info["key_type"] = "ed25519"
+                info["key_size"] = "256 bits"
+            elif "ssh-rsa" in info["public_key"]:
+                info["key_type"] = "RSA"
+                # Пытаемся извлечь размер из ключа
+                try:
+                    # RSA ключи содержат размер в битах
+                    if "4096" in info["public_key"]:
+                        info["key_size"] = "4096 bits"
+                    elif "2048" in info["public_key"]:
+                        info["key_size"] = "2048 bits"
+                    else:
+                        info["key_size"] = "Unknown"
+                except Exception:
+                    info["key_size"] = "Unknown"
+            elif "ecdsa" in info["public_key"]:
+                info["key_type"] = "ECDSA"
+                info["key_size"] = "Unknown"
+    
+    # Проверяем доступность SSH
+    ssh_available, ssh_path = check_ssh_available()
+    info["ssh_available"] = ssh_available
+    info["ssh_path"] = ssh_path
+    
+    return info
