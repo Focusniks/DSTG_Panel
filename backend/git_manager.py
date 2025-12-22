@@ -669,16 +669,76 @@ def update_panel_from_git() -> Tuple[bool, str]:
         except Exception:
             pass
         
-        logger.info(f"Выполняем git pull через HTTPS (ветка: {PANEL_REPO_BRANCH}, URL: {https_url})")
+        logger.info(f"Выполняем git fetch через HTTPS (ветка: {PANEL_REPO_BRANCH}, URL: {https_url})")
         logger.info(f"Окружение: GIT_SSH_COMMAND={'НЕТ' if 'GIT_SSH_COMMAND' not in env else env.get('GIT_SSH_COMMAND')}")
-        pull_result = subprocess.run(
-            [git_cmd, "pull", "origin", PANEL_REPO_BRANCH],
+        
+        # Используем fetch + reset --hard для принудительного обновления
+        # Это позволяет обновить все файлы, даже если есть конфликты
+        fetch_result = subprocess.run(
+            [git_cmd, "fetch", "origin", PANEL_REPO_BRANCH],
             cwd=BASE_DIR,
             env=env,
             capture_output=True,
             text=True,
             timeout=300
         )
+        
+        if fetch_result.returncode != 0:
+            error_msg = fetch_result.stderr or fetch_result.stdout or "Неизвестная ошибка"
+            logger.error(f"Git fetch failed: {error_msg}")
+            # Восстанавливаем директории даже при ошибке
+            for dir_name, dir_path in protected_dirs:
+                try:
+                    backup_path = backup_dir / dir_name
+                    if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
+                        shutil.copytree(backup_path, dir_path)
+                except Exception:
+                    pass
+            try:
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+            except Exception:
+                pass
+            return (False, f"Ошибка Git fetch: {error_msg}")
+        
+        logger.info("Git fetch успешно выполнен, выполняем reset --hard")
+        
+        # Выполняем reset --hard для принудительного обновления всех файлов
+        reset_result = subprocess.run(
+            [git_cmd, "reset", "--hard", f"origin/{PANEL_REPO_BRANCH}"],
+            cwd=BASE_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        
+        if reset_result.returncode != 0:
+            error_msg = reset_result.stderr or reset_result.stdout or "Неизвестная ошибка"
+            logger.error(f"Git reset failed: {error_msg}")
+            # Восстанавливаем директории даже при ошибке
+            for dir_name, dir_path in protected_dirs:
+                try:
+                    backup_path = backup_dir / dir_name
+                    if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
+                        shutil.copytree(backup_path, dir_path)
+                except Exception:
+                    pass
+            try:
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+            except Exception:
+                pass
+            return (False, f"Ошибка Git reset: {error_msg}")
+        
+        logger.info("Git reset --hard успешно выполнен")
+        
+        # Используем результат reset как результат pull
+        pull_result = type('obj', (object,), {
+            'returncode': 0,
+            'stdout': reset_result.stdout,
+            'stderr': reset_result.stderr
+        })()
         
         logger.info(f"Git pull завершен с кодом: {pull_result.returncode}")
         if pull_result.stdout:
