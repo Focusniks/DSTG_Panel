@@ -61,6 +61,30 @@ def init_database():
             )
         """)
         
+        # Таблица настроек панели (для хранения настроек MySQL)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS panel_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting_key TEXT NOT NULL UNIQUE,
+                setting_value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Инициализируем настройки MySQL значениями по умолчанию, если их еще нет
+        default_settings = {
+            'mysql_host': 'localhost',
+            'mysql_port': '3306',
+            'mysql_user': 'root',
+            'mysql_password': ''
+        }
+        
+        for key, value in default_settings.items():
+            cursor.execute("""
+                INSERT OR IGNORE INTO panel_settings (setting_key, setting_value)
+                VALUES (?, ?)
+            """, (key, value))
+        
         conn.commit()
         conn.close()
     except Exception as e:
@@ -68,6 +92,65 @@ def init_database():
         import logging
         logging.error(f"Ошибка инициализации базы данных: {e}")
         raise
+
+def get_panel_setting(key: str, default: str = None) -> Optional[str]:
+    """Получение настройки панели"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT setting_value FROM panel_settings WHERE setting_key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return row[0] if row[0] is not None else default
+        return default
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка получения настройки {key}: {e}")
+        return default
+
+def set_panel_setting(key: str, value: str) -> bool:
+    """Сохранение настройки панели"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO panel_settings (setting_key, setting_value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(setting_key) DO UPDATE SET
+                setting_value = excluded.setting_value,
+                updated_at = CURRENT_TIMESTAMP
+        """, (key, value))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка сохранения настройки {key}: {e}")
+        return False
+
+def get_mysql_settings() -> Dict[str, any]:
+    """Получение всех настроек MySQL из базы данных панели"""
+    return {
+        'host': get_panel_setting('mysql_host', 'localhost'),
+        'port': int(get_panel_setting('mysql_port', '3306')),
+        'user': get_panel_setting('mysql_user', 'root'),
+        'password': get_panel_setting('mysql_password', '')
+    }
+
+def set_mysql_settings(host: str, port: int, user: str, password: str) -> bool:
+    """Сохранение настроек MySQL в базу данных панели"""
+    try:
+        set_panel_setting('mysql_host', host)
+        set_panel_setting('mysql_port', str(port))
+        set_panel_setting('mysql_user', user)
+        set_panel_setting('mysql_password', password)
+        return True
+    except Exception as e:
+        import logging
+        logging.error(f"Ошибка сохранения настроек MySQL: {e}")
+        return False
 
 def create_bot(name: str, bot_type: str, start_file: str = None, 
                cpu_limit: float = 50.0, memory_limit: int = 512,

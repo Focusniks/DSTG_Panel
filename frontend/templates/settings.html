@@ -50,6 +50,47 @@
             </div>
         </div>
         
+        <!-- Настройки MySQL -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5><i class="fas fa-database"></i> Настройки MySQL</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle"></i> Настройки подключения к MySQL</h6>
+                    <p class="mb-0">
+                        Укажите параметры подключения к серверу MySQL. Эти настройки используются для создания баз данных для ботов.
+                        По умолчанию: <strong>localhost:3306</strong>, пользователь <strong>root</strong>, без пароля.
+                    </p>
+                </div>
+                
+                <form id="mysql-settings-form">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="mysql-host" class="form-label">Хост</label>
+                            <input type="text" class="form-control" id="mysql-host" placeholder="localhost" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="mysql-port" class="form-label">Порт</label>
+                            <input type="number" class="form-control" id="mysql-port" placeholder="3306" min="1" max="65535" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="mysql-user" class="form-label">Пользователь</label>
+                            <input type="text" class="form-control" id="mysql-user" placeholder="root" required>
+                        </div>
+                        <div class="col-md-12">
+                            <label for="mysql-password" class="form-label">Пароль</label>
+                            <input type="password" class="form-control" id="mysql-password" placeholder="Оставьте пустым, если пароль не установлен">
+                            <small class="form-text text-muted">Оставьте пустым, если пароль не установлен</small>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-3" id="save-mysql-settings-btn">
+                        <i class="fas fa-save"></i> Сохранить настройки MySQL
+                    </button>
+                </form>
+            </div>
+        </div>
+        
         <!-- SSH ключ для приватных репозиториев -->
         <div class="card mb-3">
             <div class="card-header">
@@ -133,9 +174,70 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/static/js/app.js"></script>
     <script>
+        async function loadMySQLSettings() {
+            try {
+                const response = await fetch('/api/panel/mysql-settings');
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    const settings = result.settings;
+                    document.getElementById('mysql-host').value = settings.host || 'localhost';
+                    document.getElementById('mysql-port').value = settings.port || 3306;
+                    document.getElementById('mysql-user').value = settings.user || 'root';
+                    document.getElementById('mysql-password').value = settings.password || '';
+                } else {
+                    console.error('Error loading MySQL settings:', result);
+                }
+            } catch (error) {
+                console.error('Error loading MySQL settings:', error);
+            }
+        }
+        
         document.addEventListener('DOMContentLoaded', () => {
             loadPanelGitStatus();
             loadSSHKey();
+            loadMySQLSettings();
+            
+            // Обработчик формы настроек MySQL
+            const mysqlSettingsForm = document.getElementById('mysql-settings-form');
+            if (mysqlSettingsForm) {
+                mysqlSettingsForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('save-mysql-settings-btn');
+                    const originalText = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+                    
+                    try {
+                        const response = await fetch('/api/panel/mysql-settings', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                host: document.getElementById('mysql-host').value.trim(),
+                                port: parseInt(document.getElementById('mysql-port').value),
+                                user: document.getElementById('mysql-user').value.trim(),
+                                password: document.getElementById('mysql-password').value
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok && result.success) {
+                            showAlert('Настройки MySQL успешно сохранены', 'success');
+                        } else {
+                            showAlert('Ошибка сохранения: ' + (result.detail || result.error || 'Неизвестная ошибка'), 'danger');
+                        }
+                    } catch (error) {
+                        console.error('Error saving MySQL settings:', error);
+                        showAlert('Ошибка сохранения настроек MySQL. См. консоль (F12).', 'danger');
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                });
+            }
             
             // Обработчик формы смены пароля
             const changePasswordForm = document.getElementById('change-password-form');

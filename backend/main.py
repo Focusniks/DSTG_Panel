@@ -15,7 +15,8 @@ import os
 from backend.config import BASE_DIR, set_admin_password_hash, get_admin_password_hash
 from backend.auth import verify_password, create_session_token, get_session_from_request, require_auth
 from backend.database import (
-    create_bot, get_bot, get_all_bots, update_bot, delete_bot
+    create_bot, get_bot, get_all_bots, update_bot, delete_bot,
+    get_mysql_settings, set_mysql_settings
 )
 from backend.bot_manager import start_bot, stop_bot, get_bot_process_info, is_process_running
 from backend.db_manager import (
@@ -198,6 +199,12 @@ class BotUpdate(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+class MySQLSettingsRequest(BaseModel):
+    host: str
+    port: int
+    user: str
+    password: str
 
 # Middleware для логирования всех запросов и ошибок
 @app.middleware("http")
@@ -1742,6 +1749,7 @@ async def change_password(request: Request, password_data: ChangePasswordRequest
         return {"success": True, "message": "Пароль успешно изменен"}
     else:
         raise HTTPException(status_code=500, detail="Ошибка при сохранении нового пароля")
+
 
 # Инициализация при старте приложения
 async def monitor_bots():

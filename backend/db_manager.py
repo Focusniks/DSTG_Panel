@@ -3,37 +3,74 @@
 """
 import pymysql
 from typing import Optional, Dict, List, Any, Tuple
-from backend.config import (
-    MYSQL_HOST, MYSQL_PORT, MYSQL_ROOT_USER, 
-    MYSQL_ROOT_PASSWORD, MYSQL_PREFIX
-)
-from backend.database import get_bot, update_bot, get_db_connection
+from backend.config import MYSQL_PREFIX
+from backend.database import get_bot, update_bot, get_db_connection, get_mysql_settings
 import secrets
 import string
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Кэш для настроек MySQL (обновляется при каждом подключении)
+_mysql_settings_cache = None
+
+def _get_mysql_config():
+    """Получение настроек MySQL из базы данных панели (с кэшированием)"""
+    global _mysql_settings_cache
+    if _mysql_settings_cache is None:
+        _mysql_settings_cache = get_mysql_settings()
+    return _mysql_settings_cache
+
 def get_mysql_connection(db_name: Optional[str] = None) -> pymysql.Connection:
     """Получение соединения с MySQL"""
     try:
-        # Логируем подключение без пароля (для безопасности)
-        password_set = "YES" if MYSQL_ROOT_PASSWORD else "NO"
-        logger.info(f"Connecting to MySQL: host={MYSQL_HOST}, port={MYSQL_PORT}, user={MYSQL_ROOT_USER}, database={db_name}, using_password={password_set}")
-        connection = pymysql.connect(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=MYSQL_ROOT_USER,
-            password=MYSQL_ROOT_PASSWORD,
-            database=db_name,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        # Получаем настройки из базы данных панели
+        mysql_config = _get_mysql_config()
+        mysql_host = mysql_config['host']
+        mysql_port = mysql_config['port']
+        mysql_user = mysql_config['user']
+        mysql_password = mysql_config['password']
+        
+        # Логируем информацию о подключении (без пароля для безопасности)
+        password_length = len(mysql_password) if mysql_password else 0
+        logger.info(f"Connecting to MySQL: host={mysql_host}, port={mysql_port}, user={mysql_user}, database={db_name}, password_length={password_length}")
+        
+        # Создаем параметры подключения
+        connect_params = {
+            'host': mysql_host,
+            'port': mysql_port,
+            'user': mysql_user,
+            'charset': 'utf8mb4',
+            'cursorclass': pymysql.cursors.DictCursor
+        }
+        
+        # Добавляем database только если указана
+        if db_name:
+            connect_params['database'] = db_name
+        
+        # ВАЖНО: Всегда передаем password явно
+        # pymysql.connect требует явной передачи password параметра
+        # Если пароль пустой, передаем пустую строку (не None)
+        if mysql_password:
+            connect_params['password'] = mysql_password
+            password_info = f"YES (length={len(mysql_password)})"
+        else:
+            connect_params['password'] = ""  # Явно передаем пустую строку
+            password_info = "NO (empty string)"
+        
+        logger.debug(f"Connection params: host={mysql_host}, port={mysql_port}, user={mysql_user}, database={db_name}, password_provided={password_info}")
+        
+        connection = pymysql.connect(**connect_params)
         logger.info(f"Successfully connected to MySQL")
         return connection
     except Exception as e:
-        logger.error(f"Failed to connect to MySQL: {str(e)}", exc_info=True)
-        raise Exception(f"Failed to connect to MySQL: {str(e)}")
+        error_msg = str(e)
+        logger.error(f"Failed to connect to MySQL: {error_msg}", exc_info=True)
+        # Добавляем дополнительную информацию об ошибке
+        if "Access denied" in error_msg:
+            mysql_config = _get_mysql_config()
+            logger.error(f"MySQL connection details: host={mysql_config['host']}, port={mysql_config['port']}, user={mysql_config['user']}, password_set={'YES' if mysql_config['password'] else 'NO'}")
+        raise Exception(f"Failed to connect to MySQL: {error_msg}")
 
 def generate_db_name(bot_id: int, custom_name: Optional[str] = None) -> str:
     """Генерация имени базы данных для бота"""
@@ -101,8 +138,9 @@ def create_bot_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str,
                     logger.info(f"User '{db_user}' created and granted privileges")
                 except Exception as user_error:
                     logger.warning(f"Failed to create user '{db_user}', using root user instead: {str(user_error)}")
-                    db_user = MYSQL_ROOT_USER
-                    db_password = MYSQL_ROOT_PASSWORD
+                    mysql_config = _get_mysql_config()
+                    db_user = mysql_config['user']
+                    db_password = mysql_config['password']
         except Exception as e:
             # Если ошибка при создании, пробуем удалить созданную БД
             try:
@@ -124,7 +162,7 @@ def create_bot_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str,
             cursor_panel.execute("""
                 INSERT OR REPLACE INTO bot_databases (bot_id, db_name, db_user, db_password, db_host, db_port)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (bot_id, db_name, db_user, db_password, MYSQL_HOST, MYSQL_PORT))
+            """, (bot_id, db_name, db_user, db_password, mysql_config['host'], mysql_config['port']))
             conn_panel.commit()
             conn_panel.close()
             logger.info(f"Database info saved to bot_databases table for bot {bot_id}")
@@ -139,13 +177,14 @@ def create_bot_database(bot_id: int, db_name: Optional[str] = None) -> Dict[str,
         except Exception:
             pass
         
-        return {
-            "db_name": db_name,
-            "db_user": db_user,
-            "db_password": db_password,
-            "host": MYSQL_HOST,
-            "port": MYSQL_PORT
-        }
+                mysql_config = _get_mysql_config()
+                return {
+                    "db_name": db_name,
+                    "db_user": db_user,
+                    "db_password": db_password,
+                    "host": mysql_config['host'],
+                    "port": mysql_config['port']
+                }
         
     except Exception as e:
         if conn:
@@ -407,12 +446,14 @@ def get_phpmyadmin_url(bot_id: int, db_name: Optional[str] = None) -> str:
             db_user = row['db_user']
             db_password = row['db_password']
         else:
-            # Fallback на root credentials
-            db_user = MYSQL_ROOT_USER
-            db_password = MYSQL_ROOT_PASSWORD
+            # Fallback на root credentials из настроек панели
+            mysql_config = _get_mysql_config()
+            db_user = mysql_config['user']
+            db_password = mysql_config['password']
     except Exception:
-        db_user = MYSQL_ROOT_USER
-        db_password = MYSQL_ROOT_PASSWORD
+        mysql_config = _get_mysql_config()
+        db_user = mysql_config['user']
+        db_password = mysql_config['password']
     
     # Формируем URL для phpMyAdmin с параметрами автологина
     url = f"{PHPMYADMIN_URL}/?pma_username={quote(db_user)}&pma_password={quote(db_password)}&server=1&db={quote(db_name)}"
