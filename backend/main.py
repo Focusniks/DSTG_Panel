@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File,
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 from pathlib import Path
@@ -33,6 +34,47 @@ from backend.ssh_manager import (
 )
 
 app = FastAPI(title="Bot Admin Panel")
+
+# Глобальный обработчик исключений для возврата JSON вместо HTML
+# Регистрируем после создания app, но до маршрутов
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Обработчик для HTTPException - всегда возвращаем JSON"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"HTTPException: {exc.status_code} - {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail if isinstance(exc.detail, str) else str(exc.detail)}
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Глобальный обработчик для всех необработанных исключений"""
+    import logging
+    import traceback
+    logger = logging.getLogger(__name__)
+    
+    # Логируем полную ошибку
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    
+    # Если это HTTPException (FastAPI), возвращаем как JSON
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail if isinstance(exc.detail, str) else str(exc.detail)}
+        )
+    
+    # Для всех остальных исключений возвращаем 500 с деталями
+    error_detail = str(exc) if str(exc) else "Внутренняя ошибка сервера"
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": error_detail,
+            "error_type": type(exc).__name__
+        }
+    )
 
 # Подключение статических файлов и шаблонов
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "frontend" / "static")), name="static")
@@ -209,7 +251,6 @@ async def create_bot_endpoint(bot_data: BotCreate):
         return {"id": bot_id, "success": True}
     except Exception as e:
         logger.error(f"Error creating bot: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка создания бота: {str(e)}")(f"Error creating bot: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка создания бота: {str(e)}")
 
 @app.get("/api/bots/{bot_id}")
@@ -1157,32 +1198,53 @@ async def get_panel_ssh_key():
     Получение информации о SSH ключе панели
     Включает публичный ключ, тип ключа, и другую информацию
     """
-    key_info = get_ssh_key_info()
+    import logging
+    logger = logging.getLogger(__name__)
     
-    if not key_info["exists"]:
-        # Попытка сгенерировать ключ, если его нет
-        success, msg = generate_ssh_key()
-        if success:
-            setup_ssh_config_for_github()
-            key_info = get_ssh_key_info()
-        else:
-            return {
-                "success": False,
-                "key_exists": False,
-                "error": msg,
-                "public_key": None,
-                **key_info
-            }
-    
-    return {
-        "success": True,
-        "key_exists": True,
-        "public_key": key_info["public_key"],
-        "key_type": key_info["key_type"],
-        "key_size": key_info["key_size"],
-        "ssh_available": key_info["ssh_available"],
-        "ssh_path": key_info["ssh_path"]
-    }
+    try:
+        key_info = get_ssh_key_info()
+        
+        if not key_info["exists"]:
+            # Попытка сгенерировать ключ, если его нет
+            logger.info("SSH key not found, attempting to generate...")
+            try:
+                success, msg = generate_ssh_key()
+                if success:
+                    try:
+                        setup_ssh_config_for_github()
+                    except Exception as config_error:
+                        logger.warning(f"Failed to setup SSH config: {config_error}")
+                    key_info = get_ssh_key_info()
+                else:
+                    return {
+                        "success": False,
+                        "key_exists": False,
+                        "error": msg,
+                        "public_key": None,
+                        **key_info
+                    }
+            except Exception as gen_error:
+                logger.error(f"Error generating SSH key: {gen_error}", exc_info=True)
+                return {
+                    "success": False,
+                    "key_exists": False,
+                    "error": f"Ошибка генерации ключа: {str(gen_error)}",
+                    "public_key": None,
+                    **key_info
+                }
+        
+        return {
+            "success": True,
+            "key_exists": True,
+            "public_key": key_info["public_key"],
+            "key_type": key_info["key_type"],
+            "key_size": key_info["key_size"],
+            "ssh_available": key_info["ssh_available"],
+            "ssh_path": key_info["ssh_path"]
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error in get_panel_ssh_key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка получения информации о SSH ключе: {str(e)}")
 
 @app.post("/api/panel/ssh-key/generate")
 async def generate_panel_ssh_key():
@@ -1191,30 +1253,52 @@ async def generate_panel_ssh_key():
     Перезаписывает существующий ключ если он есть
     """
     import time
+    import logging
+    logger = logging.getLogger(__name__)
     
-    success, message = generate_ssh_key(force=True)
-    if success:
-        setup_ssh_config_for_github()
-        time.sleep(0.1)
+    try:
+        logger.info("Starting SSH key generation...")
+        success, message = generate_ssh_key(force=True)
         
-        # Получаем информацию о новом ключе
-        key_info = get_ssh_key_info()
-        public_key = key_info.get("public_key")
-        
-        if not public_key:
-            time.sleep(0.2)
-            key_info = get_ssh_key_info()
-            public_key = key_info.get("public_key")
-        
-        return {
-            "success": True,
-            "message": "SSH ключ успешно сгенерирован" if "generated" in message.lower() or "успешно" in message.lower() else message,
-            "public_key": public_key,
-            "key_type": key_info.get("key_type"),
-            "key_size": key_info.get("key_size")
-        }
-    else:
-        raise HTTPException(status_code=500, detail=message)
+        if success:
+            logger.info(f"SSH key generated successfully: {message}")
+            try:
+                setup_ssh_config_for_github()
+            except Exception as config_error:
+                logger.warning(f"Failed to setup SSH config: {config_error}")
+            
+            time.sleep(0.1)
+            
+            # Получаем информацию о новом ключе
+            try:
+                key_info = get_ssh_key_info()
+                public_key = key_info.get("public_key")
+                
+                if not public_key:
+                    time.sleep(0.2)
+                    key_info = get_ssh_key_info()
+                    public_key = key_info.get("public_key")
+            except Exception as info_error:
+                logger.error(f"Failed to get key info: {info_error}")
+                # Пробуем получить публичный ключ напрямую
+                public_key = get_public_key()
+                key_info = {"key_type": None, "key_size": None}
+            
+            return {
+                "success": True,
+                "message": "SSH ключ успешно сгенерирован" if "generated" in message.lower() or "успешно" in message.lower() else message,
+                "public_key": public_key,
+                "key_type": key_info.get("key_type"),
+                "key_size": key_info.get("key_size")
+            }
+        else:
+            logger.error(f"SSH key generation failed: {message}")
+            raise HTTPException(status_code=500, detail=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in generate_panel_ssh_key: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка генерации SSH ключа: {str(e)}")
 
 
 @app.post("/api/panel/ssh-key/test")
@@ -1249,8 +1333,15 @@ async def test_panel_ssh_connection(host: str = Query(default="github.com")):
 @app.get("/api/panel/ssh-key/info")
 async def get_panel_ssh_key_info():
     """Получение детальной информации о SSH ключе"""
-    key_info = get_ssh_key_info()
-    return key_info
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        key_info = get_ssh_key_info()
+        return key_info
+    except Exception as e:
+        logger.error(f"Error getting SSH key info: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка получения информации о SSH ключе: {str(e)}")
 
 @app.post("/api/panel/change-password")
 async def change_password(request: Request, password_data: ChangePasswordRequest):
