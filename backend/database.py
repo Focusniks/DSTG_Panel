@@ -56,6 +56,9 @@ def init_database():
 def create_bot(name: str, bot_type: str, start_file: str = None, 
                cpu_limit: float = 50.0, memory_limit: int = 512,
                git_repo_url: str = None, git_branch: str = "main") -> int:
+    # Устанавливаем main.py по умолчанию, если start_file не указан
+    if not start_file:
+        start_file = 'main.py'
     """Создание нового бота"""
     from backend.config import BOTS_DIR
     import os

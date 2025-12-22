@@ -490,17 +490,18 @@ body::before {
 }
 
 .bot-card-new {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(26, 31, 53, 0.8) 100%);
+    border: 2px solid var(--border-color);
+    border-radius: 24px;
     overflow: hidden;
-    transition: all var(--anim-normal) ease;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
     position: relative;
     display: flex;
     flex-direction: column;
-    animation: fade-in 0.5s ease-out;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    animation: fade-in 0.6s ease-out;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(0, 243, 255, 0);
+    backdrop-filter: blur(10px);
 }
 
 .bot-card-new::before {
@@ -520,20 +521,47 @@ body::before {
 }
 
 .bot-card-new:hover {
-    transform: translateY(-8px);
+    transform: translateY(-12px) scale(1.02);
     border-color: var(--neon-cyan);
-    box-shadow: 0 8px 40px rgba(0, 243, 255, 0.4), var(--shadow-neon-cyan);
+    box-shadow: 
+        0 20px 60px rgba(0, 0, 0, 0.6),
+        0 0 0 2px rgba(0, 243, 255, 0.3),
+        var(--shadow-neon-cyan);
+    background: linear-gradient(135deg, rgba(26, 31, 53, 0.95) 0%, rgba(26, 31, 53, 0.85) 100%);
 }
 
 .bot-card-new-header {
     position: relative;
-    height: 80px;
-    background: linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(176, 38, 255, 0.1));
+    height: 100px;
+    background: linear-gradient(135deg, 
+        rgba(0, 243, 255, 0.15) 0%, 
+        rgba(176, 38, 255, 0.15) 50%,
+        rgba(0, 243, 255, 0.1) 100%);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
+    padding: 1.25rem 1.75rem;
+    border-bottom: 2px solid rgba(0, 243, 255, 0.2);
+    overflow: hidden;
+}
+
+.bot-card-new-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(255, 255, 255, 0.1), 
+        transparent);
+    animation: shimmer-header 3s infinite;
+}
+
+@keyframes shimmer-header {
+    0% { left: -100%; }
+    100% { left: 100%; }
 }
 
 .bot-card-new-status-indicator {
@@ -562,9 +590,17 @@ body::before {
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
-.bot-card-new-status-indicator.error {
+.bot-card-new-status-indicator.error,
+.bot-card-new-status-indicator.error_startup {
     background: var(--neon-pink);
     box-shadow: 0 0 15px var(--neon-pink);
+    animation: glow-pulse 1s ease-in-out infinite;
+}
+
+.bot-card-new-status-indicator.starting,
+.bot-card-new-status-indicator.restarting {
+    background: var(--neon-cyan);
+    box-shadow: 0 0 15px var(--neon-cyan);
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
@@ -591,22 +627,31 @@ body::before {
 }
 
 .bot-card-new-body {
-    padding: 1.5rem;
+    padding: 2rem 1.75rem;
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.25rem;
+    background: rgba(0, 0, 0, 0.2);
 }
 
 .bot-card-new-title {
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: 1.75rem;
+    font-weight: 800;
     color: var(--text-primary);
     margin: 0;
-    background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+    background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple), var(--neon-pink));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    background-size: 200% 200%;
+    animation: gradient-shift 3s ease infinite;
+    text-shadow: 0 0 30px rgba(0, 243, 255, 0.3);
+}
+
+@keyframes gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
 }
 
 .bot-card-new-status {
@@ -642,9 +687,17 @@ body::before {
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
-.status-indicator-dot.error {
+.status-indicator-dot.error,
+.status-indicator-dot.error_startup {
     background: var(--neon-pink);
     box-shadow: 0 0 10px var(--neon-pink);
+    animation: glow-pulse 1s ease-in-out infinite;
+}
+
+.status-indicator-dot.starting,
+.status-indicator-dot.restarting {
+    background: var(--neon-cyan);
+    box-shadow: 0 0 10px var(--neon-cyan);
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
@@ -774,12 +827,13 @@ body::before {
 }
 
 .bot-card-new-footer {
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
+    padding: 1.25rem 1.75rem;
+    border-top: 2px solid rgba(0, 243, 255, 0.2);
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(21, 27, 46, 0.8) 100%);
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
+    backdrop-filter: blur(5px);
 }
 
 .bot-card-new-btn {
@@ -837,6 +891,18 @@ body::before {
 .bot-card-new-btn.btn-stop:hover:not(:disabled) {
     background: rgba(255, 107, 53, 0.25);
     box-shadow: 0 0 15px rgba(255, 107, 53, 0.4);
+    transform: translateY(-2px);
+}
+
+.bot-card-new-btn.btn-restart {
+    background: rgba(0, 243, 255, 0.15);
+    border: 1px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+}
+
+.bot-card-new-btn.btn-restart:hover:not(:disabled) {
+    background: rgba(0, 243, 255, 0.25);
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.4);
     transform: translateY(-2px);
 }
 
@@ -1260,10 +1326,19 @@ body::before {
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
-.bot-status.error {
+.bot-status.error,
+.bot-status.error_startup {
     background: var(--neon-pink);
     color: var(--neon-pink);
     box-shadow: 0 0 15px var(--neon-pink);
+    animation: glow-pulse 1s ease-in-out infinite;
+}
+
+.bot-status.starting,
+.bot-status.restarting {
+    background: var(--neon-cyan);
+    color: var(--neon-cyan);
+    box-shadow: 0 0 15px var(--neon-cyan);
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
@@ -1303,11 +1378,21 @@ body::before {
     animation: glow-pulse 1s ease-in-out infinite;
 }
 
-.status-badge.error {
+.status-badge.error,
+.status-badge.error_startup {
     background: rgba(255, 0, 110, 0.15);
     border: 1px solid var(--neon-pink);
     color: var(--neon-pink);
     box-shadow: 0 0 10px rgba(255, 0, 110, 0.3);
+    animation: glow-pulse 1s ease-in-out infinite;
+}
+
+.status-badge.starting,
+.status-badge.restarting {
+    background: rgba(0, 243, 255, 0.15);
+    border: 1px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
     animation: glow-pulse 1s ease-in-out infinite;
 }
 

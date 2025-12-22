@@ -74,7 +74,7 @@ function renderBotsList(bots) {
                         
                         <div class="bot-card-new-status">
                             <span class="status-indicator-dot ${bot.status}"></span>
-                            <span class="status-text">${bot.status === 'running' ? 'Запущен' : bot.status === 'installing' ? 'Установка зависимостей' : bot.status === 'error' ? 'Ошибка' : 'Остановлен'}</span>
+                            <span class="status-text">${getStatusText(bot.status || 'stopped')}</span>
                         </div>
                         
                         ${bot.start_file ? `
@@ -130,14 +130,18 @@ function renderBotsList(bots) {
                             <span>Управление</span>
                         </button>
                         ${bot.status === 'running' 
-                            ? `<button class="bot-card-new-btn btn-stop" onclick="stopBot(${bot.id})" title="Остановить">
+                            ? `<button class="bot-card-new-btn btn-restart" onclick="restartBot(${bot.id})" title="Перезагрузить">
+                                 <i class="fas fa-redo"></i>
+                                 <span>Перезагрузить</span>
+                               </button>
+                               <button class="bot-card-new-btn btn-stop" onclick="stopBot(${bot.id})" title="Остановить">
                                  <i class="fas fa-stop"></i>
                                  <span>Остановить</span>
                                </button>`
-                            : bot.status === 'installing'
-                                ? `<button class="bot-card-new-btn btn-installing" disabled title="Установка зависимостей">
+                            : ['starting', 'restarting', 'installing'].includes(bot.status)
+                                ? `<button class="bot-card-new-btn btn-installing" disabled title="${getStatusText(bot.status)}">
                                      <i class="fas fa-spinner fa-spin"></i>
-                                     <span>Установка</span>
+                                     <span>${getStatusText(bot.status)}</span>
                                    </button>`
                                 : `<button class="bot-card-new-btn btn-start" onclick="startBot(${bot.id})" title="Запустить">
                                      <i class="fas fa-play"></i>
@@ -260,6 +264,36 @@ function showConfirm(title, message, onConfirm, confirmBtnClass = 'btn-danger') 
         
         modal.show();
     });
+}
+
+// Перезапуск бота
+async function restartBot(botId) {
+    const confirmed = await showConfirm('Перезапуск бота', 'Вы уверены, что хотите перезагрузить этого бота?', null, 'btn-info');
+    if (!confirmed) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/bots/${botId}/restart`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) {
+            let errorMsg = 'Неизвестная ошибка';
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.detail || errorData.error || errorMsg;
+            } catch (e) {
+                errorMsg = 'Ошибка соединения с сервером';
+            }
+            showAlert('Ошибка перезапуска бота: ' + errorMsg, 'danger');
+            return;
+        }
+        
+        showAlert('Бот перезагружается...', 'info');
+        setTimeout(() => loadBots(), 2000);
+    } catch (error) {
+        console.error('Restart bot error:', error);
+        showAlert('Ошибка перезапуска бота', 'danger');
+    }
 }
 
 // Запуск бота

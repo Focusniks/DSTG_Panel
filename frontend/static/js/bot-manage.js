@@ -298,24 +298,31 @@
             
             const status = await response.json();
             
-            // Определяем статус бота
-            let botStatus = 'stopped';
-            if (status.running) {
+            // Определяем статус бота из API - используем статус из status или из bot
+            let botStatus = status.status || bot.status || 'stopped';
+            // Если бот запущен, но статус не установлен, устанавливаем running
+            if (status.running && !['starting', 'restarting', 'installing', 'error', 'error_startup'].includes(botStatus)) {
                 botStatus = 'running';
-            } else if (status.status === 'installing') {
-                botStatus = 'installing';
+            }
+            
+            // Функция для получения текста статуса
+            function getStatusText(status) {
+                const statusMap = {
+                    'running': 'Запущен',
+                    'stopped': 'Остановлен',
+                    'starting': 'Запускается...',
+                    'restarting': 'Перезагрузка...',
+                    'installing': 'Установка зависимостей...',
+                    'error': 'Ошибка',
+                    'error_startup': 'Ошибка запуска'
+                };
+                return statusMap[status] || 'Неизвестно';
             }
             
             // Статус
             const statusText = document.getElementById('bot-status-text');
             if (statusText) {
-                if (botStatus === 'running') {
-                    statusText.textContent = 'Запущен';
-                } else if (botStatus === 'installing') {
-                    statusText.textContent = 'Установка зависимостей...';
-                } else {
-                    statusText.textContent = 'Остановлен';
-                }
+                statusText.textContent = getStatusText(botStatus);
             }
             
             const statusIndicator = document.getElementById('bot-status-indicator');
@@ -326,15 +333,23 @@
             // Кнопки
             const startBtn = document.getElementById('start-bot-btn');
             const stopBtn = document.getElementById('stop-bot-btn');
+            const restartBtn = document.getElementById('restart-bot-btn');
+            
+            const isBusy = ['starting', 'restarting', 'installing'].includes(botStatus);
             
             if (startBtn) {
-                startBtn.disabled = status.running || botStatus === 'installing';
-                startBtn.style.display = (status.running || botStatus === 'installing') ? 'none' : 'inline-block';
+                startBtn.disabled = status.running || isBusy;
+                startBtn.style.display = (status.running || isBusy) ? 'none' : 'inline-block';
+            }
+            
+            if (restartBtn) {
+                restartBtn.disabled = !status.running || isBusy;
+                restartBtn.style.display = (status.running && !isBusy) ? 'inline-block' : 'none';
             }
             
             if (stopBtn) {
-                stopBtn.disabled = !status.running || botStatus === 'installing';
-                stopBtn.style.display = (status.running && botStatus !== 'installing') ? 'inline-block' : 'none';
+                stopBtn.disabled = !status.running || isBusy;
+                stopBtn.style.display = (status.running && !isBusy) ? 'inline-block' : 'none';
             }
             
             // Метрики
@@ -465,6 +480,35 @@
         
         const confirmed = await showConfirm('Остановка бота', 'Вы уверены, что хотите остановить этого бота?', 'btn-warning');
         if (!confirmed) return;
+        
+        const restartBtn = document.getElementById('restart-bot-btn');
+        if (restartBtn) {
+            restartBtn.addEventListener('click', async () => {
+                if (!confirm('Вы уверены, что хотите перезагрузить бота?')) return;
+                
+                restartBtn.disabled = true;
+                restartBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Перезагрузка...';
+                
+                try {
+                    const response = await fetch(`${API_BASE}/bots/${botId}/restart`, {
+                        method: 'POST'
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Ошибка перезагрузки бота');
+                    }
+                    
+                    showSuccess('Бот перезагружается...');
+                    setTimeout(() => loadBotStatus(), 2000);
+                } catch (error) {
+                    showError('Ошибка перезагрузки бота: ' + error.message);
+                } finally {
+                    restartBtn.disabled = false;
+                    restartBtn.innerHTML = '<i class="fas fa-redo"></i> Перезагрузить';
+                }
+            });
+        }
         
         const btn = document.getElementById('stop-bot-btn');
         if (btn) btn.disabled = true;

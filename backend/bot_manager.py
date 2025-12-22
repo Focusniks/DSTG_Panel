@@ -35,13 +35,14 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
             branch = bot.get('git_branch', 'main')
             success, message = update_bot_from_git(bot_dir, repo_url, branch)
     
-    start_file = bot['start_file']
-    if not start_file:
-        return (False, "Start file not specified")
+    start_file = bot.get('start_file') or 'main.py'
     
     start_file_path = bot_dir / start_file
     if not start_file_path.exists():
         return (False, f"Start file not found: {start_file}")
+    
+    # Устанавливаем статус "запускается"
+    update_bot(bot_id, status='starting')
     
     # Автоматически устанавливаем зависимости из requirements.txt
     requirements_file = bot_dir / "requirements.txt"
@@ -50,12 +51,11 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
         try:
             success = install_dependencies(str(bot_dir))
             if not success:
-                update_bot(bot_id, status='stopped')
+                update_bot(bot_id, status='error_startup')
                 return (False, "Failed to install dependencies from requirements.txt")
-            update_bot(bot_id, status='stopped')
         except Exception as e:
             error_msg = str(e)
-            update_bot(bot_id, status='stopped')
+            update_bot(bot_id, status='error_startup')
             return (False, f"Error installing dependencies: {error_msg}")
     
     # Определяем команду запуска в зависимости от типа файла
@@ -186,7 +186,7 @@ def start_bot(bot_id: int) -> Tuple[bool, Optional[str]]:
         return (True, None)
     except Exception as e:
         error_msg = str(e)
-        update_bot(bot_id, status='error', pid=None)
+        update_bot(bot_id, status='error_startup', pid=None)
         return (False, error_msg)
 
 def stop_bot(bot_id: int) -> bool:

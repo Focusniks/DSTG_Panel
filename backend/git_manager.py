@@ -151,15 +151,6 @@ class GitRepository:
         try:
             env = get_git_env_with_ssh()
             
-            # Сохраняем локальные изменения
-            subprocess.run(
-                [self.git_cmd, "stash"],
-                cwd=self.path,
-                env=env,
-                capture_output=True,
-                timeout=30
-            )
-            
             # Получаем изменения
             result = subprocess.run(
                 [self.git_cmd, "pull", "origin", self.branch],

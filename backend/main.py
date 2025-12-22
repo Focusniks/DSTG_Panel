@@ -867,12 +867,11 @@ async def start_bot_endpoint(bot_id: int):
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
     
-    # Проверяем наличие стартового файла
-    if not bot.get('start_file'):
-        raise HTTPException(status_code=400, detail="Start file not specified")
+    # Используем main.py по умолчанию, если стартовый файл не указан
+    start_file = bot.get('start_file') or 'main.py'
     
     from pathlib import Path
-    start_file_path = Path(bot['bot_dir']) / bot['start_file']
+    start_file_path = Path(bot['bot_dir']) / start_file
     if not start_file_path.exists():
         raise HTTPException(status_code=400, detail=f"Start file not found: {bot['start_file']}")
     
@@ -916,6 +915,36 @@ async def start_bot_endpoint(bot_id: int):
     
     return {"success": True}
 
+@app.post("/api/bots/{bot_id}/restart")
+async def restart_bot_endpoint(bot_id: int):
+    """Перезапуск бота"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Устанавливаем статус "перезагрузка"
+    update_bot(bot_id, status='restarting')
+    
+    # Останавливаем бота, если запущен
+    if bot.get('status') == 'running' and bot.get('pid'):
+        stop_bot(bot_id)
+        import time
+        time.sleep(1)  # Небольшая задержка перед запуском
+    
+    # Запускаем бота
+    result = start_bot(bot_id)
+    if isinstance(result, tuple):
+        success, error_msg = result
+    else:
+        success = result
+        error_msg = None
+    
+    if not success:
+        error_detail = error_msg if error_msg else "Failed to restart bot"
+        raise HTTPException(status_code=500, detail=error_detail)
+    
+    return {"success": True}
+
 @app.post("/api/bots/{bot_id}/stop")
 async def stop_bot_endpoint(bot_id: int):
     bot = get_bot(bot_id)
@@ -935,11 +964,12 @@ async def get_bot_status(bot_id: int):
     
     bot_status = bot.get('status', 'stopped')
     
-    # Если статус installing, возвращаем его сразу
-    if bot_status == 'installing':
+    # Возвращаем статус из базы данных
+    # Если статус installing, starting, restarting, error, error_startup - возвращаем его сразу
+    if bot_status in ['installing', 'starting', 'restarting', 'error', 'error_startup']:
         return {
             "running": False,
-            "status": "installing",
+            "status": bot_status,
             "cpu_percent": None,
             "memory_mb": None,
             "pid": None
@@ -1048,15 +1078,13 @@ async def get_bot_git_status(bot_id: int):
     
     # Добавляем дополнительную информацию
     if status.get("is_repo"):
-        # Проверяем, можно ли использовать SSH
+        status["current_branch"] = status.get("branch") or branch
+        status["repo_url"] = repo_url
         if repo_url:
-            normalized_url, is_ssh = repo.normalize_url(repo_url, prefer_ssh=True)
-            can_use_ssh, ssh_error = repo.can_use_ssh(normalized_url) if is_ssh else (False, None)
-            status["ssh_available"] = is_ssh and can_use_ssh
-            status["ssh_error"] = ssh_error if not can_use_ssh else None
-            status["repo_url"] = repo_url
-            status["normalized_url"] = normalized_url
-            status["using_ssh"] = is_ssh
+            status["normalized_url"] = convert_https_to_ssh(repo_url)
+            status["using_ssh"] = True
+    else:
+        status["current_branch"] = branch if branch else "N/A"
     
     return status
 
@@ -1585,6 +1613,37 @@ async def change_password(request: Request, password_data: ChangePasswordRequest
         raise HTTPException(status_code=500, detail="Ошибка при сохранении нового пароля")
 
 # Инициализация при старте приложения
+async def monitor_bots():
+    """Фоновая задача для мониторинга и автоперезапуска ботов"""
+    import asyncio
+    from backend.bot_manager import is_process_running, start_bot
+    
+    while True:
+        try:
+            await asyncio.sleep(30)  # Проверяем каждые 30 секунд
+            
+            bots = get_all_bots()
+            for bot in bots:
+                if bot['status'] == 'running' and bot['pid']:
+                    # Проверяем, действительно ли процесс запущен
+                    if not is_process_running(bot['pid']):
+                        logger.warning(f"Bot {bot['id']} ({bot['name']}) crashed, attempting auto-restart...")
+                        # Обновляем статус
+                        update_bot(bot['id'], pid=None, status='stopped')
+                        # Пытаемся перезапустить
+                        try:
+                            success, error = start_bot(bot['id'])
+                            if success:
+                                logger.info(f"Bot {bot['id']} ({bot['name']}) auto-restarted successfully")
+                            else:
+                                logger.error(f"Failed to auto-restart bot {bot['id']}: {error}")
+                                update_bot(bot['id'], status='error')
+                        except Exception as e:
+                            logger.error(f"Exception during auto-restart of bot {bot['id']}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error in bot monitor: {e}", exc_info=True)
+            await asyncio.sleep(60)  # При ошибке ждем дольше
+
 @app.on_event("startup")
 async def startup_event():
     """Восстановление состояния ботов при запуске панели"""
@@ -1625,6 +1684,11 @@ async def startup_event():
             remote = get_git_remote(BASE_DIR)
             if remote != PANEL_REPO_URL:
                 set_git_remote(BASE_DIR, PANEL_REPO_URL)
+    
+    # Запускаем фоновую задачу для мониторинга и автоперезапуска ботов
+    import asyncio
+    asyncio.create_task(monitor_bots())
+    logger.info("Bot monitoring task started")
 
 if __name__ == "__main__":
     import uvicorn

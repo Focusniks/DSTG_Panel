@@ -839,15 +839,23 @@ def test_ssh_connection(host: str = "github.com") -> Tuple[bool, str]:
         
         # GitHub возвращает код 1 при успешном подключении с сообщением
         # GitLab и другие могут возвращать 0
-        if result.returncode in [0, 1]:
-            # Проверяем, что это не ошибка аутентификации
-            if "Permission denied" in result.stderr or "denied" in result.stderr.lower():
-                return False, "Ошибка аутентификации. Проверьте, что SSH ключ добавлен в ваш аккаунт."
-            
-            # Успешное подключение
+        # Проверяем вывод, а не только код возврата
+        output = (result.stdout + result.stderr).lower()
+        
+        # Проверяем на ошибки аутентификации
+        if "permission denied" in output or "denied" in output or "authentication failed" in output:
+            return False, "Ошибка аутентификации. Проверьте, что SSH ключ добавлен в ваш аккаунт."
+        
+        # Проверяем на успешные ответы от Git хостов
+        success_indicators = ["hi", "successfully authenticated", "welcome", "you've successfully authenticated"]
+        if any(indicator in output for indicator in success_indicators):
             return True, f"SSH подключение к {host} успешно"
         
-        return False, f"Ошибка подключения: {result.stderr or 'Неизвестная ошибка'}"
+        # Если код возврата 0 или 1 и нет ошибок - считаем успешным
+        if result.returncode in [0, 1]:
+            return True, f"SSH подключение к {host} успешно"
+        
+        return False, f"Ошибка подключения: {result.stderr or result.stdout or 'Неизвестная ошибка'}"
         
     except subprocess.TimeoutExpired:
         return False, "Превышено время ожидания при подключении"
