@@ -64,10 +64,16 @@ SESSION_COOKIE_NAME = "panel_session"
 SESSION_COOKIE_MAX_AGE = 86400  # 24 часа
 
 # Настройки MySQL для ботов
+# Можно указать пароль напрямую здесь (измените значение ниже)
+# Или через переменную окружения MYSQL_ROOT_PASSWORD (имеет приоритет)
+_DEFAULT_MYSQL_ROOT_PASSWORD = ""  # УКАЖИТЕ ЗДЕСЬ ВАШ ПАРОЛЬ MySQL root, например: "мой_пароль_123"
+
 MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_ROOT_USER = os.getenv("MYSQL_ROOT_USER", "root")
-MYSQL_ROOT_PASSWORD = os.getenv("MYSQL_ROOT_PASSWORD", "")
+# Используем переменную окружения, если она установлена, иначе значение из конфига
+_env_password = os.getenv("MYSQL_ROOT_PASSWORD")
+MYSQL_ROOT_PASSWORD = _env_password if _env_password is not None else _DEFAULT_MYSQL_ROOT_PASSWORD
 MYSQL_PREFIX = os.getenv("MYSQL_PREFIX", "bot_")  # Префикс для имен БД ботов
 
 # Настройки phpMyAdmin (опционально)

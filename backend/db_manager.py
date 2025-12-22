@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 def get_mysql_connection(db_name: Optional[str] = None) -> pymysql.Connection:
     """Получение соединения с MySQL"""
     try:
-        logger.info(f"Connecting to MySQL: host={MYSQL_HOST}, port={MYSQL_PORT}, user={MYSQL_ROOT_USER}, database={db_name}")
+        # Логируем подключение без пароля (для безопасности)
+        password_set = "YES" if MYSQL_ROOT_PASSWORD else "NO"
+        logger.info(f"Connecting to MySQL: host={MYSQL_HOST}, port={MYSQL_PORT}, user={MYSQL_ROOT_USER}, database={db_name}, using_password={password_set}")
         connection = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
