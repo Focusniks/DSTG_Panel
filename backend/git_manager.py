@@ -197,6 +197,23 @@ class GitRepository:
             )
             branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
             
+            # Если ветка не определена, пробуем другой способ
+            if not branch or branch == "":
+                # Пробуем получить ветку через symbolic-ref
+                branch_result2 = subprocess.run(
+                    [self.git_cmd, "symbolic-ref", "--short", "HEAD"],
+                    cwd=self.path,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                branch = branch_result2.stdout.strip() if branch_result2.returncode == 0 else None
+            
+            # Если все еще не определена, используем self.branch
+            if not branch or branch == "":
+                branch = self.branch
+            
             # Последний коммит
             commit_result = subprocess.run(
                 [self.git_cmd, "rev-parse", "HEAD"],
@@ -233,7 +250,7 @@ class GitRepository:
             return {
                 "is_repo": True,
                 "branch": branch,
-                "current_branch": branch or self.branch,
+                "current_branch": branch,
                 "commit": commit,
                 "remote": remote,
                 "has_changes": has_changes,
