@@ -2046,6 +2046,65 @@ body::before {
     border-left-color: var(--neon-cyan);
 }
 
+.toast-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.toast-icon i {
+    color: inherit;
+}
+
+.toast-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.toast-title {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+}
+
+.toast-message {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.toast-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    transition: all var(--anim-normal) ease;
+    opacity: 0.7;
+}
+
+.toast-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    opacity: 1;
+    transform: rotate(90deg);
+}
+
+.toast-close i {
+    font-size: 0.875rem;
+}
+
+.toast-notification.hiding {
+    animation: slide-out-right 0.3s ease-out forwards;
+}
+
 @keyframes slide-in-right {
     from {
         transform: translateX(100%);
@@ -2054,6 +2113,17 @@ body::before {
     to {
         transform: translateX(0);
         opacity: 1;
+    }
+}
+
+@keyframes slide-out-right {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
     }
 }
 
@@ -2181,6 +2251,17 @@ body::before {
 .databases-list-header h5 i,
 .database-sql-header h5 i {
     color: var(--neon-cyan);
+}
+
+.database-create-body .col-md-4 {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding-top: 1.75rem; /* Компенсируем высоту label */
+}
+
+.database-create-body .col-md-4 button {
+    margin-top: 0;
 }
 
 .databases-list-container {
