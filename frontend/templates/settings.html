@@ -325,23 +325,27 @@
             try {
                 for (const host of hosts) {
                     try {
-                        const response = await fetch(`/api/panel/ssh-key/test?host=${encodeURIComponent(host)}`, {
-                            method: 'POST'
+                        const response = await fetch('/api/panel/ssh-key/test', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ host: host })
                         });
                         
                         if (response.ok) {
                             const result = await response.json();
+                            // Проверяем поле success в ответе
                             results.push({
                                 host: host,
-                                success: result.success,
-                                message: result.message
+                                success: result.success === true,
+                                message: result.message || (result.success ? 'Подключение успешно' : 'Ошибка подключения')
                             });
                         } else {
+                            // Если статус не 200, пробуем прочитать ошибку
                             const error = await response.json().catch(() => ({ detail: 'Ошибка подключения' }));
                             results.push({
                                 host: host,
                                 success: false,
-                                message: error.detail || 'Ошибка подключения'
+                                message: error.detail || error.message || 'Ошибка подключения'
                             });
                         }
                     } catch (error) {
@@ -398,23 +402,23 @@
                 
                 if (response.ok) {
                     const data = await response.json();
-                    if (data.success) {
+                    if (data.success === true) {
                         showAlert('SSH ключ успешно сгенерирован!', 'success');
                         // Используем ключ из ответа API для немедленного отображения
-                        // и затем перезагружаем для синхронизации
                         if (data.public_key) {
                             updateSSHKeyDisplay(data.public_key);
+                        } else {
+                            // Если ключ не в ответе, перезагружаем через небольшую задержку
+                            setTimeout(() => {
+                                loadSSHKey();
+                            }, 500);
                         }
-                        // Дополнительно перезагружаем через небольшую задержку
-                        setTimeout(() => {
-                            loadSSHKey();
-                        }, 200);
                     } else {
                         showAlert('Ошибка генерации ключа: ' + (data.message || 'Unknown error'), 'danger');
                     }
                 } else {
-                    const error = await response.json();
-                    showAlert('Ошибка: ' + (error.detail || 'Unknown error'), 'danger');
+                    const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }));
+                    showAlert('Ошибка: ' + (error.detail || error.message || 'Unknown error'), 'danger');
                 }
             } catch (error) {
                 console.error('Error generating SSH key:', error);

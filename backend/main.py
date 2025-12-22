@@ -1371,61 +1371,113 @@ async def generate_panel_ssh_key():
     
     try:
         logger.info("Starting SSH key generation...")
+        
+        # Генерируем ключ
         success, message = generate_ssh_key(force=True)
         
-        if success:
-            logger.info(f"SSH key generated successfully: {message}")
-            try:
-                setup_ssh_config_for_github()
-            except Exception as config_error:
-                logger.warning(f"Failed to setup SSH config: {config_error}")
-            
-            time.sleep(0.1)
-            
-            # Получаем информацию о новом ключе
+        if not success:
+            logger.error(f"SSH key generation failed: {message}")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": False,
+                    "message": message,
+                    "public_key": None,
+                    "key_type": None,
+                    "key_size": None
+                }
+            )
+        
+        logger.info(f"SSH key generated successfully: {message}")
+        
+        # Настраиваем SSH config
+        try:
+            setup_ssh_config_for_github()
+        except Exception as config_error:
+            logger.warning(f"Failed to setup SSH config: {config_error}")
+        
+        # Даем время файловой системе обновиться
+        time.sleep(0.2)
+        
+        # Получаем информацию о новом ключе
+        public_key = None
+        key_type = None
+        key_size = None
+        
+        # Пробуем несколько раз получить ключ
+        for attempt in range(3):
             try:
                 key_info = get_ssh_key_info()
                 public_key = key_info.get("public_key")
+                key_type = key_info.get("key_type")
+                key_size = key_info.get("key_size")
                 
-                if not public_key:
-                    time.sleep(0.2)
-                    key_info = get_ssh_key_info()
-                    public_key = key_info.get("public_key")
+                if public_key:
+                    break
+                    
+                time.sleep(0.1)
             except Exception as info_error:
-                logger.error(f"Failed to get key info: {info_error}")
-                # Пробуем получить публичный ключ напрямую
-                public_key = get_public_key()
-                key_info = {"key_type": None, "key_size": None}
-            
-            return {
-                "success": True,
-                "message": "SSH ключ успешно сгенерирован" if "generated" in message.lower() or "успешно" in message.lower() else message,
-                "public_key": public_key,
-                "key_type": key_info.get("key_type"),
-                "key_size": key_info.get("key_size")
-            }
-        else:
-            logger.error(f"SSH key generation failed: {message}")
-            raise HTTPException(status_code=500, detail=message)
-    except HTTPException:
-        raise
+                logger.warning(f"Attempt {attempt + 1} to get key info failed: {info_error}")
+                if attempt == 2:
+                    # Последняя попытка - пробуем напрямую
+                    try:
+                        public_key = get_public_key()
+                    except:
+                        pass
+        
+        if not public_key:
+            logger.warning("Could not read public key after generation, but generation was successful")
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": True,
+                    "message": "SSH ключ сгенерирован, но не удалось прочитать публичный ключ. Попробуйте обновить страницу.",
+                    "public_key": None,
+                    "key_type": None,
+                    "key_size": None
+                }
+            )
+        
+        return {
+            "success": True,
+            "message": "SSH ключ успешно сгенерирован",
+            "public_key": public_key,
+            "key_type": key_type,
+            "key_size": key_size
+        }
+        
     except Exception as e:
         logger.error(f"Unexpected error in generate_panel_ssh_key: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка генерации SSH ключа: {str(e)}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "message": f"Ошибка генерации SSH ключа: {str(e)}",
+                "public_key": None,
+                "key_type": None,
+                "key_size": None
+            }
+        )
 
+
+class TestSSHRequest(BaseModel):
+    host: str = "github.com"
 
 @app.post("/api/panel/ssh-key/test")
-async def test_panel_ssh_connection(host: str = Query(default="github.com")):
+async def test_panel_ssh_connection(request: TestSSHRequest):
     """
     Тестирование SSH подключения к Git хосту
     
     Args:
-        host: Хост для тестирования (по умолчанию github.com)
+        request: Объект с полем host (по умолчанию github.com)
     """
     import logging
     logger = logging.getLogger(__name__)
     
     try:
+        host = request.host or "github.com"
+        logger.info(f"Testing SSH connection to {host}")
+        
         success, message = test_ssh_connection(host)
         
         if success:
@@ -1435,12 +1487,25 @@ async def test_panel_ssh_connection(host: str = Query(default="github.com")):
                 "host": host
             }
         else:
-            raise HTTPException(status_code=500, detail=message)
-    except HTTPException:
-        raise
+            # Возвращаем ошибку, но не как HTTPException, а как JSON с success=False
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "success": False,
+                    "message": message,
+                    "host": host
+                }
+            )
     except Exception as e:
         logger.error(f"Error testing SSH connection: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Ошибка тестирования SSH: {str(e)}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "message": f"Ошибка тестирования SSH: {str(e)}",
+                "host": request.host if hasattr(request, 'host') else "unknown"
+            }
+        )
 
 
 @app.get("/api/panel/ssh-key/info")
