@@ -142,11 +142,11 @@ class GitRepository:
             "git",
         ]
         
-        if os.name != 'nt':
+    if os.name != 'nt':
             candidates.extend([
-                "/usr/bin/git",
-                "/usr/local/bin/git",
-                "/bin/git"
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
             ])
         
         for candidate in candidates:
@@ -172,29 +172,29 @@ class GitRepository:
         return self.git_cmd is not None
     
     def is_repo(self) -> bool:
-        """Проверка, является ли директория Git репозиторием"""
+    """Проверка, является ли директория Git репозиторием"""
         return is_git_repo(self.path)
-    
+
     def _get_remote_url(self) -> Optional[str]:
-        """Получение URL удаленного репозитория"""
+    """Получение URL удаленного репозитория"""
         if not self.git_cmd or not is_git_repo(self.path):
             return None
         
-        try:
-            result = subprocess.run(
+    try:
+        result = subprocess.run(
                 [self.git_cmd, "remote", "get-url", "origin"],
                 cwd=self.path,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except Exception:
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
             pass
         
         return None
-    
+
     def clone(self, repo_url: str, branch: str = "main") -> Tuple[bool, str]:
         """
         Клонирование репозитория с автоматическим выбором протокола (HTTPS/SSH)
@@ -314,14 +314,14 @@ class GitRepository:
                     clone_url = original_https_url
                     env = self._get_https_env()
                     logger.info(f"Повторная попытка через HTTPS: {clone_url}")
-                    result = subprocess.run(
+            result = subprocess.run(
                         [self.git_cmd, "clone", "-b", branch, "--single-branch", clone_url, str(temp_dir)],
-                        capture_output=True,
-                        text=True,
+                capture_output=True,
+                text=True,
                         timeout=600,
                         env=env
-                    )
-                    if result.returncode == 0:
+            )
+        if result.returncode == 0:
                         logger.info("Клонирование через HTTPS успешно после ошибки SSH")
                     else:
                         error_msg = result.stderr or result.stdout or "Unknown error"
@@ -336,11 +336,11 @@ class GitRepository:
             # Клонирование успешно, перемещаем файлы
             return self._move_cloned_files(temp_dir)
             
-        except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired:
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             return (False, "Таймаут при клонировании репозитория")
-        except Exception as e:
+    except Exception as e:
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             logger.error(f"Ошибка клонирования репозитория: {e}", exc_info=True)
@@ -511,16 +511,16 @@ class GitRepository:
                         logger.warning(f"Не удалось сохранить игнорируемый файл {ignored_file}: {backup_error}")
             
             # Получаем изменения
-            result = subprocess.run(
+        result = subprocess.run(
                 [self.git_cmd, "pull", "origin", self.branch],
                 cwd=self.path,
                 env=env,
-                capture_output=True,
-                text=True,
+            capture_output=True,
+            text=True,
                 timeout=300
-            )
+        )
             
-            if result.returncode == 0:
+        if result.returncode == 0:
                 # Восстанавливаем игнорируемые файлы
                 if backup_dir and backup_dir.exists():
                     logger.info("Восстановление игнорируемых файлов из .gitignore...")
@@ -572,9 +572,9 @@ class GitRepository:
                             pass
                     try:
                         shutil.rmtree(backup_dir)
-                    except Exception:
-                        pass
-                
+    except Exception:
+        pass
+    
                 error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
                 return (False, f"Ошибка Git pull: {error_msg}")
         except subprocess.TimeoutExpired:
@@ -586,8 +586,8 @@ class GitRepository:
     def get_status(self) -> Dict[str, Any]:
         """Получение статуса репозитория"""
         if not self.git_cmd or not is_git_repo(self.path):
-            return {
-                "is_repo": False,
+        return {
+            "is_repo": False,
                 "branch": None,
                 "commit": None,
                 "last_commit": None,
@@ -641,10 +641,10 @@ class GitRepository:
                         [self.git_cmd, "log", "-1", "--pretty=format:%s", "HEAD"],
                         cwd=self.path,
                         env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
                     if message_result.returncode == 0:
                         commit_message = message_result.stdout.strip()
                     
@@ -653,17 +653,17 @@ class GitRepository:
                         [self.git_cmd, "log", "-1", "--pretty=format:%ci", "HEAD"],
                         cwd=self.path,
                         env=env,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
                     if date_result.returncode == 0:
                         commit_date = date_result.stdout.strip()
                 except Exception as e:
                     logger.warning(f"Не удалось получить детали коммита: {e}")
             
             # Формируем объект last_commit для фронтенда
-            last_commit = None
+        last_commit = None
             if commit_hash:
                 last_commit = {
                     "hash": commit_hash,
@@ -687,19 +687,35 @@ class GitRepository:
                 [self.git_cmd, "status", "--porcelain"],
                 cwd=self.path,
                 env=env,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
             has_changes = bool(status_result.stdout.strip()) if status_result.returncode == 0 else False
             
             # Проверяем наличие обновлений в удаленном репозитории
-            has_updates = False
+        has_updates = False
             if current_branch and remote_url:
                 try:
+                    # Для панели убеждаемся, что remote URL правильный (HTTPS)
+                    if is_panel:
+                        from backend.config import PANEL_REPO_URL
+                        # Проверяем и устанавливаем правильный remote URL если нужно
+                        if remote_url and not remote_url.startswith("https://"):
+                            logger.info(f"Исправляем remote URL для панели: {remote_url} -> {PANEL_REPO_URL}")
+                            set_url_result = subprocess.run(
+                                [self.git_cmd, "remote", "set-url", "origin", PANEL_REPO_URL],
+                                cwd=self.path,
+                                env=env,
+                        capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            if set_url_result.returncode == 0:
+                                remote_url = PANEL_REPO_URL
+                    
                     # Делаем fetch для получения информации об удаленном репозитории
-                    # Для панели используем HTTPS, для ботов - SSH если настроено
-                    # env уже настроен правильно выше (HTTPS для панели, SSH для ботов)
+                    logger.debug(f"Выполняем git fetch для проверки обновлений (ветка: {current_branch})")
                     fetch_result = subprocess.run(
                         [self.git_cmd, "fetch", "origin", current_branch],
                         cwd=self.path,
@@ -709,18 +725,23 @@ class GitRepository:
                         timeout=30
                     )
                     
-                    if fetch_result.returncode == 0:
-                        # Сравниваем локальный и удаленный коммиты
-                        local_commit_result = subprocess.run(
-                            [self.git_cmd, "rev-parse", "HEAD"],
+                    if fetch_result.returncode != 0:
+                        logger.warning(f"Git fetch не удался: {fetch_result.stderr}")
+                        # Пробуем альтернативный способ - fetch без указания ветки
+                        fetch_result = subprocess.run(
+                            [self.git_cmd, "fetch", "origin"],
                             cwd=self.path,
                             env=env,
                             capture_output=True,
                             text=True,
-                            timeout=10
+                            timeout=30
                         )
-                        remote_commit_result = subprocess.run(
-                            [self.git_cmd, "rev-parse", f"origin/{current_branch}"],
+                    
+                    if fetch_result.returncode == 0:
+                        # Проверяем, есть ли коммиты, которые нужно получить
+                        # Используем rev-list для подсчета коммитов между HEAD и origin/branch
+                        behind_result = subprocess.run(
+                            [self.git_cmd, "rev-list", "--count", f"HEAD..origin/{current_branch}"],
                             cwd=self.path,
                             env=env,
                             capture_output=True,
@@ -728,40 +749,68 @@ class GitRepository:
                             timeout=10
                         )
                         
-                        if (local_commit_result.returncode == 0 and 
-                            remote_commit_result.returncode == 0):
-                            local_commit = local_commit_result.stdout.strip()
-                            remote_commit = remote_commit_result.stdout.strip()
+                        if behind_result.returncode == 0:
+                            behind_count = int(behind_result.stdout.strip() or "0")
+                            has_updates = behind_count > 0
+                            logger.info(f"Проверка обновлений: {behind_count} коммитов позади удаленной ветки")
+                        else:
+                            # Альтернативный способ: сравниваем коммиты напрямую
+                            logger.debug("Пробуем альтернативный способ проверки обновлений")
+                            local_commit_result = subprocess.run(
+                                [self.git_cmd, "rev-parse", "HEAD"],
+                                cwd=self.path,
+                                env=env,
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            remote_commit_result = subprocess.run(
+                                [self.git_cmd, "rev-parse", f"origin/{current_branch}"],
+                                cwd=self.path,
+                                env=env,
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
                             
-                            # Если коммиты разные, есть обновления
-                            if local_commit != remote_commit:
-                                # Проверяем, что удаленный коммит новее
-                                behind_result = subprocess.run(
-                                    [self.git_cmd, "rev-list", "--count", f"HEAD..origin/{current_branch}"],
-                                    cwd=self.path,
-                                    env=env,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10
-                                )
-                                if behind_result.returncode == 0:
-                                    behind_count = int(behind_result.stdout.strip() or "0")
-                                    has_updates = behind_count > 0
+                            if (local_commit_result.returncode == 0 and 
+                                remote_commit_result.returncode == 0):
+                                local_commit = local_commit_result.stdout.strip()
+                                remote_commit = remote_commit_result.stdout.strip()
+                                
+                                # Если коммиты разные, проверяем, что удаленный новее
+                                if local_commit != remote_commit:
+                                    # Проверяем, что удаленный коммит является предком локального или наоборот
+                                    merge_base_result = subprocess.run(
+                                        [self.git_cmd, "merge-base", "HEAD", f"origin/{current_branch}"],
+                                        cwd=self.path,
+                                        env=env,
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=10
+                                    )
+                                    if merge_base_result.returncode == 0:
+                                        merge_base = merge_base_result.stdout.strip()
+                                        # Если merge-base равен HEAD, значит удаленный коммит новее
+                                        has_updates = merge_base == local_commit and local_commit != remote_commit
+                                        logger.info(f"Проверка обновлений через merge-base: has_updates={has_updates}")
+                    else:
+                        logger.warning(f"Не удалось выполнить git fetch: {fetch_result.stderr}")
                 except Exception as fetch_error:
-                    logger.warning(f"Не удалось проверить наличие обновлений: {fetch_error}")
-            
-            return {
-                "is_repo": True,
+                    logger.warning(f"Не удалось проверить наличие обновлений: {fetch_error}", exc_info=True)
+        
+        return {
+            "is_repo": True,
                 "branch": current_branch or self.branch,
                 "current_branch": current_branch or self.branch,
                 "commit": commit_hash,
-                "last_commit": last_commit,
+            "last_commit": last_commit,
                 "remote": remote_url,
                 "has_changes": has_changes,
-                "has_updates": has_updates,
+            "has_updates": has_updates,
                 "status": "clean" if not has_changes else "dirty"
-            }
-        except Exception as e:
+        }
+    except Exception as e:
             logger.error(f"Error getting git status: {e}", exc_info=True)
             return {
                 "is_repo": True,
@@ -964,38 +1013,38 @@ def get_git_remote(path: Path) -> Optional[str]:
     try:
         # Надежный поиск Git команды
         git_cmd = None
-        candidates = [
+    candidates = [
             shutil.which("git"),
-            "git",
-        ]
-        
-        if os.name != 'nt':
-            candidates.extend([
-                "/usr/bin/git",
-                "/usr/local/bin/git",
-                "/bin/git"
-            ])
-        
-        for candidate in candidates:
+        "git",
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
             if not candidate:
                 continue
-            try:
+        try:
                 result = subprocess.run(
-                    [candidate, "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    timeout=3
-                )
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3
+            )
                 if result.returncode == 0:
-                    git_cmd = candidate
-                    break
-            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-                continue
-        
+                git_cmd = candidate
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
         if not git_cmd:
             return None
-        
+    
         env = get_git_env_with_ssh()
         result = subprocess.run(
             [git_cmd, "remote", "get-url", "origin"],
@@ -1018,35 +1067,35 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
     try:
         # Надежный поиск Git команды (используем тот же метод, что и в GitRepository)
         git_cmd = None
-        candidates = [
+    candidates = [
             shutil.which("git"),
-            "git",
-        ]
-        
-        if os.name != 'nt':
-            candidates.extend([
-                "/usr/bin/git",
-                "/usr/local/bin/git",
-                "/bin/git"
-            ])
-        
-        for candidate in candidates:
+        "git",
+    ]
+    
+    if os.name != 'nt':
+        candidates.extend([
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ])
+    
+    for candidate in candidates:
             if not candidate:
                 continue
-            try:
+        try:
                 result = subprocess.run(
-                    [candidate, "--version"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    timeout=3
-                )
+                [candidate, "--version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=3
+            )
                 if result.returncode == 0:
-                    git_cmd = candidate
-                    break
-            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-                continue
-        
+                git_cmd = candidate
+                break
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+    
         if not git_cmd:
             return (False, "Git не установлен. Установите Git: sudo apt-get install git (Ubuntu/Debian) или sudo yum install git (CentOS/RHEL)")
         
@@ -1078,10 +1127,10 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
                 # Используем HTTPS напрямую
                 remote_url = repo_url
                 env = os.environ.copy()
-            else:
+                else:
                 # Конвертируем HTTPS в SSH для приватных репозиториев ботов
                 remote_url = convert_https_to_ssh(repo_url)
-                env = get_git_env_with_ssh()
+            env = get_git_env_with_ssh()
             
             result = subprocess.run(
                 [git_cmd, "remote", "add", "origin", remote_url],
@@ -1094,12 +1143,12 @@ def init_git_repo(path: Path, repo_url: Optional[str] = None) -> Tuple[bool, str
             
             if result.returncode != 0:
                 # Если remote уже существует, обновляем его
-                result = subprocess.run(
+            result = subprocess.run(
                     [git_cmd, "remote", "set-url", "origin", remote_url],
                     cwd=path,
                     env=env,
-                    capture_output=True,
-                    text=True,
+                capture_output=True,
+                text=True,
                     timeout=30
                 )
                 
@@ -1167,12 +1216,12 @@ def set_git_remote(path: Path, repo_url: str) -> bool:
         
         # Если remote уже существует, обновляем его
         if result.returncode != 0:
-            result = subprocess.run(
+        result = subprocess.run(
                 [git_cmd, "remote", "set-url", "origin", ssh_url],
                 cwd=path,
                 env=env,
-                capture_output=True,
-                text=True,
+            capture_output=True,
+            text=True,
                 timeout=30
             )
         
