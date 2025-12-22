@@ -22,7 +22,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Обновляем ссылки и отображение
-    document.getElementById('bot-id-display').textContent = botId;
+    const botIdDisplay = document.getElementById('bot-id-display');
+    if (botIdDisplay) {
+        botIdDisplay.textContent = botId;
+    }
+    // Обновляем title страницы
+    if (document.title.includes('...')) {
+        document.title = document.title.replace('...', botId);
+    }
     const backToBotLink = document.getElementById('back-to-bot-link');
     if (backToBotLink) {
         backToBotLink.href = `/bot/${botId}`;
@@ -103,14 +110,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Загрузка информации о боте
 async function loadBotInfo() {
+    const botNameHeader = document.getElementById('bot-name-header');
+    if (!botNameHeader) return;
+    
     try {
         const response = await fetch(`/api/bots/${botId}`);
         if (response.ok) {
             const bot = await response.json();
-            document.getElementById('bot-name-header').textContent = bot.name || `Бот #${botId}`;
+            const botName = bot.name || `Бот #${botId}`;
+            botNameHeader.textContent = botName;
+            // Обновляем title страницы
+            document.title = `SQL Редактор - ${botName}`;
+        } else {
+            // Если запрос не успешен, показываем ID бота
+            botNameHeader.textContent = `Бот #${botId}`;
         }
     } catch (error) {
         console.error('Error loading bot info:', error);
+        // В случае ошибки показываем ID бота
+        botNameHeader.textContent = `Бот #${botId}`;
     }
 }
 

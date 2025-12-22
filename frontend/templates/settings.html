@@ -512,10 +512,6 @@
                             <div class="alert alert-info mt-2">
                                 <i class="fas fa-arrow-down"></i> <strong>Доступны обновления!</strong> Нажмите "Обновить панель из GitHub" для установки.
                             </div>
-                        ` : status.last_commit ? `
-                            <div class="alert alert-success mt-2">
-                                <i class="fas fa-check-circle"></i> Панель актуальна
-                            </div>
                         ` : ''}
                     `;
                     document.getElementById('update-panel-btn').disabled = false;
