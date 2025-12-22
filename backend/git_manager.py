@@ -8,8 +8,11 @@ import os
 import shutil
 import logging
 import re
+import uuid
+import fnmatch
+import tempfile
 from pathlib import Path
-from typing import Optional, Dict, Tuple, Any, List
+from typing import Optional, Dict, Tuple, Any, List, Set
 from backend.config import BASE_DIR
 from backend.ssh_manager import (
     convert_https_to_ssh, 
@@ -40,6 +43,147 @@ GIT_HOSTS = {
         'supports_ssh': True
     }
 }
+
+
+def parse_gitignore(gitignore_path: Path) -> List[str]:
+    """
+    Парсинг .gitignore файла и возврат списка паттернов
+    
+    Args:
+        gitignore_path: Путь к файлу .gitignore
+        
+    Returns:
+        Список паттернов для игнорирования
+    """
+    if not gitignore_path.exists():
+        return []
+    
+    patterns = []
+    try:
+        with open(gitignore_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # Пропускаем пустые строки и комментарии
+                if not line or line.startswith('#'):
+                    continue
+                # Убираем пробелы в начале и конце
+                line = line.strip()
+                if line:
+                    patterns.append(line)
+    except Exception as e:
+        logger.warning(f"Ошибка при чтении .gitignore: {e}")
+    
+    return patterns
+
+
+def matches_gitignore_pattern(file_path: Path, patterns: List[str], base_path: Path) -> bool:
+    """
+    Проверяет, соответствует ли файл паттернам из .gitignore
+    
+    Args:
+        file_path: Путь к файлу для проверки
+        patterns: Список паттернов из .gitignore
+        base_path: Базовый путь репозитория
+        
+    Returns:
+        True если файл должен быть проигнорирован
+    """
+    if not patterns:
+        return False
+    
+    # Получаем относительный путь от базового пути
+    try:
+        rel_path = file_path.relative_to(base_path)
+        rel_path_str = str(rel_path).replace('\\', '/')
+    except ValueError:
+        # Если файл не находится в базовом пути, не игнорируем
+        return False
+    
+    for pattern in patterns:
+        # Обрабатываем паттерны .gitignore
+        # Упрощенная версия - поддерживаем основные случаи
+        
+        # Паттерн с / в начале - относительно корня репозитория
+        if pattern.startswith('/'):
+            pattern = pattern[1:]
+            if fnmatch.fnmatch(rel_path_str, pattern) or fnmatch.fnmatch(rel_path_str, pattern + '/*'):
+                return True
+        
+        # Паттерн с / в конце - директория
+        elif pattern.endswith('/'):
+            pattern = pattern[:-1]
+            if rel_path_str.startswith(pattern + '/') or rel_path_str == pattern:
+                return True
+        
+        # Паттерн с ** - рекурсивный поиск
+        elif '**' in pattern:
+            # Заменяем ** на * для fnmatch
+            pattern_fnmatch = pattern.replace('**', '*')
+            if fnmatch.fnmatch(rel_path_str, pattern_fnmatch):
+                return True
+            # Также проверяем вложенные пути
+            path_parts = rel_path_str.split('/')
+            for i in range(len(path_parts)):
+                sub_path = '/'.join(path_parts[i:])
+                if fnmatch.fnmatch(sub_path, pattern_fnmatch):
+                    return True
+        
+        # Обычный паттерн
+        else:
+            # Проверяем точное совпадение или совпадение в любой части пути
+            if fnmatch.fnmatch(rel_path_str, pattern):
+                return True
+            # Проверяем совпадение с именем файла
+            if fnmatch.fnmatch(rel_path_str.split('/')[-1], pattern):
+                return True
+            # Проверяем совпадение в любой части пути
+            path_parts = rel_path_str.split('/')
+            for part in path_parts:
+                if fnmatch.fnmatch(part, pattern):
+                    return True
+    
+    return False
+
+
+def get_ignored_files(base_path: Path, gitignore_patterns: List[str]) -> Set[Path]:
+    """
+    Получает список файлов, которые должны быть проигнорированы согласно .gitignore
+    
+    Args:
+        base_path: Базовый путь репозитория
+        gitignore_patterns: Список паттернов из .gitignore
+        
+    Returns:
+        Множество путей к игнорируемым файлам
+    """
+    ignored = set()
+    
+    if not gitignore_patterns:
+        return ignored
+    
+    # Рекурсивно обходим все файлы
+    for root, dirs, files in os.walk(base_path):
+        root_path = Path(root)
+        
+        # Проверяем директории
+        dirs_to_remove = []
+        for dir_name in dirs:
+            dir_path = root_path / dir_name
+            if matches_gitignore_pattern(dir_path, gitignore_patterns, base_path):
+                ignored.add(dir_path)
+                dirs_to_remove.append(dir_name)  # Не обходим игнорируемые директории
+        
+        # Удаляем игнорируемые директории из списка для обхода
+        for dir_name in dirs_to_remove:
+            dirs.remove(dir_name)
+        
+        # Проверяем файлы
+        for file_name in files:
+            file_path = root_path / file_name
+            if matches_gitignore_pattern(file_path, gitignore_patterns, base_path):
+                ignored.add(file_path)
+    
+    return ignored
 
 
 class GitRepository:
@@ -102,38 +246,96 @@ class GitRepository:
             ssh_url = convert_https_to_ssh(repo_url)
             env = get_git_env_with_ssh()
             
-            # Удаляем директорию если она существует и не пуста
+            # Убеждаемся, что директория существует
+            self.path.mkdir(parents=True, exist_ok=True)
+            
+            # Удаляем все содержимое директории кроме config.json и .gitkeep
+            # ВАЖНО: также удаляем .git если он существует
             if self.path.exists():
                 for item in self.path.iterdir():
                     if item.name not in ['config.json', '.gitkeep']:
-                        if item.is_dir():
-                            shutil.rmtree(item)
+                        try:
+                            if item.is_dir():
+                                shutil.rmtree(item)
+                            else:
+                                item.unlink()
+                        except Exception as e:
+                            logger.warning(f"Не удалось удалить {item} перед клонированием: {e}")
+            
+            # Проверяем, что директория пуста (кроме config.json и .gitkeep)
+            remaining_items = [item.name for item in self.path.iterdir() 
+                              if item.name not in ['config.json', '.gitkeep']]
+            if remaining_items:
+                logger.warning(f"В директории остались элементы после очистки: {remaining_items}")
+                # Пытаемся удалить оставшиеся элементы еще раз
+                for item_name in remaining_items:
+                    item_path = self.path / item_name
+                    try:
+                        if item_path.is_dir():
+                            shutil.rmtree(item_path)
                         else:
-                            item.unlink()
+                            item_path.unlink()
+                    except Exception as e:
+                        logger.error(f"Не удалось удалить {item_path}: {e}")
+                        return (False, f"Не удалось очистить директорию перед клонированием. Остался элемент: {item_name}")
             
             # Клонируем репозиторий
-            cmd = [self.git_cmd, "clone", "-b", branch, "--depth", "1", ssh_url, str(self.path)]
-            result = subprocess.run(
-                cmd,
-                cwd=self.path.parent,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
+            # Используем временное имя для клонирования, затем перемещаем содержимое
+            import tempfile
+            import uuid
+            temp_clone_dir = self.path.parent / f".temp_clone_{uuid.uuid4().hex[:8]}"
             
-            if result.returncode == 0:
-                # Если клонирование прошло в поддиректорию, перемещаем файлы
-                cloned_dir = self.path.parent / Path(ssh_url).stem.replace('.git', '')
-                if cloned_dir.exists() and cloned_dir != self.path:
-                    for item in cloned_dir.iterdir():
-                        shutil.move(str(item), str(self.path / item.name))
-                    cloned_dir.rmdir()
+            try:
+                cmd = [self.git_cmd, "clone", "-b", branch, "--depth", "1", ssh_url, str(temp_clone_dir)]
+                result = subprocess.run(
+                    cmd,
+                    cwd=self.path.parent,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                
+                if result.returncode != 0:
+                    error_msg = result.stderr or result.stdout or "Unknown error"
+                    return (False, f"Git clone failed: {error_msg}")
+                
+                # Перемещаем содержимое из временной директории в целевую
+                if temp_clone_dir.exists():
+                    for item in temp_clone_dir.iterdir():
+                        if item.name not in ['config.json', '.gitkeep']:
+                            try:
+                                dest = self.path / item.name
+                                if dest.exists():
+                                    if dest.is_dir():
+                                        shutil.rmtree(dest)
+                                    else:
+                                        dest.unlink()
+                                shutil.move(str(item), str(dest))
+                            except Exception as e:
+                                logger.error(f"Ошибка при перемещении {item}: {e}")
+                                # Пытаемся удалить временную директорию
+                                try:
+                                    shutil.rmtree(temp_clone_dir)
+                                except:
+                                    pass
+                                return (False, f"Ошибка при перемещении файлов из временной директории: {str(e)}")
+                    
+                    # Удаляем временную директорию
+                    try:
+                        shutil.rmtree(temp_clone_dir)
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить временную директорию {temp_clone_dir}: {e}")
                 
                 return (True, "Repository cloned successfully")
-            else:
-                error_msg = result.stderr or result.stdout or "Unknown error"
-                return (False, f"Git clone failed: {error_msg}")
+            except Exception as clone_error:
+                # Удаляем временную директорию при ошибке
+                if temp_clone_dir.exists():
+                    try:
+                        shutil.rmtree(temp_clone_dir)
+                    except:
+                        pass
+                raise clone_error
         except subprocess.TimeoutExpired:
             return (False, "Git clone timeout")
         except Exception as e:
@@ -141,7 +343,7 @@ class GitRepository:
             return (False, f"Error: {str(e)}")
     
     def update(self) -> Tuple[bool, str]:
-        """Обновление репозитория из удаленного источника"""
+        """Обновление репозитория из удаленного источника с учетом .gitignore"""
         if not self.git_cmd:
             return (False, "Git command not found")
         
@@ -150,6 +352,42 @@ class GitRepository:
         
         try:
             env = get_git_env_with_ssh()
+            
+            # Читаем .gitignore если он существует
+            gitignore_path = self.path / ".gitignore"
+            gitignore_patterns = []
+            ignored_files = set()
+            
+            if gitignore_path.exists():
+                gitignore_patterns = parse_gitignore(gitignore_path)
+                if gitignore_patterns:
+                    logger.info(f"Найдено {len(gitignore_patterns)} паттернов в .gitignore")
+                    # Получаем список игнорируемых файлов
+                    ignored_files = get_ignored_files(self.path, gitignore_patterns)
+                    logger.info(f"Найдено {len(ignored_files)} файлов для игнорирования")
+            
+            # Сохраняем игнорируемые файлы во временную директорию
+            backup_dir = None
+            if ignored_files:
+                backup_dir = Path(tempfile.mkdtemp(prefix="gitignore_backup_"))
+                logger.info(f"Создана временная директория для бэкапа: {backup_dir}")
+                
+                for ignored_file in ignored_files:
+                    try:
+                        if ignored_file.exists():
+                            # Сохраняем относительный путь
+                            rel_path = ignored_file.relative_to(self.path)
+                            backup_path = backup_dir / rel_path
+                            backup_path.parent.mkdir(parents=True, exist_ok=True)
+                            
+                            if ignored_file.is_file():
+                                shutil.copy2(ignored_file, backup_path)
+                            elif ignored_file.is_dir():
+                                shutil.copytree(ignored_file, backup_path, dirs_exist_ok=True)
+                            
+                            logger.debug(f"Сохранен игнорируемый файл: {ignored_file} -> {backup_path}")
+                    except Exception as backup_error:
+                        logger.warning(f"Не удалось сохранить игнорируемый файл {ignored_file}: {backup_error}")
             
             # Получаем изменения
             result = subprocess.run(
@@ -162,8 +400,60 @@ class GitRepository:
             )
             
             if result.returncode == 0:
+                # Восстанавливаем игнорируемые файлы
+                if backup_dir and backup_dir.exists():
+                    logger.info("Восстановление игнорируемых файлов из .gitignore...")
+                    for ignored_file in ignored_files:
+                        try:
+                            rel_path = ignored_file.relative_to(self.path)
+                            backup_path = backup_dir / rel_path
+                            
+                            if backup_path.exists():
+                                if ignored_file.is_file() or not ignored_file.exists():
+                                    # Создаем директорию если нужно
+                                    ignored_file.parent.mkdir(parents=True, exist_ok=True)
+                                    if backup_path.is_file():
+                                        shutil.copy2(backup_path, ignored_file)
+                                elif ignored_file.is_dir() and backup_path.is_dir():
+                                    # Восстанавливаем директорию
+                                    if ignored_file.exists():
+                                        shutil.rmtree(ignored_file)
+                                    shutil.copytree(backup_path, ignored_file)
+                                
+                                logger.debug(f"Восстановлен игнорируемый файл: {backup_path} -> {ignored_file}")
+                        except Exception as restore_error:
+                            logger.warning(f"Не удалось восстановить игнорируемый файл {ignored_file}: {restore_error}")
+                    
+                    # Удаляем временную директорию
+                    try:
+                        shutil.rmtree(backup_dir)
+                    except Exception as cleanup_error:
+                        logger.warning(f"Не удалось удалить временную директорию {backup_dir}: {cleanup_error}")
+                
                 return (True, "Repository updated successfully")
             else:
+                # Восстанавливаем игнорируемые файлы даже при ошибке
+                if backup_dir and backup_dir.exists():
+                    logger.info("Восстановление игнорируемых файлов после ошибки обновления...")
+                    for ignored_file in ignored_files:
+                        try:
+                            rel_path = ignored_file.relative_to(self.path)
+                            backup_path = backup_dir / rel_path
+                            if backup_path.exists():
+                                ignored_file.parent.mkdir(parents=True, exist_ok=True)
+                                if backup_path.is_file():
+                                    shutil.copy2(backup_path, ignored_file)
+                                elif backup_path.is_dir():
+                                    if ignored_file.exists():
+                                        shutil.rmtree(ignored_file)
+                                    shutil.copytree(backup_path, ignored_file)
+                        except Exception:
+                            pass
+                    try:
+                        shutil.rmtree(backup_dir)
+                    except Exception:
+                        pass
+                
                 error_msg = result.stderr or result.stdout or "Unknown error"
                 return (False, f"Git pull failed: {error_msg}")
         except subprocess.TimeoutExpired:

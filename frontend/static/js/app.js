@@ -17,6 +17,20 @@ async function checkAuth() {
     }
 }
 
+// Функция для получения текста статуса
+function getStatusText(status) {
+    switch (status) {
+        case 'running': return 'Запущен';
+        case 'starting': return 'Запускается...';
+        case 'restarting': return 'Перезагружается...';
+        case 'installing': return 'Установка зависимостей...';
+        case 'stopped': return 'Остановлен';
+        case 'error': return 'Ошибка';
+        case 'error_startup': return 'Ошибка запуска';
+        default: return 'Неизвестно';
+    }
+}
+
 // Загрузка списка ботов
 async function loadBots() {
     try {

@@ -1543,31 +1543,31 @@ async def generate_panel_ssh_key():
         )
 
 
-class TestSSHRequest(BaseModel):
-    host: str = "github.com"
-
 @app.post("/api/panel/ssh-key/test")
-async def test_panel_ssh_connection(request: TestSSHRequest):
+async def test_panel_ssh_connection(
+    request: Request,
+    host: Optional[str] = Query(None, description="Git хост для тестирования (например, github.com)")
+):
     """
     Тестирование SSH подключения к Git хосту
     
-    Args:
-        request: Объект с полем host (по умолчанию github.com)
+    Принимает host из query параметра (например: ?host=github.com)
     """
     import logging
     logger = logging.getLogger(__name__)
     
     try:
-        host = request.host or "github.com"
-        logger.info(f"Testing SSH connection to {host}")
+        # Получаем host из query параметров или используем значение по умолчанию
+        test_host = host or request.query_params.get("host") or "github.com"
+        logger.info(f"Testing SSH connection to {test_host}")
         
-        success, message = test_ssh_connection(host)
+        success, message = test_ssh_connection(test_host)
         
         if success:
             return {
                 "success": True,
                 "message": message,
-                "host": host
+                "host": test_host
             }
         else:
             # Возвращаем ошибку, но не как HTTPException, а как JSON с success=False
@@ -1576,7 +1576,7 @@ async def test_panel_ssh_connection(request: TestSSHRequest):
                 content={
                     "success": False,
                     "message": message,
-                    "host": host
+                    "host": test_host
                 }
             )
     except Exception as e:
@@ -1586,7 +1586,7 @@ async def test_panel_ssh_connection(request: TestSSHRequest):
             content={
                 "success": False,
                 "message": f"Ошибка тестирования SSH: {str(e)}",
-                "host": request.host if hasattr(request, 'host') else "unknown"
+                "host": test_host if 'test_host' in locals() else "unknown"
             }
         )
 
