@@ -1,6 +1,0 @@
-Host github.com
-    HostName github.com
-    User git
-    IdentityFile C:\Users\eliza\OneDrive\Рабочий стол\ds_tg_panel_bot\data\ssh\panel_deploy_key
-    IdentitiesOnly yes
-    StrictHostKeyChecking accept-new
