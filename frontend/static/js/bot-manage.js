@@ -2388,7 +2388,8 @@
             success: 'fa-check-circle',
             error: 'fa-exclamation-circle',
             warning: 'fa-exclamation-triangle',
-            info: 'fa-info-circle'
+            info: 'fa-info-circle',
+            danger: 'fa-exclamation-circle'
         };
         
         const icon = icons[type] || icons.info;
