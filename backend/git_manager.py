@@ -237,6 +237,26 @@ class GitRepository:
         """Проверка, является ли директория Git репозиторием"""
         return is_git_repo(self.path)
     
+    def _get_remote_url(self) -> Optional[str]:
+        """Получение URL удаленного репозитория"""
+        if not self.git_cmd or not is_git_repo(self.path):
+            return None
+        
+        try:
+            result = subprocess.run(
+                [self.git_cmd, "remote", "get-url", "origin"],
+                cwd=self.path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        
+        return None
+    
     def clone(self, repo_url: str, branch: str = "main") -> Tuple[bool, str]:
         """Клонирование репозитория"""
         if not self.git_cmd:
@@ -456,7 +476,83 @@ class GitRepository:
                         pass
                 
                 error_msg = result.stderr or result.stdout or "Неизвестная ошибка"
-                return (False, f"Ошибка Git pull: {error_msg}")
+                
+                # Улучшенная обработка ошибок SSH
+                error_str = str(error_msg)
+                if "Permission denied (publickey)" in error_str or "Permission denied" in error_str:
+                    # Пробуем использовать HTTPS для публичных репозиториев
+                    try:
+                        remote_url = self._get_remote_url()
+                        if remote_url and remote_url.startswith("git@"):
+                            # Конвертируем SSH URL в HTTPS
+                            https_url = remote_url.replace("git@github.com:", "https://github.com/").replace(".git", "")
+                            logger.info(f"Пробуем использовать HTTPS вместо SSH: {https_url}")
+                            
+                            # Устанавливаем HTTPS URL
+                            env_no_ssh = os.environ.copy()
+                            if 'GIT_SSH_COMMAND' in env_no_ssh:
+                                del env_no_ssh['GIT_SSH_COMMAND']
+                            
+                            set_result = subprocess.run(
+                                [self.git_cmd, "remote", "set-url", "origin", https_url],
+                                cwd=self.path,
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            
+                            if set_result.returncode == 0:
+                                # Пробуем снова с HTTPS
+                                result_https = subprocess.run(
+                                    [self.git_cmd, "pull", "origin", self.branch],
+                                    cwd=self.path,
+                                    env=env_no_ssh,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=300
+                                )
+                                
+                                if result_https.returncode == 0:
+                                    # Восстанавливаем игнорируемые файлы
+                                    if backup_dir and backup_dir.exists():
+                                        logger.info("Восстановление игнорируемых файлов из .gitignore...")
+                                        for ignored_file in ignored_files:
+                                            try:
+                                                rel_path = ignored_file.relative_to(self.path)
+                                                backup_path = backup_dir / rel_path
+                                                
+                                                if backup_path.exists():
+                                                    if ignored_file.is_file() or not ignored_file.exists():
+                                                        ignored_file.parent.mkdir(parents=True, exist_ok=True)
+                                                        if backup_path.is_file():
+                                                            shutil.copy2(backup_path, ignored_file)
+                                                    elif ignored_file.is_dir() and backup_path.is_dir():
+                                                        if ignored_file.exists():
+                                                            shutil.rmtree(ignored_file)
+                                                        shutil.copytree(backup_path, ignored_file)
+                                                    
+                                                    logger.debug(f"Восстановлен игнорируемый файл: {backup_path} -> {ignored_file}")
+                                            except Exception as restore_error:
+                                                logger.warning(f"Не удалось восстановить игнорируемый файл {ignored_file}: {restore_error}")
+                                        
+                                        try:
+                                            shutil.rmtree(backup_dir)
+                                        except Exception as cleanup_error:
+                                            logger.warning(f"Не удалось удалить временную директорию {backup_dir}: {cleanup_error}")
+                                    
+                                    return (True, "Репозиторий обновлен успешно (использован HTTPS)")
+                    except Exception as https_fallback_error:
+                        logger.warning(f"Не удалось использовать HTTPS fallback: {https_fallback_error}")
+                
+                # Формируем понятное сообщение об ошибке
+                if "Permission denied (publickey)" in error_str:
+                    return (False, "Ошибка SSH аутентификации: Permission denied (publickey). Проверьте настройки SSH ключа в настройках панели или используйте HTTPS URL для публичных репозиториев.")
+                elif "Host key verification failed" in error_str:
+                    return (False, "Ошибка проверки SSH ключа хоста. Попробуйте протестировать SSH подключение в настройках панели.")
+                elif "Could not read from remote repository" in error_str:
+                    return (False, "Не удалось прочитать удаленный репозиторий. Проверьте URL репозитория и права доступа.")
+                else:
+                    return (False, f"Ошибка Git pull: {error_msg}")
         except subprocess.TimeoutExpired:
             return (False, "Git pull timeout")
         except Exception as e:
