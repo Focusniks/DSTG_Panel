@@ -285,7 +285,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /help"""
     help_text = '''
-📚 Справка по командам:
+Справка по командам:
 
 /start - Начать работу с ботом
 /help - Показать эту справку
@@ -571,7 +571,7 @@ async def time_command(ctx):
 async def help_custom(ctx):
     """Расширенная справка по командам"""
     embed = discord.Embed(
-        title="📚 Справка по командам",
+        title="Справка по командам",
         description="Доступные команды бота:",
         color=discord.Color.cyan()
     )
