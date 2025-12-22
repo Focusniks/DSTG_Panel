@@ -418,11 +418,15 @@ async def list_bot_files(bot_id: int):
         
         items = []
         try:
-            for item in sorted(directory.iterdir()):
+            # Разделяем на папки и файлы
+            directories = []
+            files = []
+            
+            for item in directory.iterdir():
                 # Пропускаем config.json
                 if item.name == "config.json":
                     continue
-                    
+                
                 rel_path = item.relative_to(base_path)
                 node = {
                     "name": item.name,
@@ -432,8 +436,19 @@ async def list_bot_files(bot_id: int):
                 
                 if item.is_dir():
                     node["children"] = build_tree(item, base_path)
-                
-                items.append(node)
+                    directories.append(node)
+                else:
+                    files.append(node)
+            
+            # Сортируем папки по алфавиту
+            directories.sort(key=lambda x: x["name"].lower())
+            # Сортируем файлы по алфавиту
+            files.sort(key=lambda x: x["name"].lower())
+            
+            # Сначала добавляем папки, потом файлы
+            items.extend(directories)
+            items.extend(files)
+            
         except PermissionError:
             pass
         
