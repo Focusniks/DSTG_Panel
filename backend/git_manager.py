@@ -11,6 +11,7 @@ import re
 import uuid
 import fnmatch
 import tempfile
+import stat
 from pathlib import Path
 from typing import Optional, Dict, Tuple, Any, List, Set
 from backend.config import BASE_DIR
@@ -674,59 +675,90 @@ def update_panel_from_git() -> Tuple[bool, str]:
     """Обновление панели из Git репозитория с сохранением папок bots/ и data/"""
     from backend.config import PANEL_REPO_URL, PANEL_REPO_BRANCH, BOTS_DIR, DATA_DIR
     
-    repo = GitRepository(BASE_DIR, PANEL_REPO_URL, PANEL_REPO_BRANCH)
-    
-    # Проверяем наличие Git
-    if not repo.is_git_installed():
-        return (False, "Git не установлен. Установите Git для обновления панели.")
-    
-    if not repo.is_repo():
-        return (False, "Панель не является Git репозиторием. Инициализируйте репозиторий в настройках.")
-    
-    # Создаем временную директорию для бэкапа защищаемых папок
-    backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
-    logger.info(f"Создана временная директория для бэкапа: {backup_dir}")
-    
-    protected_dirs = []
-    if BOTS_DIR.exists():
-        protected_dirs.append(("bots", BOTS_DIR))
-    if DATA_DIR.exists():
-        protected_dirs.append(("data", DATA_DIR))
-    
-    # Сохраняем защищаемые директории
-    for dir_name, dir_path in protected_dirs:
-        try:
-            backup_path = backup_dir / dir_name
-            if dir_path.exists():
-                logger.info(f"Сохранение директории {dir_name}...")
-                shutil.copytree(dir_path, backup_path, dirs_exist_ok=True)
-                logger.info(f"Директория {dir_name} сохранена в {backup_path}")
-        except Exception as backup_error:
-            logger.error(f"Ошибка при сохранении директории {dir_name}: {backup_error}", exc_info=True)
-            # Продолжаем, но логируем ошибку
-    
     try:
+        repo = GitRepository(BASE_DIR, PANEL_REPO_URL, PANEL_REPO_BRANCH)
+        
+        # Проверяем наличие Git
+        if not repo.is_git_installed():
+            return (False, "Git не установлен. Установите Git для обновления панели.")
+        
+        if not repo.is_repo():
+            return (False, "Панель не является Git репозиторием. Инициализируйте репозиторий в настройках.")
+        
+        # Создаем временную директорию для бэкапа защищаемых папок
+        try:
+            backup_dir = Path(tempfile.mkdtemp(prefix="panel_update_backup_"))
+            logger.info(f"Создана временная директория для бэкапа: {backup_dir}")
+        except Exception as e:
+            logger.error(f"Не удалось создать временную директорию: {e}", exc_info=True)
+            return (False, f"Не удалось создать временную директорию для бэкапа: {str(e)}")
+        
+        protected_dirs = []
+        if BOTS_DIR.exists() and BOTS_DIR.is_dir():
+            protected_dirs.append(("bots", BOTS_DIR))
+        if DATA_DIR.exists() and DATA_DIR.is_dir():
+            protected_dirs.append(("data", DATA_DIR))
+        
+        # Сохраняем защищаемые директории
+        backup_success = True
+        for dir_name, dir_path in protected_dirs:
+            try:
+                backup_path = backup_dir / dir_name
+                if dir_path.exists() and dir_path.is_dir():
+                    logger.info(f"Сохранение директории {dir_name}...")
+                    # Удаляем старый бэкап, если существует
+                    if backup_path.exists():
+                        shutil.rmtree(backup_path)
+                    shutil.copytree(dir_path, backup_path, dirs_exist_ok=True)
+                    logger.info(f"Директория {dir_name} сохранена в {backup_path}")
+            except Exception as backup_error:
+                logger.error(f"Ошибка при сохранении директории {dir_name}: {backup_error}", exc_info=True)
+                backup_success = False
+                # Продолжаем, но логируем ошибку
+        
+        if not backup_success and protected_dirs:
+            logger.warning("Не все директории были успешно сохранены, но продолжаем обновление")
+        
         # Выполняем обновление
-        success, message = repo.update()
+        try:
+            success, message = repo.update()
+        except Exception as update_error:
+            logger.error(f"Ошибка при выполнении git update: {update_error}", exc_info=True)
+            success = False
+            message = f"Ошибка при обновлении из Git: {str(update_error)}"
         
         if success:
             # Восстанавливаем защищаемые директории
             logger.info("Восстановление защищаемых директорий...")
+            restore_success = True
             for dir_name, dir_path in protected_dirs:
                 try:
                     backup_path = backup_dir / dir_name
-                    if backup_path.exists():
+                    if backup_path.exists() and backup_path.is_dir():
                         # Удаляем директорию, если она была обновлена
                         if dir_path.exists():
                             logger.info(f"Восстановление директории {dir_name}...")
                             # Удаляем обновленную версию
-                            shutil.rmtree(dir_path)
+                            try:
+                                shutil.rmtree(dir_path)
+                            except Exception as rmtree_error:
+                                logger.warning(f"Не удалось удалить {dir_path}, пробуем принудительно: {rmtree_error}")
+                                # Пробуем еще раз с игнорированием ошибок
+                                def handle_remove_readonly(func, path, exc):
+                                    os.chmod(path, stat.S_IWRITE)
+                                    func(path)
+                                shutil.rmtree(dir_path, onerror=handle_remove_readonly)
+                        
                         # Восстанавливаем из бэкапа
-                        shutil.copytree(backup_path, dir_path)
+                        shutil.copytree(backup_path, dir_path, dirs_exist_ok=True)
                         logger.info(f"Директория {dir_name} восстановлена")
                 except Exception as restore_error:
                     logger.error(f"Ошибка при восстановлении директории {dir_name}: {restore_error}", exc_info=True)
+                    restore_success = False
                     # Продолжаем восстановление других директорий
+            
+            if not restore_success:
+                logger.warning("Не все директории были успешно восстановлены")
         
         # Удаляем временную директорию
         try:
@@ -743,22 +775,27 @@ def update_panel_from_git() -> Tuple[bool, str]:
             
     except Exception as e:
         # В случае ошибки пытаемся восстановить директории
-        logger.error(f"Ошибка при обновлении панели: {e}", exc_info=True)
-        logger.info("Попытка восстановления защищаемых директорий после ошибки...")
+        logger.error(f"Критическая ошибка при обновлении панели: {e}", exc_info=True)
         
-        for dir_name, dir_path in protected_dirs:
-            try:
-                backup_path = backup_dir / dir_name
-                if backup_path.exists() and not dir_path.exists():
-                    shutil.copytree(backup_path, dir_path)
-                    logger.info(f"Директория {dir_name} восстановлена после ошибки")
-            except Exception:
-                pass
-        
-        # Удаляем временную директорию
+        # Пытаемся восстановить директории из бэкапа, если он был создан
         try:
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
+            if 'backup_dir' in locals() and backup_dir.exists():
+                logger.info("Попытка восстановления защищаемых директорий после ошибки...")
+                for dir_name, dir_path in protected_dirs:
+                    try:
+                        backup_path = backup_dir / dir_name
+                        if backup_path.exists() and backup_path.is_dir() and not dir_path.exists():
+                            shutil.copytree(backup_path, dir_path)
+                            logger.info(f"Директория {dir_name} восстановлена после ошибки")
+                    except Exception:
+                        pass
+                
+                # Удаляем временную директорию
+                try:
+                    if backup_dir.exists():
+                        shutil.rmtree(backup_dir)
+                except Exception:
+                    pass
         except Exception:
             pass
         
