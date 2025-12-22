@@ -1454,7 +1454,7 @@ async def update_bot_from_git_endpoint(bot_id: int):
             success, message = repo.clone(repo_url, branch)
         else:
             logger.info(f"Обновление существующего репозитория...")
-            success, message = repo.update(repo_url, branch)
+            success, message = repo.update()
         
         if success:
             return {"success": True, "message": message}

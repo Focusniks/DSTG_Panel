@@ -223,25 +223,31 @@ class GitRepository:
             is_https_url = repo_url.startswith("https://")
             
             # Логика выбора протокола
+            # ВАЖНО: Если SSH недоступен, ВСЕГДА используем HTTPS
             use_https = False
             clone_url = repo_url
             try_ssh_first = False
+            original_https_url = repo_url if is_https_url else None
             
-            if is_ssh_url:
+            if not ssh_available:
+                # SSH недоступен - ВСЕГДА используем HTTPS
+                use_https = True
+                if is_ssh_url:
+                    # Конвертируем SSH URL в HTTPS
+                    clone_url = self._convert_to_https(repo_url)
+                    logger.info(f"SSH недоступен, конвертируем SSH URL в HTTPS: {clone_url}")
+                else:
+                    clone_url = repo_url if is_https_url else self._convert_to_https(repo_url)
+                    logger.info(f"SSH недоступен, используем HTTPS: {clone_url}")
+            elif is_ssh_url:
                 # Явно указан SSH URL - требуем SSH
-                if not ssh_available:
-                    return (False, "SSH URL указан, но SSH клиент не установлен. Установите OpenSSH клиент или используйте HTTPS URL.")
                 if not ssh_key_exists:
                     return (False, "SSH URL указан, но SSH ключ не найден. Сгенерируйте SSH ключ в настройках панели или используйте HTTPS URL.")
                 # Используем SSH URL как есть
                 clone_url = repo_url
                 try_ssh_first = True
+                use_https = False
                 logger.info(f"Используем SSH URL: {clone_url}")
-            elif not ssh_available:
-                # SSH недоступен - используем HTTPS
-                use_https = True
-                clone_url = repo_url if is_https_url else self._convert_to_https(repo_url)
-                logger.info(f"SSH недоступен, используем HTTPS: {clone_url}")
             elif not ssh_key_exists:
                 # SSH доступен, но нет ключа - используем HTTPS
                 use_https = True
@@ -250,7 +256,9 @@ class GitRepository:
             elif is_https_url:
                 # HTTPS URL, SSH доступен и есть ключ - пробуем SSH, при ошибке fallback на HTTPS
                 try_ssh_first = True
+                use_https = False
                 clone_url = convert_https_to_ssh(repo_url)
+                original_https_url = repo_url
                 logger.info(f"Пробуем SSH для HTTPS URL: {clone_url}")
             else:
                 # Неизвестный формат URL - пробуем как есть (скорее всего HTTPS)
@@ -259,10 +267,23 @@ class GitRepository:
                 logger.info(f"Неизвестный формат URL, используем как есть: {clone_url}")
             
             # Подготавливаем окружение для первой попытки
+            # ВАЖНО: Если use_https=True, НИКОГДА не используем SSH окружение
             if use_https:
                 env = self._get_https_env()
             else:
+                # Для SSH проверяем еще раз доступность
                 env = self._get_ssh_env()
+                # Если _get_ssh_env вернул HTTPS окружение (SSH недоступен), переключаемся на HTTPS
+                if "GIT_SSH_COMMAND" not in env:
+                    logger.warning("SSH окружение недоступно, переключаемся на HTTPS")
+                    use_https = True
+                    if original_https_url:
+                        clone_url = original_https_url
+                    elif is_https_url:
+                        clone_url = repo_url
+                    else:
+                        clone_url = self._convert_to_https(repo_url)
+                    env = self._get_https_env()
             
             # Первая попытка клонирования
             logger.info(f"Клонирование репозитория: {clone_url} (ветка: {branch})")
@@ -277,20 +298,22 @@ class GitRepository:
             # Если первая попытка не удалась
             if result.returncode != 0:
                 error_output = result.stderr or result.stdout or "Unknown error"
+                logger.warning(f"Первая попытка клонирования не удалась: {error_output[:500]}")
                 
                 # Проверяем, была ли это ошибка SSH
                 is_ssh_error = (
                     "cannot run ssh" in error_output.lower() or
-                    "No such file or directory" in error_output or
+                    "no such file or directory" in error_output.lower() or
                     "unable to fork" in error_output.lower() or
-                    "ssh:" in error_output.lower()
+                    ("ssh:" in error_output.lower() and "error" in error_output.lower())
                 )
                 
                 # Если это была попытка SSH и произошла ошибка SSH - пробуем HTTPS
-                if try_ssh_first and is_ssh_error and is_https_url:
-                    logger.warning(f"SSH не работает ({error_output[:200]}), пробуем HTTPS")
-                    clone_url = repo_url  # Возвращаемся к оригинальному HTTPS URL
+                if try_ssh_first and is_ssh_error and original_https_url:
+                    logger.warning(f"SSH не работает, пробуем HTTPS: {error_output[:200]}")
+                    clone_url = original_https_url
                     env = self._get_https_env()
+                    logger.info(f"Повторная попытка через HTTPS: {clone_url}")
                     result = subprocess.run(
                         [self.git_cmd, "clone", "-b", branch, "--single-branch", clone_url, str(temp_dir)],
                         capture_output=True,
@@ -299,7 +322,7 @@ class GitRepository:
                         env=env
                     )
                     if result.returncode == 0:
-                        logger.info("Клонирование через HTTPS успешно")
+                        logger.info("Клонирование через HTTPS успешно после ошибки SSH")
                     else:
                         error_msg = result.stderr or result.stdout or "Unknown error"
                         return (False, f"Ошибка клонирования через HTTPS: {error_msg}")
