@@ -598,10 +598,17 @@ def update_panel_from_git() -> Tuple[bool, str]:
             logger.info(f"Удаляем GIT_SSH_COMMAND из окружения (было: {env['GIT_SSH_COMMAND']})")
             del env['GIT_SSH_COMMAND']
         
+        # Удаляем все SSH-связанные переменные окружения
+        ssh_vars = [k for k in env.keys() if 'SSH' in k.upper()]
+        for var in ssh_vars:
+            logger.info(f"Удаляем переменную окружения: {var}")
+            del env[var]
+        
         # Убеждаемся, что remote URL правильный перед pull
         verify_result = subprocess.run(
             [git_cmd, "remote", "get-url", "origin"],
             cwd=BASE_DIR,
+            env=env,
             capture_output=True,
             text=True,
             timeout=10
@@ -615,16 +622,55 @@ def update_panel_from_git() -> Tuple[bool, str]:
                 force_result = subprocess.run(
                     [git_cmd, "remote", "set-url", "origin", https_url],
                     cwd=BASE_DIR,
+                    env=env,
                     capture_output=True,
                     text=True,
                     timeout=10
                 )
                 if force_result.returncode == 0:
                     logger.info(f"Принудительно установлен HTTPS URL: {https_url}")
+                    # Проверяем еще раз
+                    verify2_result = subprocess.run(
+                        [git_cmd, "remote", "get-url", "origin"],
+                        cwd=BASE_DIR,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if verify2_result.returncode == 0:
+                        final_url = verify2_result.stdout.strip()
+                        logger.info(f"После принудительной установки URL: {final_url}")
                 else:
                     logger.error(f"Не удалось принудительно установить URL: {force_result.stderr}")
+                    return (False, f"Не удалось установить HTTPS URL. Ошибка: {force_result.stderr}")
+        
+        # Удаляем url rewrite правила из Git config если есть
+        try:
+            config_result = subprocess.run(
+                [git_cmd, "config", "--get-regexp", "url.*git@"],
+                cwd=BASE_DIR,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if config_result.returncode == 0:
+                logger.warning(f"Найдены url rewrite правила: {config_result.stdout}")
+                # Удаляем все url rewrite правила
+                subprocess.run(
+                    [git_cmd, "config", "--unset-all", "url.git@github.com:.insteadof"],
+                    cwd=BASE_DIR,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+        except Exception:
+            pass
         
         logger.info(f"Выполняем git pull через HTTPS (ветка: {PANEL_REPO_BRANCH}, URL: {https_url})")
+        logger.info(f"Окружение: GIT_SSH_COMMAND={'НЕТ' if 'GIT_SSH_COMMAND' not in env else env.get('GIT_SSH_COMMAND')}")
         pull_result = subprocess.run(
             [git_cmd, "pull", "origin", PANEL_REPO_BRANCH],
             cwd=BASE_DIR,
