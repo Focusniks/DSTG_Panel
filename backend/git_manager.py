@@ -512,6 +512,18 @@ def update_panel_from_git() -> Tuple[bool, str]:
     
     # Принудительно устанавливаем HTTPS URL
     try:
+        # Сначала проверяем текущий URL
+        check_result = subprocess.run(
+            [git_cmd, "remote", "get-url", "origin"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        current_url = check_result.stdout.strip() if check_result.returncode == 0 else None
+        logger.info(f"Текущий remote URL: {current_url}")
+        
+        # Устанавливаем HTTPS URL
         set_url_result = subprocess.run(
             [git_cmd, "remote", "set-url", "origin", https_url],
             cwd=BASE_DIR,
@@ -520,8 +532,22 @@ def update_panel_from_git() -> Tuple[bool, str]:
             timeout=10
         )
         if set_url_result.returncode == 0:
-            logger.info("Remote URL установлен на HTTPS")
+            logger.info(f"Remote URL установлен на HTTPS: {https_url}")
+            # Проверяем, что URL действительно установлен
+            verify_result = subprocess.run(
+                [git_cmd, "remote", "get-url", "origin"],
+                cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if verify_result.returncode == 0:
+                verified_url = verify_result.stdout.strip()
+                logger.info(f"Проверка: remote URL теперь: {verified_url}")
+                if verified_url != https_url:
+                    logger.warning(f"URL не совпадает! Ожидалось: {https_url}, получено: {verified_url}")
         else:
+            logger.warning(f"Не удалось установить remote URL: {set_url_result.stderr}")
             # Пробуем добавить remote если его нет
             add_result = subprocess.run(
                 [git_cmd, "remote", "add", "origin", https_url],
@@ -530,10 +556,12 @@ def update_panel_from_git() -> Tuple[bool, str]:
                 text=True,
                 timeout=10
             )
-            if add_result.returncode != 0:
-                logger.warning(f"Не удалось установить remote URL: {add_result.stderr}")
+            if add_result.returncode == 0:
+                logger.info(f"Remote URL добавлен: {https_url}")
+            else:
+                logger.error(f"Не удалось добавить remote URL: {add_result.stderr}")
     except Exception as e:
-        logger.warning(f"Ошибка при установке remote URL: {e}")
+        logger.error(f"Ошибка при установке remote URL: {e}", exc_info=True)
     
     # Создаем временную директорию для бэкапа защищаемых папок
     try:
@@ -567,9 +595,36 @@ def update_panel_from_git() -> Tuple[bool, str]:
         env = os.environ.copy()
         # Убираем SSH команду если есть
         if 'GIT_SSH_COMMAND' in env:
+            logger.info(f"Удаляем GIT_SSH_COMMAND из окружения (было: {env['GIT_SSH_COMMAND']})")
             del env['GIT_SSH_COMMAND']
         
-        logger.info(f"Выполняем git pull через HTTPS (ветка: {PANEL_REPO_BRANCH})")
+        # Убеждаемся, что remote URL правильный перед pull
+        verify_result = subprocess.run(
+            [git_cmd, "remote", "get-url", "origin"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if verify_result.returncode == 0:
+            final_url = verify_result.stdout.strip()
+            logger.info(f"Remote URL перед pull: {final_url}")
+            if not final_url.startswith("https://"):
+                logger.error(f"ОШИБКА: Remote URL не HTTPS! URL: {final_url}")
+                # Принудительно устанавливаем еще раз
+                force_result = subprocess.run(
+                    [git_cmd, "remote", "set-url", "origin", https_url],
+                    cwd=BASE_DIR,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if force_result.returncode == 0:
+                    logger.info(f"Принудительно установлен HTTPS URL: {https_url}")
+                else:
+                    logger.error(f"Не удалось принудительно установить URL: {force_result.stderr}")
+        
+        logger.info(f"Выполняем git pull через HTTPS (ветка: {PANEL_REPO_BRANCH}, URL: {https_url})")
         pull_result = subprocess.run(
             [git_cmd, "pull", "origin", PANEL_REPO_BRANCH],
             cwd=BASE_DIR,
@@ -578,6 +633,12 @@ def update_panel_from_git() -> Tuple[bool, str]:
             text=True,
             timeout=300
         )
+        
+        logger.info(f"Git pull завершен с кодом: {pull_result.returncode}")
+        if pull_result.stdout:
+            logger.info(f"Git pull stdout: {pull_result.stdout[:500]}")
+        if pull_result.stderr:
+            logger.info(f"Git pull stderr: {pull_result.stderr[:500]}")
         
         if pull_result.returncode == 0:
             logger.info("Git pull успешно выполнен")
