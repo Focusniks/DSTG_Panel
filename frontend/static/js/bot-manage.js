@@ -251,6 +251,7 @@
         // Git репозиторий
         const useGitCheckbox = document.getElementById('use-git');
         const gitFields = document.getElementById('edit-git-fields');
+        const gitInfo = document.getElementById('edit-git-info');
         const gitRepoInput = document.getElementById('git-repo-url');
         const gitBranchInput = document.getElementById('git-branch');
         
@@ -259,8 +260,10 @@
             useGitCheckbox.checked = hasGitRepo;
             if (hasGitRepo) {
                 gitFields.style.display = 'block';
+                if (gitInfo) gitInfo.style.display = 'block';
             } else {
                 gitFields.style.display = 'none';
+                if (gitInfo) gitInfo.style.display = 'none';
             }
         }
         
@@ -2076,7 +2079,13 @@
                             testSshBtn.style.display = 'none';
                         }
                     } else {
-                        container.innerHTML = '<div class="alert alert-secondary"><i class="fas fa-info-circle"></i> Git репозиторий не настроен. Укажите URL репозитория выше.</div>';
+                        // Показываем сообщение только если чекбокс Git включен
+                        const useGitCheckbox = document.getElementById('use-git');
+                        if (useGitCheckbox && useGitCheckbox.checked) {
+                            container.innerHTML = '<div class="alert alert-secondary"><i class="fas fa-info-circle"></i> Git репозиторий не настроен. Укажите URL репозитория выше.</div>';
+                        } else {
+                            container.innerHTML = '';
+                        }
                         if (updateBtn) updateBtn.style.display = 'none';
                         if (cloneBtn) cloneBtn.style.display = 'none';
                         if (testSshBtn) testSshBtn.style.display = 'none';

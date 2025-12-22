@@ -192,15 +192,17 @@
                             </div>
                         </div>
                         
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle"></i> 
-                            <strong>Как это работает:</strong>
-                            <ul class="mb-0 mt-2">
-                                <li>Если указать URL репозитория, он будет автоматически клонирован при создании бота</li>
-                                <li>Если репозиторий не указан, будет создан бот из шаблона (базовый код для Discord/Telegram)</li>
-                                <li>Файлы можно также загрузить вручную в разделе "Файлы" после создания бота</li>
-                                <li>Для приватных репозиториев необходимо настроить SSH ключ в <a href="/settings" class="alert-link">настройках панели</a></li>
-                            </ul>
+                        <div id="create-git-info" style="display: none;">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> 
+                                <strong>Как это работает:</strong>
+                                <ul class="mb-0 mt-2">
+                                    <li>Если указать URL репозитория, он будет автоматически клонирован при создании бота</li>
+                                    <li>Если репозиторий не указан, будет создан бот из шаблона (базовый код для Discord/Telegram)</li>
+                                    <li>Файлы можно также загрузить вручную в разделе "Файлы" после создания бота</li>
+                                    <li>Для приватных репозиториев необходимо настроить SSH ключ в <a href="/settings" class="alert-link">настройках панели</a></li>
+                                </ul>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -241,9 +243,11 @@
         function toggleGitFields(type) {
             const checkboxId = type === 'create' ? 'create-use-git' : 'use-git';
             const fieldsId = type === 'create' ? 'create-git-fields' : 'edit-git-fields';
+            const infoId = type === 'create' ? 'create-git-info' : 'edit-git-info';
             
             const checkbox = document.getElementById(checkboxId);
             const fields = document.getElementById(fieldsId);
+            const info = document.getElementById(infoId);
             
             if (!checkbox || !fields) {
                 console.error('Elements not found:', { checkboxId, fieldsId, checkbox, fields });
@@ -252,8 +256,10 @@
             
             if (checkbox.checked) {
                 fields.style.display = 'block';
+                if (info) info.style.display = 'block';
             } else {
                 fields.style.display = 'none';
+                if (info) info.style.display = 'none';
                 // Очищаем поля при скрытии
                 if (type === 'create') {
                     const repoInput = document.getElementById('create-git-repo-url');

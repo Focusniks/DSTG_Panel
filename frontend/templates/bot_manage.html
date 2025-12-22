@@ -327,27 +327,30 @@
                             </div>
                         </div>
                         
-                        <div class="alert alert-info mb-3">
-                            <h6 class="mb-2"><i class="fas fa-lightbulb"></i> Работа с Git репозиториями:</h6>
-                            <ul class="mb-0">
-                                <li><strong>Клонирование:</strong> При сохранении URL репозитория можно клонировать его кнопкой "Клонировать репозиторий"</li>
-                                <li><strong>Обновление:</strong> Кнопка "Обновить из репозитория" загрузит последние изменения из удаленной ветки</li>
-                                <li><strong>Приватные репозитории:</strong> Для доступа к приватным репозиториям используйте SSH URL и настройте SSH ключ в <a href="/settings" class="alert-link">настройках панели</a></li>
-                            </ul>
+                        <div id="edit-git-info" style="display: none;">
+                            <div class="alert alert-info mb-3">
+                                <h6 class="mb-2"><i class="fas fa-lightbulb"></i> Работа с Git репозиториями:</h6>
+                                <ul class="mb-0">
+                                    <li><strong>Клонирование:</strong> При сохранении URL репозитория можно клонировать его кнопкой "Клонировать репозиторий"</li>
+                                    <li><strong>Обновление:</strong> Кнопка "Обновить из репозитория" загрузит последние изменения из удаленной ветки</li>
+                                    <li><strong>Приватные репозитории:</strong> Для доступа к приватным репозиториям используйте SSH URL и настройте SSH ключ в <a href="/settings" class="alert-link">настройках панели</a></li>
+                                </ul>
+                            </div>
+                            
+                            <div id="git-status-info" class="mb-3"></div>
+                            
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button type="button" class="btn btn-secondary" id="update-git-btn">
+                                    <i class="fab fa-github"></i> Обновить из репозитория
+                                </button>
+                                <button type="button" class="btn btn-warning" id="clone-git-btn" style="display: none;">
+                                    <i class="fas fa-download"></i> Клонировать репозиторий
+                                </button>
+                                <button type="button" class="btn btn-info" id="test-ssh-btn" style="display: none;">
+                                    <i class="fas fa-plug"></i> Тест SSH подключения
+                                </button>
+                            </div>
                         </div>
-                        
-                        <div id="git-status-info" class="mb-3"></div>
-                        
-                        <div class="d-flex gap-2 flex-wrap">
-                            <button type="button" class="btn btn-secondary" id="update-git-btn">
-                                <i class="fab fa-github"></i> Обновить из репозитория
-                            </button>
-                            <button type="button" class="btn btn-warning" id="clone-git-btn" style="display: none;">
-                                <i class="fas fa-download"></i> Клонировать репозиторий
-                            </button>
-                            <button type="button" class="btn btn-info" id="test-ssh-btn" style="display: none;">
-                                <i class="fas fa-plug"></i> Тест SSH подключения
-                            </button>
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save"></i> Сохранить настройки
                             </button>
@@ -685,12 +688,15 @@
         function toggleGitFields(type) {
             const checkbox = document.getElementById(type === 'create' ? 'create-use-git' : 'use-git');
             const fields = document.getElementById(type === 'create' ? 'create-git-fields' : 'edit-git-fields');
+            const info = document.getElementById(type === 'create' ? 'create-git-info' : 'edit-git-info');
             
             if (checkbox && fields) {
                 if (checkbox.checked) {
                     fields.style.display = 'block';
+                    if (info) info.style.display = 'block';
                 } else {
                     fields.style.display = 'none';
+                    if (info) info.style.display = 'none';
                     // Очищаем поля при скрытии
                     if (type === 'create') {
                         const repoInput = document.getElementById('create-git-repo-url');
