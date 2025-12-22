@@ -1396,11 +1396,29 @@ async def generate_panel_ssh_key():
         
         if not success:
             logger.error(f"SSH key generation failed: {message}")
+            # Если ошибка связана с поиском ssh-keygen, добавляем дополнительную информацию
+            detailed_message = message
+            if "ssh-keygen not found" in message or "ssh-keygen не найден" in message:
+                import platform
+                import sys
+                detailed_message += f"\n\nСистемная информация:"
+                detailed_message += f"\n- ОС: {platform.system()} {platform.release()}"
+                detailed_message += f"\n- Python: {sys.executable}"
+                detailed_message += f"\n- PATH: {os.environ.get('PATH', 'не установлен')[:200]}..."
+                
+                # Пробуем найти ssh-keygen еще раз для диагностики
+                import shutil
+                which_result = shutil.which("ssh-keygen")
+                if which_result:
+                    detailed_message += f"\n- shutil.which('ssh-keygen'): {which_result}"
+                else:
+                    detailed_message += f"\n- shutil.which('ssh-keygen'): не найден"
+            
             return JSONResponse(
                 status_code=200,
                 content={
                     "success": False,
-                    "message": message,
+                    "message": detailed_message,
                     "public_key": None,
                     "key_type": None,
                     "key_size": None
