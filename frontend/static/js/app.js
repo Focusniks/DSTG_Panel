@@ -42,89 +42,109 @@ function renderBotsList(bots) {
 
     if (bots.length === 0) {
         container.innerHTML = `
-            <div class="card">
-                <div class="card-body text-center py-5">
-                    <i class="fas fa-robot fa-4x mb-4" style="background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></i>
-                    <h4 class="text-white mb-3">Боты не созданы</h4>
-                    <p class="text-muted mb-4">Создайте первого бота для Discord или Telegram, чтобы начать работу</p>
-                    <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#createBotModal">
-                        <i class="fas fa-plus"></i> Создать бота
-                    </button>
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fas fa-robot"></i>
                 </div>
+                <h3 class="empty-state-title">Боты не созданы</h3>
+                <p class="empty-state-text">Создайте первого бота для Discord или Telegram, чтобы начать работу</p>
+                <button class="btn-create-bot-empty" data-bs-toggle="modal" data-bs-target="#createBotModal">
+                    <i class="fas fa-plus"></i>
+                    <span>Создать первого бота</span>
+                </button>
             </div>
         `;
         return;
     }
 
-    // Карточки ботов
+    // Новый дизайн карточек ботов
     container.innerHTML = `
-        <div class="bots-grid">
+        <div class="bots-grid-new">
             ${bots.map(bot => `
-                <div class="bot-card" data-bot-id="${bot.id}">
-                    <div class="bot-card-header">
-                        <div>
-                            <h3 class="bot-card-title mb-1">${escapeHtml(bot.name)}</h3>
-                            <span class="badge ${bot.bot_type === 'discord' ? 'bg-primary' : 'bg-info'}">
-                                <i class="fab fa-${bot.bot_type === 'discord' ? 'discord' : 'telegram'}"></i> 
-                                ${bot.bot_type === 'discord' ? 'Discord' : 'Telegram'}
-                            </span>
-                        </div>
-                        <span class="bot-status ${bot.status}"></span>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <span class="status-badge ${bot.status}">
-                            <i class="fas ${bot.status === 'running' ? 'fa-play-circle' : bot.status === 'installing' ? 'fa-spinner fa-spin' : bot.status === 'error' ? 'fa-exclamation-circle' : 'fa-stop-circle'}"></i>
-                            ${bot.status === 'running' ? 'Запущен' : bot.status === 'installing' ? 'Установка' : bot.status === 'error' ? 'Ошибка' : 'Остановлен'}
-                        </span>
-                    </div>
-                    
-                    ${bot.start_file ? `
-                        <div class="mb-3">
-                            <small class="text-muted">
-                                <i class="fas fa-file-code"></i> ${escapeHtml(bot.start_file)}
-                            </small>
-                        </div>
-                    ` : ''}
-                    
-                    <div class="bot-card-stats">
-                        <div class="stat-item">
-                            <div class="stat-value" id="cpu-${bot.id}">-</div>
-                            <div class="stat-label">CPU</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="ram-${bot.id}">-</div>
-                            <div class="stat-label">RAM</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value text-muted">${bot.pid || '-'}</div>
-                            <div class="stat-label">PID</div>
+                <div class="bot-card-new" data-bot-id="${bot.id}" onclick="editBot(${bot.id})">
+                    <div class="bot-card-new-header">
+                        <div class="bot-card-new-status-indicator ${bot.status}"></div>
+                        <div class="bot-card-new-type-badge ${bot.bot_type}">
+                            <i class="fab fa-${bot.bot_type === 'discord' ? 'discord' : 'telegram'}"></i>
                         </div>
                     </div>
                     
-                    ${bot.status === 'running' ? `
-                        <div class="progress-bar-container mt-3">
-                            <div class="progress-bar" id="cpu-progress-${bot.id}" style="width: 0%"></div>
+                    <div class="bot-card-new-body">
+                        <h3 class="bot-card-new-title">${escapeHtml(bot.name)}</h3>
+                        
+                        <div class="bot-card-new-status">
+                            <span class="status-indicator-dot ${bot.status}"></span>
+                            <span class="status-text">${bot.status === 'running' ? 'Запущен' : bot.status === 'installing' ? 'Установка зависимостей' : bot.status === 'error' ? 'Ошибка' : 'Остановлен'}</span>
                         </div>
-                    ` : ''}
+                        
+                        ${bot.start_file ? `
+                            <div class="bot-card-new-info">
+                                <i class="fas fa-file-code"></i>
+                                <span>${escapeHtml(bot.start_file)}</span>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="bot-card-new-metrics">
+                            <div class="metric-box">
+                                <div class="metric-icon">
+                                    <i class="fas fa-microchip"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <div class="metric-value" id="cpu-${bot.id}">-</div>
+                                    <div class="metric-label">CPU</div>
+                                </div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-icon">
+                                    <i class="fas fa-memory"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <div class="metric-value" id="ram-${bot.id}">-</div>
+                                    <div class="metric-label">RAM</div>
+                                </div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="metric-icon">
+                                    <i class="fas fa-hashtag"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <div class="metric-value-small">${bot.pid || '-'}</div>
+                                    <div class="metric-label">PID</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${bot.status === 'running' ? `
+                            <div class="bot-card-new-progress">
+                                <div class="progress-label">Использование CPU</div>
+                                <div class="progress-bar-wrapper">
+                                    <div class="progress-bar-fill" id="cpu-progress-${bot.id}" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
                     
-                    <div class="quick-actions mt-auto">
-                        <button class="btn btn-sm btn-primary flex-fill" onclick="editBot(${bot.id})" title="Управление">
-                            <i class="fas fa-cog"></i> Управление
+                    <div class="bot-card-new-footer" onclick="event.stopPropagation()">
+                        <button class="bot-card-new-btn btn-manage" onclick="editBot(${bot.id})" title="Управление">
+                            <i class="fas fa-cog"></i>
+                            <span>Управление</span>
                         </button>
                         ${bot.status === 'running' 
-                            ? `<button class="btn btn-sm btn-warning flex-fill" onclick="stopBot(${bot.id})" title="Остановить">
-                                 <i class="fas fa-stop"></i> Остановить
+                            ? `<button class="bot-card-new-btn btn-stop" onclick="stopBot(${bot.id})" title="Остановить">
+                                 <i class="fas fa-stop"></i>
+                                 <span>Остановить</span>
                                </button>`
                             : bot.status === 'installing'
-                                ? `<button class="btn btn-sm btn-secondary flex-fill" disabled title="Установка зависимостей">
-                                     <i class="fas fa-spinner fa-spin"></i> Установка
+                                ? `<button class="bot-card-new-btn btn-installing" disabled title="Установка зависимостей">
+                                     <i class="fas fa-spinner fa-spin"></i>
+                                     <span>Установка</span>
                                    </button>`
-                                : `<button class="btn btn-sm btn-success flex-fill" onclick="startBot(${bot.id})" title="Запустить">
-                                     <i class="fas fa-play"></i> Запустить
+                                : `<button class="bot-card-new-btn btn-start" onclick="startBot(${bot.id})" title="Запустить">
+                                     <i class="fas fa-play"></i>
+                                     <span>Запустить</span>
                                    </button>`
                         }
-                        <button class="btn btn-sm btn-danger" onclick="deleteBot(${bot.id})" title="Удалить">
+                        <button class="bot-card-new-btn btn-delete" onclick="deleteBot(${bot.id})" title="Удалить">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>

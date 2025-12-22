@@ -36,65 +36,73 @@
         <div id="alerts-container"></div>
         
         <!-- Header Section -->
-        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-            <div>
-                <h1 class="text-white mb-2">
-                    <i class="fas fa-robot text-neon-cyan"></i> Управление ботами
-                </h1>
-                <p class="text-muted mb-0">Управляйте ботами для Discord и Telegram: запуск, мониторинг, редактирование кода, работа с Git репозиториями</p>
+        <div class="dashboard-header mb-5">
+            <div class="dashboard-header-content">
+                <div class="dashboard-title-section">
+                    <h1 class="dashboard-title">
+                        <span class="title-icon">
+                            <i class="fas fa-robot"></i>
+                        </span>
+                        <span class="title-text">Панель управления ботами</span>
+                    </h1>
+                    <p class="dashboard-subtitle">Управляйте ботами для Discord и Telegram: запуск, мониторинг, редактирование кода, работа с Git репозиториями</p>
+                </div>
+                <button class="btn-create-bot" data-bs-toggle="modal" data-bs-target="#createBotModal">
+                    <i class="fas fa-plus"></i>
+                    <span>Создать бота</span>
+                </button>
             </div>
-            <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#createBotModal">
-                <i class="fas fa-plus"></i> Создать бота
-            </button>
         </div>
 
         <!-- Stats Overview -->
-        <div class="row mb-4" id="stats-overview" style="display: none;">
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <h5 class="text-white mb-2">Всего ботов</h5>
-                    <div class="stat-value" id="total-bots">0</div>
+        <div class="stats-grid mb-5" id="stats-overview" style="display: none;">
+            <div class="stat-card stat-card-primary">
+                <div class="stat-card-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="stat-card-content">
+                    <div class="stat-card-label">Всего ботов</div>
+                    <div class="stat-card-value" id="total-bots">0</div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-play-circle"></i>
-                    </div>
-                    <h5 class="text-white mb-2">Запущено</h5>
-                    <div class="stat-value text-success" id="running-bots">0</div>
+            <div class="stat-card stat-card-success">
+                <div class="stat-card-icon">
+                    <i class="fas fa-play-circle"></i>
+                </div>
+                <div class="stat-card-content">
+                    <div class="stat-card-label">Запущено</div>
+                    <div class="stat-card-value" id="running-bots">0</div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-stop-circle"></i>
-                    </div>
-                    <h5 class="text-white mb-2">Остановлено</h5>
-                    <div class="stat-value text-muted" id="stopped-bots">0</div>
+            <div class="stat-card stat-card-warning">
+                <div class="stat-card-icon">
+                    <i class="fas fa-stop-circle"></i>
+                </div>
+                <div class="stat-card-content">
+                    <div class="stat-card-label">Остановлено</div>
+                    <div class="stat-card-value" id="stopped-bots">0</div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-exclamation-triangle"></i>
-                    </div>
-                    <h5 class="text-white mb-2">Ошибки</h5>
-                    <div class="stat-value text-danger" id="error-bots">0</div>
+            <div class="stat-card stat-card-danger">
+                <div class="stat-card-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="stat-card-content">
+                    <div class="stat-card-label">Ошибки</div>
+                    <div class="stat-card-value" id="error-bots">0</div>
                 </div>
             </div>
         </div>
 
         <!-- Bots List -->
         <div id="bots-list">
-            <div class="text-center py-5">
-                <div class="spinner-border text-neon-cyan" role="status" style="width: 3rem; height: 3rem;">
-                    <span class="visually-hidden">Загрузка...</span>
+            <div class="loading-state">
+                <div class="loading-spinner">
+                    <div class="spinner-ring"></div>
+                    <div class="spinner-ring"></div>
+                    <div class="spinner-ring"></div>
                 </div>
-                <p class="text-muted mt-3">Загрузка ботов...</p>
+                <p class="loading-text">Загрузка ботов...</p>
             </div>
         </div>
     </div>

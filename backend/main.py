@@ -1,7 +1,7 @@
 """
 Главный файл FastAPI приложения - панель управления ботами
 """
-from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File, Form
+from fastapi import FastAPI, Request, HTTPException, Response, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1218,23 +1218,32 @@ async def generate_panel_ssh_key():
 
 
 @app.post("/api/panel/ssh-key/test")
-async def test_panel_ssh_connection(host: str = "github.com"):
+async def test_panel_ssh_connection(host: str = Query(default="github.com")):
     """
     Тестирование SSH подключения к Git хосту
     
     Args:
         host: Хост для тестирования (по умолчанию github.com)
     """
-    success, message = test_ssh_connection(host)
+    import logging
+    logger = logging.getLogger(__name__)
     
-    if success:
-        return {
-            "success": True,
-            "message": message,
-            "host": host
-        }
-    else:
-        raise HTTPException(status_code=500, detail=message)
+    try:
+        success, message = test_ssh_connection(host)
+        
+        if success:
+            return {
+                "success": True,
+                "message": message,
+                "host": host
+            }
+        else:
+            raise HTTPException(status_code=500, detail=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error testing SSH connection: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка тестирования SSH: {str(e)}")
 
 
 @app.get("/api/panel/ssh-key/info")

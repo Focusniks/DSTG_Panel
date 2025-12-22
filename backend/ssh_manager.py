@@ -116,25 +116,72 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
                     ssh_keygen_path = path
                     break
         
-        # Метод 3: пробуем выполнить команду напрямую
+        # Метод 3: пробуем выполнить команду напрямую (для Windows может быть в PATH через Git)
         if not ssh_keygen_path:
             try:
-                result = subprocess.run(
+                # Пробуем разные варианты команды
+                test_commands = [
                     ["ssh-keygen", "-V"],
+                    ["ssh-keygen", "--version"],
+                ]
+                
+                for cmd in test_commands:
+                    try:
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=3,
+                            shell=(os.name == 'nt')  # На Windows используем shell
+                        )
+                        # Если команда выполнилась (даже с ошибкой), значит ssh-keygen доступен
+                        ssh_keygen_path = "ssh-keygen"
+                        break
+                    except (FileNotFoundError, subprocess.TimeoutExpired):
+                        continue
+                    except Exception:
+                        # Любая другая ошибка означает, что команда найдена, но что-то не так
+                        ssh_keygen_path = "ssh-keygen"
+                        break
+            except Exception:
+                pass
+        
+        # Метод 4: на Windows пробуем найти через where
+        if not ssh_keygen_path and os.name == 'nt':
+            try:
+                result = subprocess.run(
+                    ["where", "ssh-keygen"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    shell=True
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    ssh_keygen_path = result.stdout.strip().split('\n')[0].strip()
+            except Exception:
+                pass
+        
+        # Метод 5: на Unix пробуем через which
+        if not ssh_keygen_path and os.name != 'nt':
+            try:
+                result = subprocess.run(
+                    ["which", "ssh-keygen"],
                     capture_output=True,
                     text=True,
                     timeout=2
                 )
-                # Если команда выполнилась (даже с ошибкой), значит ssh-keygen доступен
-                ssh_keygen_path = "ssh-keygen"
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
+                if result.returncode == 0 and result.stdout.strip():
+                    ssh_keygen_path = result.stdout.strip()
             except Exception:
-                # Любая другая ошибка означает, что команда найдена, но что-то не так
-                ssh_keygen_path = "ssh-keygen"
+                pass
         
         if not ssh_keygen_path:
-            return False, "ssh-keygen не найден. Установите OpenSSH или Git for Windows."
+            error_msg = "ssh-keygen не найден. "
+            if os.name == 'nt':
+                error_msg += "Установите Git for Windows (включает OpenSSH) или OpenSSH для Windows."
+            else:
+                error_msg += "Установите OpenSSH: sudo apt-get install openssh-client (Debian/Ubuntu) или sudo yum install openssh-clients (CentOS/RHEL)"
+            return False, error_msg
         
         # Генерируем SSH ключ (предпочитаем ed25519, fallback на RSA)
         key_types = [
@@ -142,6 +189,7 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
             ("rsa", ["-b", "4096"])  # Fallback для старых систем
         ]
         
+        last_error = None
         for key_type, extra_args in key_types:
             try:
                 cmd = [
@@ -152,11 +200,13 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
                     "-C", "dstg-panel-deploy-key"
                 ] + extra_args
                 
+                # На Windows используем shell=True для правильной работы с путями
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
+                    shell=(os.name == 'nt' and not os.path.isabs(ssh_keygen_path))
                 )
                 
                 if result.returncode == 0:
@@ -170,14 +220,25 @@ def generate_ssh_key(force: bool = False) -> Tuple[bool, str]:
                     
                     logger.info(f"SSH ключ успешно сгенерирован (тип: {key_type})")
                     return True, f"SSH ключ успешно сгенерирован (тип: {key_type})"
+                else:
+                    # Сохраняем ошибку для последующего использования
+                    error_output = result.stderr or result.stdout or "Unknown error"
+                    last_error = f"Ошибка генерации {key_type} ключа: {error_output}"
+                    logger.debug(last_error)
+                    # Пробуем следующий тип ключа
+                    continue
             except subprocess.TimeoutExpired:
                 return False, "Превышено время ожидания при генерации ключа"
             except Exception as e:
                 # Пробуем следующий тип ключа
-                logger.debug(f"Не удалось сгенерировать {key_type} ключ: {e}")
+                last_error = f"Исключение при генерации {key_type} ключа: {str(e)}"
+                logger.debug(last_error)
                 continue
         
-        return False, "Не удалось сгенерировать SSH ключ ни одного типа"
+        error_msg = "Не удалось сгенерировать SSH ключ ни одного типа"
+        if last_error:
+            error_msg += f". Последняя ошибка: {last_error}"
+        return False, error_msg
         
     except FileNotFoundError:
         return False, "ssh-keygen не найден. Установите OpenSSH."
