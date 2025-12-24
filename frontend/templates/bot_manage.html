@@ -469,62 +469,18 @@
                     <h5><i class="fas fa-plus-circle"></i> Создать новую базу данных</h5>
                 </div>
                 <div class="database-create-body">
-                    <div class="row g-3">
-                        <div class="col-md-8">
-                            <label for="new-db-name" class="form-label">Имя базы данных (опционально)</label>
+                    <div class="d-flex gap-3 align-items-end flex-wrap">
+                        <div class="flex-grow-1" style="min-width: 250px;">
+                            <label for="new-db-name" class="form-label">Имя базы данных</label>
                             <input type="text" class="form-control" id="new-db-name" placeholder="Оставьте пустым для автоматического имени">
                             <small class="form-text text-muted">Если не указано, будет создано автоматическое имя</small>
                         </div>
-                        <div class="col-md-4 d-flex flex-column justify-content-end">
-                            <button class="btn btn-primary w-100" id="create-db-btn">
-                                <i class="fas fa-plus"></i> Создать базу данных
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success" id="import-db-modal-btn" data-bs-toggle="modal" data-bs-target="#importDatabaseModal">
+                                <i class="fas fa-file-import"></i> Импорт БД
                             </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Форма импорта базы данных -->
-            <div class="database-create-form mb-4">
-                <div class="database-create-header">
-                    <h5><i class="fas fa-file-import"></i> Импорт базы данных</h5>
-                </div>
-                <div class="database-create-body">
-                    <div class="row g-3">
-                        <div class="col-md-12 mb-3">
-                            <label for="import-db-file" class="form-label">Файл базы данных или SQL скрипт (.db, .sqlite, .sqlite3, .sql)</label>
-                            <input type="file" class="form-control" id="import-db-file" accept=".db,.sqlite,.sqlite3,.sql">
-                            <small class="form-text text-muted">Выберите файл SQLite базы данных (.db, .sqlite, .sqlite3) или SQL скрипт (.sql) для импорта. SQL скрипты будут автоматически преобразованы в SQLite базу данных.</small>
-                        </div>
-                        <div class="col-md-12 mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="import-mode" id="import-mode-new" value="new" checked>
-                                <label class="form-check-label" for="import-mode-new">
-                                    Создать новую базу данных из файла
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="import-mode" id="import-mode-existing" value="existing">
-                                <label class="form-check-label" for="import-mode-existing">
-                                    Импортировать данные в существующую базу данных
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-6" id="import-new-name-group">
-                            <label for="import-new-db-name" class="form-label">Имя новой базы данных (опционально)</label>
-                            <input type="text" class="form-control" id="import-new-db-name" placeholder="Оставьте пустым для автоматического имени">
-                            <small class="form-text text-muted">Если не указано, будет использовано имя из файла</small>
-                        </div>
-                        <div class="col-md-6" id="import-existing-name-group" style="display: none;">
-                            <label for="import-existing-db-name" class="form-label">Существующая база данных</label>
-                            <select class="form-select" id="import-existing-db-name">
-                                <option value="">Выберите базу данных...</option>
-                            </select>
-                            <small class="form-text text-muted">Данные будут импортированы в выбранную БД</small>
-                        </div>
-                        <div class="col-md-12">
-                            <button class="btn btn-success w-100" id="import-db-btn">
-                                <i class="fas fa-file-import"></i> Импортировать базу данных
+                            <button class="btn btn-primary" id="create-db-btn">
+                                <i class="fas fa-plus"></i> Создать
                             </button>
                         </div>
                     </div>
@@ -687,6 +643,68 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                     <button type="button" class="btn btn-primary" id="confirm-create-folder-btn">Создать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для импорта базы данных -->
+    <div class="modal fade" id="importDatabaseModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-file-import text-success"></i> Импорт базы данных
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="import-db-file" class="form-label">
+                            <i class="fas fa-file"></i> Файл базы данных или SQL скрипт
+                        </label>
+                        <input type="file" class="form-control" id="import-db-file" accept=".db,.sqlite,.sqlite3,.sql">
+                        <small class="form-text text-muted">
+                            Поддерживаемые форматы: .db, .sqlite, .sqlite3, .sql<br>
+                            SQL скрипты будут автоматически преобразованы в SQLite базу данных.
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Режим импорта</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="import-mode" id="import-mode-new" value="new" checked>
+                            <label class="form-check-label" for="import-mode-new">
+                                <strong>Создать новую базу данных из файла</strong>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="import-mode" id="import-mode-existing" value="existing">
+                            <label class="form-check-label" for="import-mode-existing">
+                                <strong>Импортировать данные в существующую базу данных</strong>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="import-new-name-group">
+                        <label for="import-new-db-name" class="form-label">Имя новой базы данных</label>
+                        <input type="text" class="form-control" id="import-new-db-name" placeholder="Оставьте пустым для автоматического имени">
+                        <small class="form-text text-muted">Если не указано, будет использовано имя из файла</small>
+                    </div>
+                    
+                    <div class="mb-3" id="import-existing-name-group" style="display: none;">
+                        <label for="import-existing-db-name" class="form-label">Существующая база данных</label>
+                        <select class="form-select" id="import-existing-db-name">
+                            <option value="">Выберите базу данных...</option>
+                        </select>
+                        <small class="form-text text-muted">Данные будут импортированы в выбранную БД</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-success" id="import-db-btn">
+                        <i class="fas fa-file-import"></i> Импортировать
+                    </button>
                 </div>
             </div>
         </div>

@@ -45,19 +45,49 @@
     </script>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-dark">
+    <nav class="navbar navbar-expand-lg">
         <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1">
-                <i class="fas fa-cog"></i> Настройки панели
+            <span class="navbar-brand">
+                <i class="fas fa-robot"></i> 
+                <span class="d-none d-md-inline">DSTG Panel</span>
             </span>
-            <button class="btn btn-outline-light" onclick="window.location.href='/'">
-                <i class="fas fa-arrow-left"></i> Назад
+            <button class="mobile-menu-toggle d-lg-none" id="mobile-menu-toggle">
+                <i class="fas fa-bars"></i>
             </button>
+            <div class="navbar-nav ms-auto d-flex flex-row gap-2">
+                <button class="btn btn-outline-light" onclick="window.location.href='/wiki'" title="Документация">
+                    <i class="fas fa-book"></i>
+                    <span class="d-none d-md-inline ms-1">Wiki</span>
+                </button>
+                <button class="btn btn-outline-light" onclick="window.location.href='/'" title="Главная">
+                    <i class="fas fa-home"></i>
+                    <span class="d-none d-md-inline ms-1">Главная</span>
+                </button>
+                <button class="btn btn-outline-danger" onclick="logout()" title="Выход">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span class="d-none d-md-inline ms-1">Выход</span>
+                </button>
+            </div>
         </div>
     </nav>
 
     <div class="container mt-4">
         <div id="alerts-container"></div>
+        
+        <!-- Header Section -->
+        <div class="dashboard-header mb-4">
+            <div class="dashboard-header-content">
+                <div class="dashboard-title-section">
+                    <h1 class="dashboard-title">
+                        <span class="title-icon">
+                            <i class="fas fa-cog"></i>
+                        </span>
+                        <span class="title-text">Настройки панели</span>
+                    </h1>
+                    <p class="dashboard-subtitle">Управление паролем, SSH ключами, темами оформления и обновлениями панели</p>
+                </div>
+            </div>
+        </div>
         
         <!-- Смена пароля -->
         <div class="card mb-3">
@@ -1148,6 +1178,12 @@
             window.themeManager.deleteCustomTheme(themeName);
             loadThemes();
             showAlert('Тема удалена', 'success');
+        }
+        
+        // Выход
+        function logout() {
+            document.cookie = 'panel_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            window.location.href = '/login';
         }
     </script>
 </body>

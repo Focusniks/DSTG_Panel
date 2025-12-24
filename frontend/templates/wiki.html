@@ -189,6 +189,120 @@
         .back-button {
             margin-bottom: 2rem;
         }
+        
+        /* Навигационное меню */
+        .wiki-nav {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            width: 280px;
+            max-height: calc(100vh - 100px);
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            transition: all var(--anim-normal) ease;
+        }
+        
+        .wiki-nav::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .wiki-nav::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+        }
+        
+        .wiki-nav::-webkit-scrollbar-thumb {
+            background: var(--neon-cyan);
+            border-radius: 3px;
+        }
+        
+        .wiki-nav::-webkit-scrollbar-thumb:hover {
+            background: var(--neon-blue);
+        }
+        
+        .wiki-nav-header {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .wiki-nav-header i {
+            color: var(--neon-cyan);
+        }
+        
+        .wiki-nav-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .wiki-nav-item {
+            margin-bottom: 0.5rem;
+        }
+        
+        .wiki-nav-link {
+            display: block;
+            padding: 0.6rem 0.75rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all var(--anim-fast) ease;
+            font-size: 0.9rem;
+            border-left: 3px solid transparent;
+        }
+        
+        .wiki-nav-link:hover {
+            color: var(--neon-cyan);
+            background: rgba(0, 243, 255, 0.1);
+            border-left-color: var(--neon-cyan);
+            transform: translateX(4px);
+        }
+        
+        .wiki-nav-link.active {
+            color: var(--neon-cyan);
+            background: rgba(0, 243, 255, 0.15);
+            border-left-color: var(--neon-cyan);
+            font-weight: 600;
+        }
+        
+        .wiki-content-wrapper {
+            display: flex;
+            gap: 2rem;
+            position: relative;
+        }
+        
+        .wiki-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        @media (max-width: 1200px) {
+            .wiki-nav {
+                position: relative;
+                top: 0;
+                right: 0;
+                width: 100%;
+                max-height: none;
+                margin-bottom: 2rem;
+                order: -1;
+            }
+            
+            .wiki-content-wrapper {
+                flex-direction: column;
+            }
+        }
+        
         @media (max-width: 768px) {
             .wiki-header h1 {
                 font-size: 2rem;
@@ -199,6 +313,21 @@
             .wiki-card-title {
                 font-size: 1.5rem;
             }
+            .wiki-nav {
+                width: 100%;
+                padding: 1rem;
+            }
+            .wiki-nav-header {
+                font-size: 1rem;
+            }
+            .wiki-nav-link {
+                font-size: 0.85rem;
+                padding: 0.5rem;
+            }
+        }
+        
+        html {
+            scroll-behavior: smooth;
         }
     </style>
 </head>
@@ -223,8 +352,10 @@
                 <p>Подробное руководство по использованию всех функций панели управления ботами</p>
             </div>
 
+            <div class="wiki-content-wrapper">
+                <div class="wiki-content">
             <!-- Главная панель -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="main-panel">
                 <div class="wiki-card-header">
                     <i class="fas fa-home wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Главная панель</h2>
@@ -261,7 +392,7 @@
             </div>
 
             <!-- Мониторинг бота -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="monitoring">
                 <div class="wiki-card-header">
                     <i class="fas fa-chart-line wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Мониторинг бота</h2>
@@ -289,7 +420,7 @@
             </div>
 
             <!-- Настройки бота -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="bot-settings">
                 <div class="wiki-card-header">
                     <i class="fas fa-cog wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Настройки бота</h2>
@@ -343,7 +474,7 @@
             </div>
 
             <!-- Файлы бота -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="files">
                 <div class="wiki-card-header">
                     <i class="fas fa-folder wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Управление файлами</h2>
@@ -409,7 +540,7 @@
             </div>
 
             <!-- База данных -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="database">
                 <div class="wiki-card-header">
                     <i class="fas fa-database wiki-card-icon"></i>
                     <h2 class="wiki-card-title">База данных</h2>
@@ -499,7 +630,7 @@ INSERT INTO users (name, email) VALUES ('John', 'john@example.com');</code></pre
             </div>
 
             <!-- Логи бота -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="logs">
                 <div class="wiki-card-header">
                     <i class="fas fa-file-alt wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Логи бота</h2>
@@ -539,7 +670,7 @@ INSERT INTO users (name, email) VALUES ('John', 'john@example.com');</code></pre
             </div>
 
             <!-- Настройки панели -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="panel-settings">
                 <div class="wiki-card-header">
                     <i class="fas fa-cog wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Настройки панели</h2>
@@ -603,7 +734,7 @@ INSERT INTO users (name, email) VALUES ('John', 'john@example.com');</code></pre
             </div>
 
             <!-- Git и репозитории -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="git">
                 <div class="wiki-card-header">
                     <i class="fab fa-git-alt wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Работа с Git</h2>
@@ -653,7 +784,7 @@ INSERT INTO users (name, email) VALUES ('John', 'john@example.com');</code></pre
             </div>
 
             <!-- Советы и лучшие практики -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="tips">
                 <div class="wiki-card-header">
                     <i class="fas fa-lightbulb wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Советы и лучшие практики</h2>
@@ -706,7 +837,7 @@ INSERT INTO users (name, email) VALUES ('John', 'john@example.com');</code></pre
             </div>
 
             <!-- FAQ -->
-            <div class="wiki-card">
+            <div class="wiki-card" id="faq">
                 <div class="wiki-card-header">
                     <i class="fas fa-question-circle wiki-card-icon"></i>
                     <h2 class="wiki-card-title">Часто задаваемые вопросы</h2>
@@ -757,11 +888,116 @@ INSERT INTO users (name, email) VALUES ('John', 'john@example.com');</code></pre
                     <p>Нет, панель использует один SSH ключ для всех ботов. Этот ключ настраивается в настройках панели и используется для всех приватных репозиториев.</p>
                 </div>
             </div>
+                </div>
+                
+                <!-- Навигационное меню -->
+                <nav class="wiki-nav" id="wiki-nav">
+                    <div class="wiki-nav-header">
+                        <i class="fas fa-list"></i> Навигация
+                    </div>
+                    <ul class="wiki-nav-list">
+                        <li class="wiki-nav-item">
+                            <a href="#main-panel" class="wiki-nav-link" data-section="main-panel">
+                                <i class="fas fa-home"></i> Главная панель
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#monitoring" class="wiki-nav-link" data-section="monitoring">
+                                <i class="fas fa-chart-line"></i> Мониторинг бота
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#bot-settings" class="wiki-nav-link" data-section="bot-settings">
+                                <i class="fas fa-cog"></i> Настройки бота
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#files" class="wiki-nav-link" data-section="files">
+                                <i class="fas fa-folder"></i> Управление файлами
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#database" class="wiki-nav-link" data-section="database">
+                                <i class="fas fa-database"></i> База данных
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#logs" class="wiki-nav-link" data-section="logs">
+                                <i class="fas fa-file-alt"></i> Логи бота
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#panel-settings" class="wiki-nav-link" data-section="panel-settings">
+                                <i class="fas fa-cog"></i> Настройки панели
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#git" class="wiki-nav-link" data-section="git">
+                                <i class="fab fa-git-alt"></i> Работа с Git
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#tips" class="wiki-nav-link" data-section="tips">
+                                <i class="fas fa-lightbulb"></i> Советы и практики
+                            </a>
+                        </li>
+                        <li class="wiki-nav-item">
+                            <a href="#faq" class="wiki-nav-link" data-section="faq">
+                                <i class="fas fa-question-circle"></i> FAQ
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
 
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/static/js/theme-manager.js"></script>
+    <script>
+        // Плавная прокрутка к якорям
+        document.querySelectorAll('.wiki-nav-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href').substring(1);
+                const targetElement = document.getElementById(targetId);
+                if (targetElement) {
+                    const offsetTop = targetElement.offsetTop - 100;
+                    window.scrollTo({
+                        top: offsetTop,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+        
+        // Подсветка активного раздела при прокрутке
+        function updateActiveSection() {
+            const sections = document.querySelectorAll('.wiki-card[id]');
+            const navLinks = document.querySelectorAll('.wiki-nav-link');
+            const scrollPosition = window.scrollY + 150;
+            
+            let currentSection = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.offsetHeight;
+                if (scrollPosition >= sectionTop && scrollPosition < sectionTop + sectionHeight) {
+                    currentSection = section.getAttribute('id');
+                }
+            });
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('data-section') === currentSection) {
+                    link.classList.add('active');
+                }
+            });
+        }
+        
+        // Обновление активного раздела при прокрутке
+        window.addEventListener('scroll', updateActiveSection);
+        window.addEventListener('load', updateActiveSection);
+    </script>
 </body>
 </html>

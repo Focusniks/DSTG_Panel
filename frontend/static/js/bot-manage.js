@@ -102,7 +102,7 @@
             createDbBtn.addEventListener('click', handleCreateDatabase);
         }
         
-        // Обработчики для импорта БД
+        // Обработчики для импорта БД (в модальном окне)
         const importModeRadios = document.querySelectorAll('input[name="import-mode"]');
         importModeRadios.forEach(radio => {
             radio.addEventListener('change', function() {
@@ -123,6 +123,33 @@
         const importDbBtn = document.getElementById('import-db-btn');
         if (importDbBtn) {
             importDbBtn.addEventListener('click', handleImportDatabase);
+        }
+        
+        // Обработчик открытия модального окна импорта - загружаем список БД если нужно
+        const importDatabaseModal = document.getElementById('importDatabaseModal');
+        if (importDatabaseModal) {
+            importDatabaseModal.addEventListener('show.bs.modal', function() {
+                // Если выбран режим "existing", загружаем список БД
+                const importModeExisting = document.getElementById('import-mode-existing');
+                if (importModeExisting && importModeExisting.checked) {
+                    updateImportDbSelect();
+                }
+            });
+            
+            // Очистка формы при закрытии модального окна
+            importDatabaseModal.addEventListener('hidden.bs.modal', function() {
+                const fileInput = document.getElementById('import-db-file');
+                if (fileInput) fileInput.value = '';
+                const importNewNameInput = document.getElementById('import-new-db-name');
+                if (importNewNameInput) importNewNameInput.value = '';
+                // Возвращаем к режиму "new"
+                const importModeNew = document.getElementById('import-mode-new');
+                if (importModeNew) importModeNew.checked = true;
+                const importNewNameGroup = document.getElementById('import-new-name-group');
+                const importExistingNameGroup = document.getElementById('import-existing-name-group');
+                if (importNewNameGroup) importNewNameGroup.style.display = 'block';
+                if (importExistingNameGroup) importExistingNameGroup.style.display = 'none';
+            });
         }
         
         const executeQueryBtn = document.getElementById('execute-query-btn');
@@ -2032,7 +2059,119 @@
             // Включаем кнопку обратно
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-plus"></i> Создать базу данных';
+                btn.innerHTML = '<i class="fas fa-plus"></i> Создать';
+            }
+        }
+    }
+    
+    // Обновление списка БД в селекторе импорта
+    async function updateImportDbSelect() {
+        if (!botId) return;
+        
+        const importDbSelect = document.getElementById('import-existing-db-name');
+        if (!importDbSelect) return;
+        
+        try {
+            const response = await fetch('/api/bots/' + botId + '/sqlite/databases');
+            if (!response.ok) return;
+            
+            const result = await response.json();
+            const databases = result.databases || [];
+            
+            importDbSelect.innerHTML = '<option value="">Выберите базу данных...</option>';
+            databases.forEach(db => {
+                const option = document.createElement('option');
+                option.value = db.db_name;
+                option.textContent = db.db_name;
+                importDbSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error loading databases for import:', error);
+        }
+    }
+    
+    // Импорт базы данных
+    async function handleImportDatabase() {
+        if (!botId) return;
+        
+        const fileInput = document.getElementById('import-db-file');
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            showWarning('Внимание', 'Выберите файл базы данных для импорта');
+            return;
+        }
+        
+        const file = fileInput.files[0];
+        const importModeRadio = document.querySelector('input[name="import-mode"]:checked');
+        const importMode = importModeRadio ? importModeRadio.value : 'new';
+        
+        let dbName = null;
+        if (importMode === 'new') {
+            const dbNameInput = document.getElementById('import-new-db-name');
+            dbName = dbNameInput ? dbNameInput.value.trim() || null : null;
+        } else {
+            const dbNameSelect = document.getElementById('import-existing-db-name');
+            dbName = dbNameSelect ? dbNameSelect.value || null : null;
+            if (!dbName) {
+                showWarning('Внимание', 'Выберите базу данных для импорта');
+                return;
+            }
+        }
+        
+        const btn = document.getElementById('import-db-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Импорт...';
+        }
+        
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('import_mode', importMode);
+            if (dbName) {
+                formData.append('db_name', dbName);
+            }
+            
+            const response = await fetch('/api/bots/' + botId + '/sqlite/databases/import', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const contentType = response.headers.get('content-type');
+            let result;
+            
+            if (contentType && contentType.includes('application/json')) {
+                result = await response.json();
+            } else {
+                const text = await response.text();
+                console.error('Non-JSON response from server:', text);
+                showError('Ошибка импорта', 'Сервер вернул не-JSON ответ. Проверьте консоль (F12).', text);
+                return;
+            }
+            
+            if (result.success) {
+                showSuccess('Успех', result.message || 'База данных успешно импортирована');
+                
+                // Закрываем модальное окно
+                const modal = bootstrap.Modal.getInstance(document.getElementById('importDatabaseModal'));
+                if (modal) modal.hide();
+                
+                // Очищаем форму
+                if (fileInput) fileInput.value = '';
+                const importNewNameInput = document.getElementById('import-new-db-name');
+                if (importNewNameInput) importNewNameInput.value = '';
+                
+                // Обновляем списки БД
+                loadDatabase();
+            } else {
+                showError('Ошибка импорта', result.error || 'Не удалось импортировать базу данных');
+            }
+        } catch (error) {
+            console.error('Error importing database:', error);
+            showError('Ошибка импорта', 'Не удалось импортировать базу данных: ' + error.message);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-file-import"></i> Импортировать';
             }
         }
     }
