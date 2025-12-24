@@ -997,6 +997,25 @@
         </div>
     </div>
 
+    <!-- Modal для подтверждения действий -->
+    <div class="modal fade" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmModalTitle">Подтверждение</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmModalMessage">Вы уверены?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-danger" id="confirmModalBtn">Подтвердить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Edit Row Modal -->
     <div class="modal fade" id="edit-row-modal" tabindex="-1">
         <div class="modal-dialog modal-lg">

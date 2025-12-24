@@ -564,7 +564,12 @@ async function deleteTable() {
     }
     
     // Подтверждение удаления
-    if (!confirm(`Вы уверены, что хотите удалить таблицу "${currentTableName}"? Это действие необратимо. Все данные в таблице будут удалены.`)) {
+    const confirmed = await showConfirm(
+        'Удаление таблицы',
+        `Вы уверены, что хотите удалить таблицу "${currentTableName}"? Это действие необратимо. Все данные в таблице будут удалены.`,
+        'btn-danger'
+    );
+    if (!confirmed) {
         return;
     }
     
@@ -1505,7 +1510,12 @@ window.deleteColumn = async function(columnName) {
         return;
     }
     
-    if (!confirm(`Вы уверены, что хотите удалить столбец "${columnName}"? Это действие необратимо.`)) {
+    const confirmed = await showConfirm(
+        'Удаление столбца',
+        `Вы уверены, что хотите удалить столбец "${columnName}"? Это действие необратимо.`,
+        'btn-danger'
+    );
+    if (!confirmed) {
         return;
     }
     
@@ -1537,6 +1547,33 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Универсальная функция подтверждения
+function showConfirm(title, message, confirmBtnClass = 'btn-danger') {
+    return new Promise((resolve) => {
+        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        document.getElementById('confirmModalTitle').textContent = title;
+        document.getElementById('confirmModalMessage').textContent = message;
+        const confirmBtn = document.getElementById('confirmModalBtn');
+        confirmBtn.className = 'btn ' + confirmBtnClass;
+        
+        const handleConfirm = () => {
+            modal.hide();
+            confirmBtn.removeEventListener('click', handleConfirm);
+            resolve(true);
+        };
+        
+        const handleCancel = () => {
+            confirmBtn.removeEventListener('click', handleConfirm);
+            resolve(false);
+        };
+        
+        confirmBtn.onclick = handleConfirm;
+        document.getElementById('confirmModal').addEventListener('hidden.bs.modal', handleCancel, { once: true });
+        
+        modal.show();
+    });
 }
 
 // Показ toast-уведомлений (как в других панелях)
