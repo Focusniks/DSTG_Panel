@@ -1217,6 +1217,17 @@
             } else if (itemType === 'file') {
                 // Обработка файла
                 const filePath = itemPath;
+                
+                // Проверяем, является ли файл базой данных в папке data
+                if (isDatabaseFile(filePath)) {
+                    const dbName = extractDatabaseName(filePath);
+                    if (dbName) {
+                        // Перенаправляем на SQL редактор с выбранной БД
+                        window.location.href = `/bot/${botId}/sql-editor?db=${encodeURIComponent(dbName)}`;
+                        return;
+                    }
+                }
+                
                 loadFileInEditor(filePath);
                 selectFileOrFolder(filePath, 'file');
             }
@@ -1298,6 +1309,34 @@
         }
         window.selectedUploadDirectory = dirpath;
     };
+    
+    // Функция для проверки, является ли файл базой данных
+    function isDatabaseFile(filepath) {
+        const ext = filepath.split('.').pop().toLowerCase();
+        const dbExtensions = ['db', 'sqlite', 'sqlite3'];
+        return dbExtensions.includes(ext);
+    }
+    
+    // Функция для извлечения имени базы данных из пути (если файл находится в папке data)
+    function extractDatabaseName(filepath) {
+        // Нормализуем путь (заменяем обратные слеши на прямые)
+        const normalizedPath = filepath.replace(/\\/g, '/');
+        const pathParts = normalizedPath.split('/');
+        
+        // Берем имя файла (последняя часть пути)
+        const fileName = pathParts[pathParts.length - 1];
+        
+        // Проверяем, находится ли файл в папке data
+        // Ищем папку "data" в пути (не чувствительно к регистру)
+        const lowerPath = normalizedPath.toLowerCase();
+        if (lowerPath.includes('/data/') || lowerPath.startsWith('data/') || 
+            lowerPath.includes('\\data\\') || lowerPath.startsWith('data\\')) {
+            return fileName;
+        }
+        
+        // Если файл не в папке data, возвращаем null
+        return null;
+    }
     
     // Функция для определения типа медиа-файла
     function isMediaFile(filepath) {

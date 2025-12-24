@@ -595,38 +595,65 @@ function exportDatabase() {
         return;
     }
     
-    // Показываем выбор формата через prompt (в будущем можно заменить на модальное окно)
-    const format = prompt('Выберите формат экспорта:\n1 - .db файл (копия базы данных)\n2 - .sql файл (SQL дамп)\n\nВведите 1 или 2:');
+    // Показываем модальное окно для выбора параметров экспорта
+    const modal = new bootstrap.Modal(document.getElementById('exportDbModal'));
+    const sqlOptions = document.getElementById('sql-export-options');
+    const formatRadios = document.querySelectorAll('input[name="exportFormat"]');
+    const includeCreateDbCheckbox = document.getElementById('includeCreateDb');
     
-    if (!format) {
-        return; // Пользователь отменил
+    // Сбрасываем значения по умолчанию
+    if (formatRadios.length > 0) {
+        formatRadios[0].checked = true; // .db по умолчанию
+    }
+    if (includeCreateDbCheckbox) {
+        includeCreateDbCheckbox.checked = true;
+    }
+    if (sqlOptions) {
+        sqlOptions.style.display = 'none';
     }
     
-    let exportFormat = 'db';
-    if (format === '2') {
-        exportFormat = 'sql';
-    } else if (format !== '1') {
-        showWarning('Ошибка', 'Неверный выбор формата. Введите 1 или 2.');
-        return;
-    }
+    // Обработчик изменения формата экспорта (убираем старые обработчики перед добавлением нового)
+    formatRadios.forEach(radio => {
+        radio.onchange = function() {
+            if (this.value === 'sql' && sqlOptions) {
+                sqlOptions.style.display = 'block';
+            } else if (sqlOptions) {
+                sqlOptions.style.display = 'none';
+            }
+        };
+    });
     
-    // Создаем ссылку для скачивания
-    const downloadUrl = `/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/export?format=${exportFormat}`;
-    const link = document.createElement('a');
-    link.href = downloadUrl;
+    // Обработчик кнопки экспорта
+    const exportBtn = document.getElementById('exportDbModalBtn');
+    exportBtn.onclick = function() {
+        const selectedFormat = document.querySelector('input[name="exportFormat"]:checked').value;
+        const includeCreateDb = selectedFormat === 'sql' ? (document.getElementById('includeCreateDb').checked ? 'true' : 'false') : 'true';
+        
+        // Создаем ссылку для скачивания
+        let downloadUrl = `/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/export?format=${selectedFormat}`;
+        if (selectedFormat === 'sql') {
+            downloadUrl += `&include_create_db=${includeCreateDb}`;
+        }
+        
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        
+        if (selectedFormat === 'db') {
+            link.download = currentDbName.endsWith('.db') ? currentDbName : `${currentDbName}.db`;
+        } else {
+            const baseName = currentDbName.replace('.db', '');
+            link.download = `${baseName}.sql`;
+        }
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        modal.hide();
+        showSuccess('Экспорт', `База данных экспортируется в формате ${selectedFormat.toUpperCase()}`);
+    };
     
-    if (exportFormat === 'db') {
-        link.download = currentDbName.endsWith('.db') ? currentDbName : `${currentDbName}.db`;
-    } else {
-        const baseName = currentDbName.replace('.db', '');
-        link.download = `${baseName}.sql`;
-    }
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showSuccess('Экспорт', `База данных экспортируется в формате ${exportFormat.toUpperCase()}`);
+    modal.show();
 }
 
 // Экспорт таблицы

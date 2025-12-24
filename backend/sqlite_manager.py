@@ -1171,12 +1171,14 @@ def export_database_db(bot_id: int, db_name: str) -> str:
         logger.error(f"Error exporting database to .db: {e}", exc_info=True)
         raise
 
-def export_database_sql(bot_id: int, db_name: str) -> str:
+def export_database_sql(bot_id: int, db_name: str, include_create_db: bool = True) -> str:
     """Экспорт базы данных в .sql файл (SQL дамп)
     
     Args:
         bot_id: ID бота
         db_name: Имя базы данных
+        include_create_db: Включать ли команды управления БД (BEGIN TRANSACTION, COMMIT, PRAGMA) в экспорт.
+                           Если False, экспортируются только CREATE TABLE и INSERT INTO
         
     Returns:
         Путь к временному SQL файлу
@@ -1193,7 +1195,19 @@ def export_database_sql(bot_id: int, db_name: str) -> str:
         # Подключаемся к БД и получаем дамп
         conn = sqlite3.connect(str(db_path))
         try:
+            skip_transaction = not include_create_db
             for line in conn.iterdump():
+                line_stripped = line.strip()
+                line_upper = line_stripped.upper()
+                
+                # Если не нужно включать транзакции, пропускаем BEGIN/COMMIT
+                if skip_transaction:
+                    if line_upper.startswith('BEGIN TRANSACTION') or line_upper.startswith('COMMIT'):
+                        continue
+                    # Пропускаем PRAGMA команды, которые связаны с настройкой БД
+                    if line_upper.startswith('PRAGMA'):
+                        continue
+                
                 temp_file.write(f'{line}\n')
         finally:
             conn.close()

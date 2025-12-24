@@ -1303,7 +1303,9 @@ async def delete_sqlite_database_endpoint(bot_id: int, db_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/bots/{bot_id}/sqlite/databases/{db_name}/export")
-async def export_sqlite_database_endpoint(bot_id: int, db_name: str, format: str = Query("db", regex="^(db|sql)$")):
+async def export_sqlite_database_endpoint(bot_id: int, db_name: str, 
+                                         format: str = Query("db", regex="^(db|sql)$"),
+                                         include_create_db: bool = Query(True)):
     """Экспорт SQLite БД в .db или .sql файл"""
     bot = get_bot(bot_id)
     if not bot:
@@ -1345,7 +1347,7 @@ async def export_sqlite_database_endpoint(bot_id: int, db_name: str, format: str
             )
         else:
             # Экспорт в .sql файл
-            temp_file_path = export_database_sql(bot_id, db_name)
+            temp_file_path = export_database_sql(bot_id, db_name, include_create_db)
             base_name = db_name.replace('.db', '') if db_name.endswith('.db') else db_name
             filename = f"{base_name}.sql"
             

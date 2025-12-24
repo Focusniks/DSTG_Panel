@@ -1022,6 +1022,54 @@
         </div>
     </div>
 
+    <!-- Modal для экспорта базы данных -->
+    <div class="modal fade" id="exportDbModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-download"></i> Экспорт базы данных</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="export-db-form">
+                        <div class="mb-3">
+                            <label class="form-label">Формат экспорта</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exportFormat" id="exportFormatDb" value="db" checked>
+                                <label class="form-check-label" for="exportFormatDb">
+                                    <i class="fas fa-database"></i> .db файл (копия базы данных)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="exportFormat" id="exportFormatSql" value="sql">
+                                <label class="form-check-label" for="exportFormatSql">
+                                    <i class="fas fa-code"></i> .sql файл (SQL дамп)
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3" id="sql-export-options" style="display: none;">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="includeCreateDb" checked>
+                                <label class="form-check-label" for="includeCreateDb">
+                                    Включить CREATE DATABASE в экспорт
+                                </label>
+                                <small class="form-text text-muted d-block mt-1">
+                                    Если отключено, будут экспортированы только таблицы без создания базы данных
+                                </small>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="exportDbModalBtn">
+                        <i class="fas fa-download"></i> Экспортировать
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Edit Row Modal -->
     <div class="modal fade" id="edit-row-modal" tabindex="-1">
         <div class="modal-dialog modal-lg">
