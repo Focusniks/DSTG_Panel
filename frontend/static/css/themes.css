@@ -496,3 +496,50 @@
     box-shadow: 0 0 20px rgba(8, 145, 178, 0.2);
 }
 
+/* Исправления для светлых тем - CodeMirror редактор */
+/* Основной текст делаем черным, цветную подсветку синтаксиса оставляем */
+[data-theme="light"] .CodeMirror,
+[data-theme="minimal"] .CodeMirror {
+    color: #000000 !important;
+}
+
+/* Обычный текст в строках - черный */
+[data-theme="light"] .CodeMirror-line,
+[data-theme="minimal"] .CodeMirror-line {
+    color: #000000 !important;
+}
+
+/* Переопределяем только элементы без классов cm-* (т.е. обычный текст) */
+/* Классы подсветки синтаксиса (cm-keyword, cm-string и т.д.) сохранят свои цвета от темы monokai */
+[data-theme="light"] .CodeMirror-line span:not([class^="cm-"]),
+[data-theme="minimal"] .CodeMirror-line span:not([class^="cm-"]) {
+    color: #000000 !important;
+}
+
+/* Номера строк делаем более темными для лучшей видимости */
+[data-theme="light"] .CodeMirror-linenumber,
+[data-theme="minimal"] .CodeMirror-linenumber {
+    color: #666666 !important;
+}
+
+/* Также для SQL редактора */
+[data-theme="light"] .sql-editor-container .CodeMirror,
+[data-theme="minimal"] .sql-editor-container .CodeMirror {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line span:not([class^="cm-"]),
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line span:not([class^="cm-"]) {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-linenumber,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-linenumber {
+    color: #666666 !important;
+}
+

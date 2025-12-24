@@ -1680,6 +1680,14 @@ body::before {
     color: var(--neon-cyan);
 }
 
+.btn-group .btn-outline-primary:focus,
+.btn-group .btn-outline-primary:focus-visible,
+.btn-group .btn-outline-primary:active,
+.btn-group .btn-outline-primary.active {
+    outline: none;
+    box-shadow: none;
+}
+
 .bg-primary {
     background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue)) !important;
     color: var(--text-primary) !important;

@@ -203,12 +203,14 @@
         
         // Кнопка удаления файла
         const deleteFileBtn = document.getElementById('delete-file-btn');
-        const deleteFileBtnHeader = document.getElementById('delete-file-btn-header');
         if (deleteFileBtn) {
             deleteFileBtn.addEventListener('click', handleDeleteFile);
         }
-        if (deleteFileBtnHeader) {
-            deleteFileBtnHeader.addEventListener('click', handleDeleteFile);
+        
+        // Кнопка скачивания файла
+        const downloadFileBtn = document.getElementById('download-file-btn');
+        if (downloadFileBtn) {
+            downloadFileBtn.addEventListener('click', handleDownloadFile);
         }
         
         // Кнопка переименования файла
@@ -1231,12 +1233,12 @@
         });
         currentFile = null;
         
-        // Скрываем кнопки удаления и переименования
+        // Скрываем кнопки удаления, скачивания и переименования
         const deleteBtn = document.getElementById('delete-file-btn');
-        const deleteBtnHeader = document.getElementById('delete-file-btn-header');
+        const downloadBtn = document.getElementById('download-file-btn');
         const renameBtn = document.getElementById('rename-file-btn');
         if (deleteBtn) deleteBtn.style.display = 'none';
-        if (deleteBtnHeader) deleteBtnHeader.style.display = 'none';
+        if (downloadBtn) downloadBtn.style.display = 'none';
         if (renameBtn) renameBtn.style.display = 'none';
     }
     
@@ -1256,22 +1258,22 @@
         // Обновляем текущий выбранный элемент
         if (type === 'file') {
             currentFile = path;
-            // Показываем кнопки удаления и переименования для файлов
+            // Показываем кнопки удаления, скачивания и переименования для файлов
             const deleteBtn = document.getElementById('delete-file-btn');
-            const deleteBtnHeader = document.getElementById('delete-file-btn-header');
+            const downloadBtn = document.getElementById('download-file-btn');
             const renameBtn = document.getElementById('rename-file-btn');
             if (deleteBtn) deleteBtn.style.display = 'inline-block';
-            if (deleteBtnHeader) deleteBtnHeader.style.display = 'inline-block';
+            if (downloadBtn) downloadBtn.style.display = 'inline-block';
             if (renameBtn) renameBtn.style.display = 'inline-block';
         } else {
             // Для папок сохраняем путь в currentFile для удаления
             currentFile = path;
             // Показываем только кнопку удаления для папок
             const deleteBtn = document.getElementById('delete-file-btn');
-            const deleteBtnHeader = document.getElementById('delete-file-btn-header');
+            const downloadBtn = document.getElementById('download-file-btn');
             const renameBtn = document.getElementById('rename-file-btn');
             if (deleteBtn) deleteBtn.style.display = 'inline-block';
-            if (deleteBtnHeader) deleteBtnHeader.style.display = 'inline-block';
+            if (downloadBtn) downloadBtn.style.display = 'none'; // Скачивание только для файлов
             if (renameBtn) renameBtn.style.display = 'none'; // Переименование папок пока не поддерживаем
         }
     }
@@ -1346,16 +1348,16 @@
                 }
             });
             
-            // Показываем кнопки удаления и переименования
+            // Показываем кнопки удаления, скачивания и переименования
             const deleteBtn = document.getElementById('delete-file-btn');
-            const deleteBtnHeader = document.getElementById('delete-file-btn-header');
+            const downloadBtn = document.getElementById('download-file-btn');
             const renameBtn = document.getElementById('rename-file-btn');
             if (deleteBtn) {
                 deleteBtn.style.display = 'inline-block';
                 deleteBtn.setAttribute('data-file-path', filepath);
             }
-            if (deleteBtnHeader) {
-                deleteBtnHeader.style.display = 'inline-block';
+            if (downloadBtn) {
+                downloadBtn.style.display = 'inline-block';
             }
             if (renameBtn) {
                 renameBtn.style.display = 'inline-block';
@@ -1538,12 +1540,12 @@
                 codeEditor.setValue('');
             }
             
-            // Скрываем кнопки удаления и переименования
+            // Скрываем кнопки удаления, скачивания и переименования
             const deleteBtn = document.getElementById('delete-file-btn');
-            const deleteBtnHeader = document.getElementById('delete-file-btn-header');
+            const downloadBtn = document.getElementById('download-file-btn');
             const renameBtn = document.getElementById('rename-file-btn');
             if (deleteBtn) deleteBtn.style.display = 'none';
-            if (deleteBtnHeader) deleteBtnHeader.style.display = 'none';
+            if (downloadBtn) downloadBtn.style.display = 'none';
             if (renameBtn) renameBtn.style.display = 'none';
             
             const saveBtn = document.getElementById('save-btn');
@@ -1675,6 +1677,35 @@
                 }
             }, 100);
         });
+    }
+    
+    // Скачивание файла
+    async function handleDownloadFile() {
+        if (!botId || !currentFile) {
+            showWarning('Внимание', 'Файл не выбран');
+            return;
+        }
+        
+        try {
+            // Определяем, что это файл (не папка)
+            const selectedItem = document.querySelector('.file-item.active[data-path="' + escapeHtml(currentFile).replace(/"/g, '\\"') + '"]');
+            if (!selectedItem || selectedItem.getAttribute('data-type') !== 'file') {
+                showWarning('Внимание', 'Выберите файл для скачивания');
+                return;
+            }
+            
+            // Создаем ссылку для скачивания
+            const downloadUrl = `/api/bots/${botId}/file/download?path=${encodeURIComponent(currentFile)}`;
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = currentFile.split('/').pop() || 'file';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (error) {
+            console.error('Error downloading file:', error);
+            showError('Ошибка', 'Не удалось скачать файл');
+        }
     }
     
     // Сохранение файла

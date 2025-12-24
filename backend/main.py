@@ -478,6 +478,33 @@ async def list_bot_files(bot_id: int):
     
     return build_tree(bot_dir)
 
+@app.get("/api/bots/{bot_id}/file/download")
+async def download_bot_file(bot_id: int, path: str):
+    """Скачивание файла"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    file_path = Path(bot['bot_dir']) / path
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    
+    # Проверка безопасности - файл должен быть внутри директории бота
+    try:
+        file_path.resolve().relative_to(Path(bot['bot_dir']).resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
+    
+    try:
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=str(file_path),
+            filename=file_path.name,
+            media_type='application/octet-stream'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка скачивания файла: {str(e)}")
+
 @app.get("/api/bots/{bot_id}/file")
 async def get_bot_file(bot_id: int, path: str, binary: bool = False):
     """
