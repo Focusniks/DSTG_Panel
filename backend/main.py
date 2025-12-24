@@ -1246,7 +1246,6 @@ async def get_sqlite_databases_endpoint(bot_id: int):
                 
                 databases.append({
                     "db_name": db_name,
-                    "db_user": "N/A",  # SQLite не использует пользователей
                     "table_count": table_count,
                     "size_mb": size_mb
                 })
@@ -1254,7 +1253,6 @@ async def get_sqlite_databases_endpoint(bot_id: int):
                 logger.warning(f"Ошибка при получении информации о БД {db_name}: {db_error}")
                 databases.append({
                     "db_name": db_name,
-                    "db_user": "N/A",
                     "table_count": 0,
                     "size_mb": 0,
                     "error": str(db_error)

@@ -1879,12 +1879,6 @@
                         <div class="database-item-info">
                             <div class="database-item-info-item">
                                 <span class="database-item-info-label">
-                                    <i class="fas fa-user"></i> Пользователь
-                                </span>
-                                <span class="database-item-info-value">${escapeHtml(db.db_user)}</span>
-                            </div>
-                            <div class="database-item-info-item">
-                                <span class="database-item-info-label">
                                     <i class="fas fa-table"></i> Таблиц
                                 </span>
                                 <span class="database-item-info-value">${db.table_count || 0}</span>

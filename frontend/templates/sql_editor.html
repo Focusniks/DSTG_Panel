@@ -385,7 +385,9 @@
 
         .results-content {
             flex: 1;
-            overflow: auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: auto;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -478,6 +480,98 @@
             display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
+        }
+
+        .table-data-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .table-search-container {
+            display: flex;
+            align-items: center;
+        }
+
+        .table-search-container .input-group {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+        }
+
+        .table-search-container .input-group-text {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .table-search-container .form-control {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .table-search-container .form-control:focus {
+            background: var(--bg-tertiary);
+            border-color: var(--neon-cyan);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 0.2rem rgba(0, 243, 255, 0.25);
+        }
+
+        .table-pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .pagination-size-selector {
+            display: flex;
+            align-items: center;
+        }
+
+        .pagination-size-selector .form-select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .pagination-size-selector .form-select:focus {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 0 0.2rem rgba(0, 243, 255, 0.25);
+        }
+
+        .pagination-info {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+
+        .pagination-buttons {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .pagination-buttons .btn {
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .pagination-buttons .btn:hover:not(:disabled) {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            background: rgba(0, 243, 255, 0.1);
+        }
+
+        .pagination-buttons .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .data-table-wrapper {
@@ -965,6 +1059,47 @@
                             <button class="btn btn-sm btn-success" id="add-row-btn">
                                 <i class="fas fa-plus"></i> Добавить строку
                             </button>
+                        </div>
+                    </div>
+                    <!-- Поиск и настройки пагинации -->
+                    <div class="table-data-controls" id="table-data-controls" style="display: none;">
+                        <div class="table-search-container">
+                            <div class="input-group input-group-sm" style="max-width: 300px;">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" id="table-search-input" placeholder="Поиск в таблице...">
+                                <button class="btn btn-outline-secondary" type="button" id="clear-search-btn" title="Очистить поиск">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-pagination-controls">
+                            <div class="pagination-size-selector">
+                                <label for="page-size-select" style="margin-right: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Строк на странице:</label>
+                                <select class="form-select form-select-sm" id="page-size-select" style="width: auto;">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </div>
+                            <div class="pagination-info" id="pagination-info">
+                                <span>Страница 1 из 1</span>
+                            </div>
+                            <div class="pagination-buttons">
+                                <button class="btn btn-sm btn-outline-secondary" id="first-page-btn" title="Первая страница">
+                                    <i class="fas fa-angle-double-left"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" id="prev-page-btn" title="Предыдущая страница">
+                                    <i class="fas fa-angle-left"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" id="next-page-btn" title="Следующая страница">
+                                    <i class="fas fa-angle-right"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" id="last-page-btn" title="Последняя страница">
+                                    <i class="fas fa-angle-double-right"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="data-table-wrapper">

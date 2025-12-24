@@ -8,6 +8,13 @@ let editingRowId = null;
 let primaryKeyColumn = 'id';
 let sqlEditor = null;
 
+// Пагинация и поиск
+let tableDataPage = 1;
+let tableDataPageSize = 25;
+let tableDataTotalRows = 0;
+let tableDataSearchQuery = '';
+let tableDataAllRows = []; // Все загруженные данные для поиска на клиенте
+
 // SQLite типы данных с описаниями
 const SQLITE_DATA_TYPES = {
     'NULL': 'Значение NULL (отсутствие данных)',
@@ -79,11 +86,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const sqlQueryTextarea = document.getElementById('sql-query');
     if (sqlQueryTextarea) {
         sqlEditor = CodeMirror.fromTextArea(sqlQueryTextarea, {
-            mode: 'text/x-sql',
-            theme: 'monokai',
-            lineNumbers: true,
-            indentWithTabs: true,
-            smartIndent: true,
+        mode: 'text/x-sql',
+        theme: 'monokai',
+        lineNumbers: true,
+        indentWithTabs: true,
+        smartIndent: true,
             lineWrapping: true,
             autoCloseBrackets: true,
             matchBrackets: true,
@@ -94,8 +101,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 "Ctrl-/": "toggleComment",
                 "Ctrl-F": "findPersistent"
             }
-        });
-        window.sqlEditor = sqlEditor;
+    });
+    window.sqlEditor = sqlEditor;
     }
     
     // Читаем параметр db из URL заранее
@@ -144,8 +151,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (tablesList) {
                     tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Выберите базу данных</div>';
                 }
-                const createTableBtn = document.getElementById('create-table-btn');
-                if (createTableBtn) {
+        const createTableBtn = document.getElementById('create-table-btn');
+            if (createTableBtn) {
                     createTableBtn.style.display = 'none';
                 }
                 const deleteTableBtn = document.getElementById('delete-table-btn');
@@ -178,8 +185,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (currentTableName) {
                     loadTableData();
                     loadStructure();
-                }
-            } else {
+            }
+        } else {
                 loadDatabases();
             }
         });
@@ -204,8 +211,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const createTableBtn = document.getElementById('create-table-btn');
     if (createTableBtn) {
         createTableBtn.addEventListener('click', function() {
-            showCreateTableModal();
-        });
+        showCreateTableModal();
+    });
     }
     
     const deleteTableBtn = document.getElementById('delete-table-btn');
@@ -218,22 +225,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const addColumnFormBtn = document.getElementById('add-column-form-btn');
     if (addColumnFormBtn) {
         addColumnFormBtn.addEventListener('click', function() {
-            addColumnToForm();
-        });
+        addColumnToForm();
+    });
     }
     
     const saveCreateTableBtn = document.getElementById('save-create-table-btn');
     if (saveCreateTableBtn) {
         saveCreateTableBtn.addEventListener('click', function() {
-            createTable();
-        });
+        createTable();
+    });
     }
     
     const saveAddColumnBtn = document.getElementById('save-add-column-btn');
     if (saveAddColumnBtn) {
         saveAddColumnBtn.addEventListener('click', function() {
-            addColumnToTable();
-        });
+        addColumnToTable();
+    });
     }
     
     const addRowBtn = document.getElementById('add-row-btn');
@@ -243,18 +250,83 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Обработчики пагинации и поиска
+    const pageSizeSelect = document.getElementById('page-size-select');
+    if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', function() {
+            tableDataPageSize = parseInt(this.value);
+            tableDataPage = 1; // Сбрасываем на первую страницу
+            applyTableDataFilterAndPagination();
+        });
+    }
+    
+    const tableSearchInput = document.getElementById('table-search-input');
+    if (tableSearchInput) {
+        tableSearchInput.addEventListener('input', function() {
+            tableDataSearchQuery = this.value.trim();
+            tableDataPage = 1; // Сбрасываем на первую страницу при поиске
+            applyTableDataFilterAndPagination();
+        });
+    }
+    
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', function() {
+            tableSearchInput.value = '';
+            tableDataSearchQuery = '';
+            tableDataPage = 1;
+            applyTableDataFilterAndPagination();
+        });
+    }
+    
+    const firstPageBtn = document.getElementById('first-page-btn');
+    const prevPageBtn = document.getElementById('prev-page-btn');
+    const nextPageBtn = document.getElementById('next-page-btn');
+    const lastPageBtn = document.getElementById('last-page-btn');
+    
+    if (firstPageBtn) {
+        firstPageBtn.addEventListener('click', function() {
+            tableDataPage = 1;
+            applyTableDataFilterAndPagination();
+        });
+    }
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', function() {
+            if (tableDataPage > 1) {
+                tableDataPage--;
+                applyTableDataFilterAndPagination();
+            }
+        });
+    }
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', function() {
+            const totalPages = Math.ceil(tableDataTotalRows / tableDataPageSize);
+            if (tableDataPage < totalPages) {
+                tableDataPage++;
+                applyTableDataFilterAndPagination();
+            }
+        });
+    }
+    if (lastPageBtn) {
+        lastPageBtn.addEventListener('click', function() {
+            const totalPages = Math.ceil(tableDataTotalRows / tableDataPageSize);
+            tableDataPage = totalPages;
+            applyTableDataFilterAndPagination();
+        });
+    }
+    
     const saveNewRowBtn = document.getElementById('save-new-row-btn');
     if (saveNewRowBtn) {
         saveNewRowBtn.addEventListener('click', function() {
-            saveNewRow();
-        });
+        saveNewRow();
+    });
     }
     
     const saveEditRowBtn = document.getElementById('save-edit-row-btn');
     if (saveEditRowBtn) {
         saveEditRowBtn.addEventListener('click', function() {
-            saveEditRow();
-        });
+        saveEditRow();
+    });
     }
     
     
@@ -268,15 +340,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const executeQueryBtn = document.getElementById('execute-query-btn');
     if (executeQueryBtn) {
         executeQueryBtn.addEventListener('click', function() {
-            executeQuery();
-        });
+        executeQuery();
+    });
     }
     
     const clearQueryBtn = document.getElementById('clear-query-btn');
     if (clearQueryBtn) {
         clearQueryBtn.addEventListener('click', function() {
             if (sqlEditor) {
-                sqlEditor.setValue('');
+        sqlEditor.setValue('');
                 sqlEditor.focus();
             }
             const queryResultsSection = document.getElementById('query-results-section');
@@ -738,16 +810,31 @@ async function loadTableData() {
             primaryKeyColumn = pkColumn.name;
         }
         
-        // Загружаем данные таблицы
+        // Сбрасываем пагинацию и поиск при загрузке новой таблицы
+        tableDataPage = 1;
+        tableDataSearchQuery = '';
+        const searchInput = document.getElementById('table-search-input');
+        if (searchInput) searchInput.value = '';
+        
+        // Загружаем данные таблицы (загружаем больше данных для поиска на клиенте)
+        const loadLimit = 1000; // Загружаем до 1000 строк для поиска на клиенте
         const dataResponse = await fetch(
-            `/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/tables/${encodeURIComponent(currentTableName)}/data`
+            `/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/tables/${encodeURIComponent(currentTableName)}/data?limit=${loadLimit}&offset=0`
         );
         if (!dataResponse.ok) throw new Error('Failed to load table data');
         const dataResult = await dataResponse.json();
-        currentTableData = (dataResult.data && dataResult.data.rows) || dataResult.rows || [];
+        const data = dataResult.data || dataResult;
         
-        // Отображаем данные
-        displayTableData();
+        // Сохраняем все данные для поиска
+        tableDataAllRows = data.rows || [];
+        tableDataTotalRows = data.total_rows || tableDataAllRows.length;
+        
+        // Показываем элементы управления пагинацией
+        const controls = document.getElementById('table-data-controls');
+        if (controls) controls.style.display = 'flex';
+        
+        // Применяем фильтрацию и пагинацию
+        applyTableDataFilterAndPagination();
     } catch (error) {
         console.error('Error loading table data:', error);
         showError('Ошибка', 'Не удалось загрузить данные таблицы');
@@ -786,8 +873,25 @@ function displayTableData() {
     
     // Данные
     tbody.innerHTML = '';
-    currentTableData.forEach((row, rowIndex) => {
+    
+    if (currentTableData.length === 0) {
+        // Если нет данных после фильтрации
         const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = currentTableStructure.columns.length + 1;
+        td.style.textAlign = 'center';
+        td.style.padding = '2rem';
+        td.style.color = 'var(--text-muted)';
+        td.textContent = tableDataSearchQuery ? 'Нет результатов по запросу "' + escapeHtml(tableDataSearchQuery) + '"' : 'Нет данных в таблице';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    } else {
+        // Находим индекс в полном массиве для правильной работы editRow/deleteRow
+        const startIndex = (tableDataPage - 1) * tableDataPageSize;
+        
+        currentTableData.forEach((row, localIndex) => {
+            const globalIndex = startIndex + localIndex;
+            const tr = document.createElement('tr');
         
         // Ячейки данных
         currentTableStructure.columns.forEach(col => {
@@ -798,22 +902,78 @@ function displayTableData() {
             td.setAttribute('data-type', col.type);
             tr.appendChild(td);
         });
-        
-        // Кнопки действий (в конце)
-        const actionsTd = document.createElement('td');
-        actionsTd.className = 'row-actions';
-        actionsTd.innerHTML = `
-            <button class="btn btn-sm btn-primary" onclick="editRow(${rowIndex})">
-                <i class="fas fa-edit"></i>
-            </button>
-            <button class="btn btn-sm btn-danger" onclick="deleteRow(${rowIndex})">
-                <i class="fas fa-trash"></i>
-            </button>
-        `;
-        tr.appendChild(actionsTd);
+            
+            // Кнопки действий (в конце) - передаем primary key для идентификации строки
+            const actionsTd = document.createElement('td');
+            actionsTd.className = 'row-actions';
+            const rowId = row[primaryKeyColumn];
+            actionsTd.innerHTML = `
+                <button class="btn btn-sm btn-primary" onclick="editRowByPrimaryKey('${escapeHtml(String(rowId))}')">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteRowByPrimaryKey('${escapeHtml(String(rowId))}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+            tr.appendChild(actionsTd);
         
         tbody.appendChild(tr);
     });
+    }
+}
+
+// Применение фильтрации и пагинации к данным таблицы
+function applyTableDataFilterAndPagination() {
+    if (!currentTableStructure || !tableDataAllRows) return;
+    
+    // Фильтрация по поисковому запросу
+    let filteredRows = tableDataAllRows;
+    if (tableDataSearchQuery) {
+        const searchLower = tableDataSearchQuery.toLowerCase();
+        filteredRows = tableDataAllRows.filter(row => {
+            // Ищем по всем полям строки
+            return Object.values(row).some(value => {
+                if (value === null || value === undefined) return false;
+                return String(value).toLowerCase().includes(searchLower);
+            });
+        });
+    }
+    
+    // Обновляем общее количество отфильтрованных строк
+    const filteredTotalRows = filteredRows.length;
+    
+    // Применяем пагинацию
+    const startIndex = (tableDataPage - 1) * tableDataPageSize;
+    const endIndex = startIndex + tableDataPageSize;
+    currentTableData = filteredRows.slice(startIndex, endIndex);
+    
+    // Обновляем информацию о пагинации
+    updatePaginationInfo(filteredTotalRows);
+    
+    // Отображаем данные
+    displayTableData();
+}
+
+// Обновление информации о пагинации
+function updatePaginationInfo(totalRows) {
+    tableDataTotalRows = totalRows;
+    const totalPages = Math.ceil(totalRows / tableDataPageSize) || 1;
+    
+    const paginationInfo = document.getElementById('pagination-info');
+    if (paginationInfo) {
+        paginationInfo.textContent = `Страница ${tableDataPage} из ${totalPages} (Всего: ${totalRows})`;
+    }
+    
+    // Обновляем состояние кнопок пагинации
+    const firstPageBtn = document.getElementById('first-page-btn');
+    const prevPageBtn = document.getElementById('prev-page-btn');
+    const nextPageBtn = document.getElementById('next-page-btn');
+    const lastPageBtn = document.getElementById('last-page-btn');
+    
+    if (firstPageBtn) firstPageBtn.disabled = tableDataPage === 1;
+    if (prevPageBtn) prevPageBtn.disabled = tableDataPage === 1;
+    if (nextPageBtn) nextPageBtn.disabled = tableDataPage >= totalPages;
+    if (lastPageBtn) lastPageBtn.disabled = tableDataPage >= totalPages;
 }
 
 // Глобальные функции для onclick
@@ -821,6 +981,18 @@ window.editRow = function(rowIndex) {
     if (!currentTableData || !currentTableData[rowIndex]) return;
     
     const row = currentTableData[rowIndex];
+    editRowByPrimaryKey(row[primaryKeyColumn]);
+}
+
+// Редактирование строки по primary key (для использования с пагинацией)
+window.editRowByPrimaryKey = function(rowId) {
+    // Находим строку по primary key в отфильтрованных данных
+    const row = tableDataAllRows.find(r => String(r[primaryKeyColumn]) === String(rowId));
+    if (!row) {
+        showError('Ошибка', 'Строка не найдена');
+        return;
+    }
+    
     editingRowId = row[primaryKeyColumn];
     
     const form = document.getElementById('edit-row-form');
@@ -860,9 +1032,18 @@ window.deleteRow = async function(rowIndex) {
     if (!currentTableData || !currentTableData[rowIndex]) return;
     
     const row = currentTableData[rowIndex];
-    const rowId = row[primaryKeyColumn];
+    deleteRowByPrimaryKey(row[primaryKeyColumn]);
+}
+
+// Удаление строки по primary key (для использования с пагинацией)
+window.deleteRowByPrimaryKey = async function(rowId) {
     
-    if (!confirm(`Вы уверены, что хотите удалить эту строку?`)) {
+    const confirmed = await showConfirm(
+        'Удаление строки',
+        'Вы уверены, что хотите удалить эту строку?',
+        'btn-danger'
+    );
+    if (!confirmed) {
         return;
     }
     
@@ -1284,7 +1465,7 @@ window.togglePrimaryKey = function(checkbox) {
     
     // Проверяем, не пытается ли пользователь установить Primary Key, когда он уже есть
     if (checkbox.checked) {
-        const columnsList = document.getElementById('columns-list');
+    const columnsList = document.getElementById('columns-list');
         if (columnsList) {
             const columnItems = columnsList.querySelectorAll('.column-item');
             let hasOtherPK = false;
@@ -1516,7 +1697,7 @@ async function addColumnToTable() {
             const modal = bootstrap.Modal.getInstance(document.getElementById('add-column-modal'));
             modal.hide();
             loadStructure();
-            loadTableData();
+                loadTableData();
         } else {
             showError('Ошибка', result.error || 'Не удалось добавить столбец');
         }
@@ -1650,7 +1831,7 @@ window.deleteColumn = async function(columnName) {
         if (result.success) {
             showSuccess('Успех', 'Столбец успешно удален');
             loadStructure();
-            loadTableData();
+                loadTableData();
         } else {
             showError('Ошибка', result.error || 'Не удалось удалить столбец');
         }
