@@ -25,7 +25,8 @@ from backend.sqlite_manager import (
     get_tables, get_table_structure, get_table_data, execute_sql,
     create_table, drop_table, insert_row, update_row, delete_row,
     add_column, drop_column, get_databases as get_sqlite_databases,
-    create_database as create_sqlite_database, delete_database as delete_sqlite_database
+    create_database as create_sqlite_database, delete_database as delete_sqlite_database,
+    import_database
 )
 from backend.git_manager import (
     update_panel_from_git, update_bot_from_git,
@@ -1272,6 +1273,58 @@ async def delete_sqlite_database_endpoint(bot_id: int, db_name: str):
             raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
     except Exception as e:
         logger.error(f"Error deleting SQLite database: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/bots/{bot_id}/sqlite/databases/import")
+async def import_sqlite_database_endpoint(bot_id: int, 
+                                         file: UploadFile = File(...),
+                                         db_name: Optional[str] = Form(None),
+                                         import_mode: str = Form("new")):
+    """Импорт SQLite БД из файла
+    
+    Args:
+        file: Файл базы данных (.db, .sqlite, .sqlite3)
+        db_name: Имя для новой БД (если import_mode="new") или имя существующей БД (если import_mode="existing")
+        import_mode: "new" - создать новую БД, "existing" - импортировать в существующую
+    """
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    # Проверяем расширение файла
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Имя файла не указано")
+    
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ['.db', '.sqlite', '.sqlite3', '.sql']:
+        raise HTTPException(status_code=400, detail="Недопустимый формат файла. Разрешены только .db, .sqlite, .sqlite3, .sql")
+    
+    try:
+        import tempfile
+        import os
+        
+        # Сохраняем загруженный файл во временную директорию
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        try:
+            # Импортируем БД
+            result = import_database(bot_id, tmp_path, db_name, import_mode)
+            if result['success']:
+                return result
+            else:
+                raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error importing SQLite database: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/bots/{bot_id}/sqlite/databases/{db_name:path}/tables")

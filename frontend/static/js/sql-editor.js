@@ -71,6 +71,26 @@ document.addEventListener('DOMContentLoaded', function() {
     loadBotInfo();
     loadDatabases();
     
+    // Обработчик выбора базы данных в шапке
+    const dbSelector = document.getElementById('sql-db-selector');
+    if (dbSelector) {
+        dbSelector.addEventListener('change', function() {
+            if (this.value) {
+                selectDatabase(this.value, true);
+            } else {
+                currentDbName = null;
+                const tablesList = document.getElementById('tables-list');
+                if (tablesList) {
+                    tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Выберите базу данных</div>';
+                }
+                const createTableBtn = document.getElementById('create-table-btn');
+                if (createTableBtn) {
+                    createTableBtn.style.display = 'none';
+                }
+            }
+        });
+    }
+    
     // Обработчики событий для вкладок
     document.querySelectorAll('.sql-tab').forEach(tab => {
         tab.addEventListener('click', function() {
@@ -144,12 +164,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    const structureToggleBtn = document.getElementById('structure-toggle-btn');
-    if (structureToggleBtn) {
-        structureToggleBtn.addEventListener('click', function() {
-            switchTab('structure');
-        });
-    }
     
     const addColumnBtn = document.getElementById('add-column-btn');
     if (addColumnBtn) {
@@ -239,45 +253,45 @@ async function loadDatabases() {
         
         const result = await response.json();
         const databases = result.databases || result;
-        const databaseList = document.getElementById('database-list');
-        if (!databaseList) {
-            console.error('database-list element not found');
+        const dbSelector = document.getElementById('sql-db-selector');
+        if (!dbSelector) {
+            console.error('sql-db-selector element not found');
             return;
         }
         
-        databaseList.innerHTML = '';
+        // Сохраняем текущее выбранное значение
+        const currentValue = dbSelector.value;
+        
+        // Очищаем селектор (кроме первого опциона)
+        dbSelector.innerHTML = '<option value="">Выберите базу данных...</option>';
         
         if (!databases || databases.length === 0) {
-            databaseList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Базы данных не найдены</div>';
             return;
         }
         
         databases.forEach(db => {
             const dbName = db.db_name || db;
-            const dbItem = document.createElement('div');
-            dbItem.className = 'database-item';
-            if (currentDbName === dbName) {
-                dbItem.classList.add('active');
-            }
-            dbItem.innerHTML = `
-                <span class="database-item-name">${escapeHtml(dbName)}</span>
-            `;
-            dbItem.addEventListener('click', function() {
-                selectDatabase(dbName);
-            });
-            databaseList.appendChild(dbItem);
+            const option = document.createElement('option');
+            option.value = dbName;
+            option.textContent = dbName;
+            dbSelector.appendChild(option);
         });
         
+        // Восстанавливаем выбранное значение или устанавливаем из URL/currentDbName
+        if (currentDbName && Array.from(dbSelector.options).find(opt => opt.value === currentDbName)) {
+            dbSelector.value = currentDbName;
+        } else if (currentValue && Array.from(dbSelector.options).find(opt => opt.value === currentValue)) {
+            dbSelector.value = currentValue;
+        }
+        
         // Если была установлена текущая БД, выбираем её
-        if (currentDbName) {
+        if (currentDbName && dbSelector.value !== currentDbName) {
             selectDatabase(currentDbName, false);
+        } else if (dbSelector.value && !currentDbName) {
+            selectDatabase(dbSelector.value, false);
         }
     } catch (error) {
         console.error('Error loading databases:', error);
-        const databaseList = document.getElementById('database-list');
-        if (databaseList) {
-            databaseList.innerHTML = '<div style="color: var(--text-danger); padding: 1rem; text-align: center;">Ошибка загрузки баз данных</div>';
-        }
         showError('Ошибка', 'Не удалось загрузить список баз данных');
     }
 }
@@ -286,25 +300,10 @@ async function loadDatabases() {
 function selectDatabase(dbName, updateUrl = true) {
     currentDbName = dbName;
     
-    // Обновляем активное состояние в списке
-    document.querySelectorAll('.database-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    const dbItem = Array.from(document.querySelectorAll('.database-item')).find(item => {
-        return item.querySelector('.database-item-name').textContent === dbName;
-    });
-    
-    if (dbItem) {
-        dbItem.classList.add('active');
-    }
-    
-    // Обновляем бейдж в топбаре
-    const dbBadge = document.getElementById('current-db-badge');
-    const dbNameSpan = document.getElementById('current-db-name');
-    if (dbBadge && dbNameSpan) {
-        dbBadge.classList.add('active');
-        dbNameSpan.textContent = dbName;
+    // Обновляем селектор в топбаре
+    const dbSelector = document.getElementById('sql-db-selector');
+    if (dbSelector) {
+        dbSelector.value = dbName;
     }
     
     // Показываем кнопку создания таблицы

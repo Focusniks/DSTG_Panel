@@ -619,3 +619,362 @@ def delete_database(bot_id: int, db_name: str) -> Dict[str, Any]:
         logger.error(f"Error deleting database: {e}", exc_info=True)
         return {'success': False, 'error': str(e)}
 
+def _parse_sql_file(sql_file_path: str) -> List[str]:
+    """Парсинг SQL файла на отдельные запросы
+    
+    Args:
+        sql_file_path: Путь к SQL файлу
+        
+    Returns:
+        Список SQL запросов
+    """
+    try:
+        with open(sql_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Удаляем комментарии /* */ (многострочные)
+        import re
+        content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+        
+        # Разбиваем на строки и удаляем комментарии --
+        lines = []
+        for line in content.split('\n'):
+            # Удаляем комментарии -- до конца строки
+            comment_pos = line.find('--')
+            if comment_pos != -1:
+                line = line[:comment_pos]
+            lines.append(line)
+        
+        content = '\n'.join(lines)
+        
+        # Разбиваем на запросы по точке с запятой
+        queries = []
+        current_query = []
+        in_string = False
+        string_char = None
+        escape_next = False
+        
+        for char in content:
+            if escape_next:
+                current_query.append(char)
+                escape_next = False
+                continue
+            
+            if char == '\\' and in_string:
+                escape_next = True
+                current_query.append(char)
+                continue
+            
+            if not in_string and (char == '"' or char == "'"):
+                in_string = True
+                string_char = char
+                current_query.append(char)
+            elif in_string and char == string_char:
+                in_string = False
+                string_char = None
+                current_query.append(char)
+            elif not in_string and char == ';':
+                query = ''.join(current_query).strip()
+                if query:
+                    queries.append(query)
+                current_query = []
+            else:
+                current_query.append(char)
+        
+        # Добавляем последний запрос, если он есть
+        query = ''.join(current_query).strip()
+        if query:
+            queries.append(query)
+        
+        # Фильтруем пустые запросы
+        return [q for q in queries if q.strip()]
+    except Exception as e:
+        logger.error(f"Error parsing SQL file: {e}", exc_info=True)
+        raise
+
+def import_database(bot_id: int, source_db_path: str, target_db_name: Optional[str] = None, import_mode: str = "new") -> Dict[str, Any]:
+    """Импорт SQLite БД из файла или SQL скрипта
+    
+    Args:
+        bot_id: ID бота
+        source_db_path: Путь к исходному файлу БД (.db, .sqlite, .sqlite3) или SQL скрипту (.sql)
+        target_db_name: Имя целевой БД (для режима "new" или "existing")
+        import_mode: "new" - создать новую БД из файла, "existing" - импортировать данные в существующую БД
+    
+    Returns:
+        Dict с результатом операции
+    """
+    try:
+        import shutil
+        
+        source_path = Path(source_db_path)
+        if not source_path.exists():
+            return {'success': False, 'error': 'Исходный файл не найден'}
+        
+        # Определяем тип файла по расширению
+        file_ext = source_path.suffix.lower()
+        is_sql_file = file_ext == '.sql'
+        
+        # Если это SQL файл, обрабатываем его отдельно
+        if is_sql_file:
+            return _import_from_sql_file(bot_id, source_path, target_db_name, import_mode)
+        
+        # Для .db, .sqlite, .sqlite3 файлов - проверяем, что это валидный SQLite файл
+        try:
+            test_conn = sqlite3.connect(str(source_path))
+            test_conn.execute("SELECT 1")
+            test_conn.close()
+        except sqlite3.Error as e:
+            return {'success': False, 'error': f'Недопустимый SQLite файл: {str(e)}'}
+        
+        if import_mode == "new":
+            # Создаем новую БД из импортированного файла
+            if not target_db_name or target_db_name.strip() == "":
+                # Генерируем имя из имени исходного файла или уникальное
+                source_name = source_path.stem
+                if source_name:
+                    target_db_name = f"{source_name}.db"
+                else:
+                    target_db_name = _generate_unique_db_name(bot_id)
+            else:
+                # Валидация имени
+                target_db_name_clean = target_db_name.strip()
+                if not target_db_name_clean.replace('_', '').replace('.', '').replace('-', '').isalnum():
+                    return {'success': False, 'error': 'Недопустимое имя базы данных. Используйте только буквы, цифры, дефисы и подчеркивания.'}
+                
+                if not target_db_name_clean.endswith('.db'):
+                    target_db_name_clean += '.db'
+                
+                target_db_name = target_db_name_clean
+            
+            # Проверяем, не существует ли уже БД с таким именем
+            target_db_path = get_bot_sqlite_db_path(bot_id, target_db_name)
+            if target_db_path.exists():
+                # Генерируем новое имя
+                target_db_name = _generate_unique_db_name(bot_id)
+                target_db_path = get_bot_sqlite_db_path(bot_id, target_db_name)
+            
+            # Копируем файл
+            shutil.copy2(source_path, target_db_path)
+            
+            return {
+                'success': True, 
+                'message': f'База данных {target_db_name} успешно импортирована', 
+                'db_name': target_db_name
+            }
+        
+        elif import_mode == "existing":
+            # Импортируем данные в существующую БД
+            if not target_db_name:
+                return {'success': False, 'error': 'Не указано имя целевой базы данных'}
+            
+            target_db_path = get_bot_sqlite_db_path(bot_id, target_db_name)
+            if not target_db_path.exists():
+                return {'success': False, 'error': f'База данных {target_db_name} не найдена'}
+            
+            # Подключаемся к обеим БД
+            target_conn = get_sqlite_connection(bot_id, target_db_name)
+            source_conn = sqlite3.connect(str(source_path))
+            source_conn.row_factory = sqlite3.Row
+            
+            try:
+                target_cursor = target_conn.cursor()
+                source_cursor = source_conn.cursor()
+                
+                # Получаем список таблиц из исходной БД
+                source_cursor.execute("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+                """)
+                source_tables = [row[0] for row in source_cursor.fetchall()]
+                
+                imported_tables = []
+                skipped_tables = []
+                
+                for table_name in source_tables:
+                    try:
+                        # Проверяем, существует ли таблица в целевой БД
+                        target_cursor.execute("""
+                            SELECT name FROM sqlite_master 
+                            WHERE type='table' AND name=?
+                        """, (table_name,))
+                        
+                        if target_cursor.fetchone():
+                            skipped_tables.append(table_name)
+                            continue
+                        
+                        # Получаем структуру таблицы из исходной БД
+                        source_cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+                        create_sql_row = source_cursor.fetchone()
+                        if not create_sql_row or not create_sql_row[0]:
+                            continue
+                        create_sql = create_sql_row[0]
+                        
+                        # Создаем таблицу в целевой БД
+                        target_cursor.execute(create_sql[0])
+                        
+                        # Копируем данные
+                        source_cursor.execute(f"SELECT * FROM {table_name}")
+                        columns = [description[0] for description in source_cursor.description]
+                        rows = source_cursor.fetchall()
+                        
+                        if rows:
+                            placeholders = ','.join(['?' for _ in columns])
+                            insert_sql = f"INSERT INTO {table_name} ({','.join(columns)}) VALUES ({placeholders})"
+                            target_cursor.executemany(insert_sql, [tuple(row) for row in rows])
+                        
+                        imported_tables.append(table_name)
+                    except Exception as e:
+                        logger.error(f"Error importing table {table_name}: {e}")
+                        skipped_tables.append(f"{table_name} (ошибка: {str(e)})")
+                
+                target_conn.commit()
+                
+                message = f'Импортировано таблиц: {len(imported_tables)}'
+                if skipped_tables:
+                    message += f'. Пропущено: {len(skipped_tables)}'
+                
+                return {
+                    'success': True,
+                    'message': message,
+                    'imported_tables': imported_tables,
+                    'skipped_tables': skipped_tables,
+                    'db_name': target_db_name
+                }
+            finally:
+                target_conn.close()
+                source_conn.close()
+        
+        else:
+            return {'success': False, 'error': f'Недопустимый режим импорта: {import_mode}'}
+            
+    except Exception as e:
+        logger.error(f"Error importing database: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+
+def _import_from_sql_file(bot_id: int, sql_file_path: Path, target_db_name: Optional[str] = None, import_mode: str = "new") -> Dict[str, Any]:
+    """Импорт из SQL файла
+    
+    Args:
+        bot_id: ID бота
+        sql_file_path: Путь к SQL файлу
+        target_db_name: Имя целевой БД
+        import_mode: "new" или "existing"
+    
+    Returns:
+        Dict с результатом операции
+    """
+    try:
+        # Парсим SQL файл
+        queries = _parse_sql_file(str(sql_file_path))
+        
+        if not queries:
+            return {'success': False, 'error': 'SQL файл не содержит валидных запросов'}
+        
+        if import_mode == "new":
+            # Создаем новую БД
+            if not target_db_name or target_db_name.strip() == "":
+                source_name = sql_file_path.stem
+                if source_name:
+                    target_db_name = f"{source_name}.db"
+                else:
+                    target_db_name = _generate_unique_db_name(bot_id)
+            else:
+                target_db_name_clean = target_db_name.strip()
+                if not target_db_name_clean.replace('_', '').replace('.', '').replace('-', '').isalnum():
+                    return {'success': False, 'error': 'Недопустимое имя базы данных. Используйте только буквы, цифры, дефисы и подчеркивания.'}
+                
+                if not target_db_name_clean.endswith('.db'):
+                    target_db_name_clean += '.db'
+                
+                target_db_name = target_db_name_clean
+            
+            # Проверяем, не существует ли уже БД с таким именем
+            target_db_path = get_bot_sqlite_db_path(bot_id, target_db_name)
+            if target_db_path.exists():
+                target_db_name = _generate_unique_db_name(bot_id)
+                target_db_path = get_bot_sqlite_db_path(bot_id, target_db_name)
+            
+            # Создаем новую БД
+            conn = get_sqlite_connection(bot_id, target_db_name)
+            
+            try:
+                cursor = conn.cursor()
+                executed_queries = 0
+                errors = []
+                
+                # Выполняем каждый запрос
+                for query in queries:
+                    try:
+                        cursor.execute(query)
+                        executed_queries += 1
+                    except sqlite3.Error as e:
+                        error_msg = f"Ошибка выполнения запроса: {str(e)}"
+                        logger.warning(f"{error_msg}\nQuery: {query[:100]}")
+                        errors.append(error_msg)
+                
+                conn.commit()
+                
+                message = f'База данных {target_db_name} успешно создана из SQL файла. Выполнено запросов: {executed_queries}'
+                if errors:
+                    message += f'. Ошибок: {len(errors)}'
+                
+                return {
+                    'success': True,
+                    'message': message,
+                    'db_name': target_db_name,
+                    'executed_queries': executed_queries,
+                    'errors': errors if errors else None
+                }
+            finally:
+                conn.close()
+        
+        elif import_mode == "existing":
+            # Импортируем в существующую БД
+            if not target_db_name:
+                return {'success': False, 'error': 'Не указано имя целевой базы данных'}
+            
+            target_db_path = get_bot_sqlite_db_path(bot_id, target_db_name)
+            if not target_db_path.exists():
+                return {'success': False, 'error': f'База данных {target_db_name} не найдена'}
+            
+            conn = get_sqlite_connection(bot_id, target_db_name)
+            
+            try:
+                cursor = conn.cursor()
+                executed_queries = 0
+                errors = []
+                
+                # Выполняем каждый запрос
+                for query in queries:
+                    try:
+                        cursor.execute(query)
+                        executed_queries += 1
+                    except sqlite3.Error as e:
+                        error_msg = f"Ошибка выполнения запроса: {str(e)}"
+                        logger.warning(f"{error_msg}\nQuery: {query[:100]}")
+                        errors.append(error_msg)
+                
+                conn.commit()
+                
+                message = f'Импортировано в {target_db_name}. Выполнено запросов: {executed_queries}'
+                if errors:
+                    message += f'. Ошибок: {len(errors)}'
+                
+                return {
+                    'success': True,
+                    'message': message,
+                    'db_name': target_db_name,
+                    'executed_queries': executed_queries,
+                    'errors': errors if errors else None
+                }
+            finally:
+                conn.close()
+        
+        else:
+            return {'success': False, 'error': f'Недопустимый режим импорта: {import_mode}'}
+            
+    except Exception as e:
+        logger.error(f"Error importing from SQL file: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+

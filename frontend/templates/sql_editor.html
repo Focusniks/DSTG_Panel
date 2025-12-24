@@ -92,27 +92,33 @@
             color: var(--neon-cyan);
         }
 
-        .sql-db-badge {
-            display: inline-flex;
+        .sql-db-selector-wrapper {
+            display: flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 1rem;
+            gap: 0.75rem;
+        }
+
+        .sql-db-selector-wrapper label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .sql-db-select {
+            min-width: 200px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
             border-radius: 6px;
             font-size: 0.9rem;
-            color: var(--text-secondary);
-            min-width: 200px;
         }
 
-        .sql-db-badge.active {
-            background: rgba(0, 243, 255, 0.1);
+        .sql-db-select:focus {
             border-color: var(--neon-cyan);
-            color: var(--neon-cyan);
-        }
-
-        .sql-db-badge i {
-            opacity: 0.7;
+            box-shadow: 0 0 0 0.2rem rgba(0, 243, 255, 0.25);
+            outline: none;
         }
 
         .sql-topbar-actions {
@@ -160,48 +166,7 @@
             padding: 1rem;
         }
 
-        .database-list {
-            margin-bottom: 2rem;
-        }
 
-        .database-item {
-            padding: 0.875rem 1rem;
-            margin-bottom: 0.5rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .database-item:hover {
-            background: var(--bg-hover);
-            border-color: var(--neon-cyan);
-            transform: translateX(3px);
-        }
-
-        .database-item.active {
-            background: rgba(0, 243, 255, 0.15);
-            border-color: var(--neon-cyan);
-            box-shadow: 0 0 12px rgba(0, 243, 255, 0.2);
-        }
-
-        .database-item-name {
-            color: var(--text-secondary);
-            font-weight: 500;
-            font-size: 0.9rem;
-        }
-
-        .database-item.active .database-item-name {
-            color: var(--neon-cyan);
-        }
-
-        .tables-section {
-            margin-top: 1.5rem;
-        }
 
         .tables-section-header {
             display: flex;
@@ -851,17 +816,19 @@
 <body>
     <!-- Top Navigation Bar -->
     <div class="sql-topbar">
-        <div class="sql-topbar-left">
-            <div class="sql-topbar-title">
-                <i class="fas fa-database"></i>
-                <span>SQL Редактор</span>
+            <div class="sql-topbar-left">
+                <div class="sql-topbar-title">
+                    <i class="fas fa-database"></i>
+                    <span>SQL Редактор</span>
+                </div>
+                <div class="sql-db-selector-wrapper">
+                    <label for="sql-db-selector">База данных:</label>
+                    <select id="sql-db-selector" class="sql-db-select">
+                        <option value="">Выберите базу данных...</option>
+                    </select>
+                </div>
+                <span id="bot-name-header" style="color: var(--text-secondary); font-size: 0.9rem;">Загрузка...</span>
             </div>
-            <div class="sql-db-badge" id="current-db-badge">
-                <i class="fas fa-database"></i>
-                <span id="current-db-name">База данных не выбрана</span>
-            </div>
-            <span id="bot-name-header" style="color: var(--text-secondary); font-size: 0.9rem;">Загрузка...</span>
-        </div>
         <div class="sql-topbar-actions">
             <button class="btn btn-sm btn-secondary" id="refresh-btn">
                 <i class="fas fa-sync"></i> Обновить
@@ -874,27 +841,19 @@
 
     <!-- Main Wrapper -->
     <div class="sql-wrapper">
-        <!-- Left Panel: Databases & Tables -->
+        <!-- Left Panel: Tables -->
         <div class="sql-left-panel">
             <div class="sql-left-panel-header">
                 <div class="sql-left-panel-title">
-                    <i class="fas fa-layer-group"></i> Базы данных
+                    <i class="fas fa-table"></i> Таблицы
                 </div>
                 <button class="btn btn-sm btn-success" id="create-table-btn" style="display: none;">
                     <i class="fas fa-plus"></i>
                 </button>
             </div>
             <div class="sql-left-panel-content">
-                <div class="database-list" id="database-list">
-                    <!-- Динамически заполняется -->
-                </div>
-                <div class="tables-section">
-                    <div class="tables-section-header">
-                        <div class="tables-section-title">Таблицы</div>
-                    </div>
-                    <div id="tables-list">
-                        <!-- Динамически заполняется -->
-                    </div>
+                <div id="tables-list">
+                    <div style="color: var(--text-muted); padding: 1rem; text-align: center;">Выберите базу данных</div>
                 </div>
             </div>
         </div>
@@ -961,9 +920,6 @@
                         <div class="table-data-actions">
                             <button class="btn btn-sm btn-success" id="add-row-btn">
                                 <i class="fas fa-plus"></i> Добавить строку
-                            </button>
-                            <button class="btn btn-sm btn-info" id="structure-toggle-btn">
-                                <i class="fas fa-sitemap"></i> Структура
                             </button>
                         </div>
                     </div>

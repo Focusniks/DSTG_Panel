@@ -99,9 +99,30 @@
         const createDbBtn = document.getElementById('create-db-btn');
         const newDbNameInput = document.getElementById('new-db-name');
         if (createDbBtn) {
-            if (createDbBtn) {
-                createDbBtn.addEventListener('click', handleCreateDatabase);
-            }
+            createDbBtn.addEventListener('click', handleCreateDatabase);
+        }
+        
+        // Обработчики для импорта БД
+        const importModeRadios = document.querySelectorAll('input[name="import-mode"]');
+        importModeRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                const importNewNameGroup = document.getElementById('import-new-name-group');
+                const importExistingNameGroup = document.getElementById('import-existing-name-group');
+                if (this.value === 'new') {
+                    if (importNewNameGroup) importNewNameGroup.style.display = 'block';
+                    if (importExistingNameGroup) importExistingNameGroup.style.display = 'none';
+                } else {
+                    if (importNewNameGroup) importNewNameGroup.style.display = 'none';
+                    if (importExistingNameGroup) importExistingNameGroup.style.display = 'block';
+                    // Загружаем список БД для выбора
+                    updateImportDbSelect();
+                }
+            });
+        });
+        
+        const importDbBtn = document.getElementById('import-db-btn');
+        if (importDbBtn) {
+            importDbBtn.addEventListener('click', handleImportDatabase);
         }
         
         const executeQueryBtn = document.getElementById('execute-query-btn');
@@ -1829,6 +1850,12 @@
             
             // Обновляем список БД в SQL редакторе
             updateSqlDbSelect(databases);
+            
+            // Обновляем список БД в селекторе импорта (если открыт режим existing)
+            const importModeExisting = document.getElementById('import-mode-existing');
+            if (importModeExisting && importModeExisting.checked) {
+                updateImportDbSelect();
+            }
             
             if (databases.length === 0) {
                 container.innerHTML = '<div class="database-item-empty"><i class="fas fa-database"></i><p>Базы данных не созданы</p><p class="text-muted">Создайте первую базу данных используя форму выше</p></div>';
