@@ -532,20 +532,35 @@ function displayTableData() {
     if (dataTable) dataTable.style.display = 'table';
     
     // Заголовки
-    thead.innerHTML = '<tr><th style="width: 120px;">Действия</th>';
+    thead.innerHTML = '';
+    const headerRow = document.createElement('tr');
     currentTableStructure.columns.forEach(col => {
         const th = document.createElement('th');
         th.textContent = col.name + (col.pk ? ' (PK)' : '');
-        thead.querySelector('tr').appendChild(th);
+        headerRow.appendChild(th);
     });
-    thead.querySelector('tr').innerHTML += '</tr>';
+    const actionsTh = document.createElement('th');
+    actionsTh.style.width = '120px';
+    actionsTh.textContent = 'Действия';
+    headerRow.appendChild(actionsTh);
+    thead.appendChild(headerRow);
     
     // Данные
     tbody.innerHTML = '';
     currentTableData.forEach((row, rowIndex) => {
         const tr = document.createElement('tr');
         
-        // Кнопки действий
+        // Ячейки данных
+        currentTableStructure.columns.forEach(col => {
+            const td = document.createElement('td');
+            const value = row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : '';
+            td.textContent = value;
+            td.setAttribute('data-column', col.name);
+            td.setAttribute('data-type', col.type);
+            tr.appendChild(td);
+        });
+        
+        // Кнопки действий (в конце)
         const actionsTd = document.createElement('td');
         actionsTd.className = 'row-actions';
         actionsTd.innerHTML = `
@@ -557,16 +572,6 @@ function displayTableData() {
             </button>
         `;
         tr.appendChild(actionsTd);
-        
-        // Ячейки данных
-        currentTableStructure.columns.forEach(col => {
-            const td = document.createElement('td');
-            const value = row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : '';
-            td.textContent = value;
-            td.setAttribute('data-column', col.name);
-            td.setAttribute('data-type', col.type);
-            tr.appendChild(td);
-        });
         
         tbody.appendChild(tr);
     });
@@ -949,7 +954,7 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
             <div>
                 <label class="form-label">Тип данных *</label>
                 ${createDataTypeSelect(type, 'column_type', selectId, 'form-select form-select-sm column-type-select')}
-                <small class="form-text text-muted column-type-description" id="${descriptionId}" style="display: block; margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">${getDataTypeDescription(type)}</small>
+                <small class="column-type-description" id="${descriptionId}">${getDataTypeDescription(type)}</small>
             </div>
             <div>
                 <label class="form-label">
@@ -974,6 +979,15 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
     `;
     
     columnsList.appendChild(columnItem);
+    
+    // Добавляем обработчик изменения типа для отображения описания
+    const typeSelect = document.getElementById(selectId);
+    const typeDescription = document.getElementById(descriptionId);
+    if (typeSelect && typeDescription) {
+        typeSelect.addEventListener('change', function() {
+            typeDescription.textContent = getDataTypeDescription(this.value);
+        });
+    }
 }
 
 // Глобальные функции для форм

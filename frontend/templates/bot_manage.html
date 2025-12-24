@@ -459,7 +459,7 @@
                         <i class="fas fa-database"></i>
                         Базы данных
                     </h2>
-                    <p class="text-muted mb-0">Управление SQLite базами данных бота: создание, удаление, выполнение SQL запросов, работа с таблицами</p>
+                    <p class="text-muted mb-0">Управление SQLite базами данных бота: создание, удаление, работа с таблицами</p>
                 </div>
             </div>
 
@@ -472,22 +472,20 @@
                     <div class="mb-2">
                         <label for="new-db-name" class="form-label">Имя базы данных</label>
                     </div>
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-6 col-lg-7">
+                    <div class="d-flex gap-3 align-items-center flex-wrap">
+                        <div class="flex-grow-1" style="min-width: 250px;">
                             <input type="text" class="form-control" id="new-db-name" placeholder="Оставьте пустым для автоматического имени">
-                            <small class="form-text text-muted">Если не указано, будет создано автоматическое имя</small>
                         </div>
-                        <div class="col-md-6 col-lg-5">
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-success flex-fill" id="import-db-modal-btn" data-bs-toggle="modal" data-bs-target="#importDatabaseModal">
-                                    <i class="fas fa-file-import"></i> Импорт БД
-                                </button>
-                                <button class="btn btn-primary flex-fill" id="create-db-btn">
-                                    <i class="fas fa-plus"></i> Создать
-                                </button>
-                            </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success" id="import-db-modal-btn" data-bs-toggle="modal" data-bs-target="#importDatabaseModal">
+                                <i class="fas fa-file-import"></i> Импорт БД
+                            </button>
+                            <button class="btn btn-primary" id="create-db-btn">
+                                <i class="fas fa-plus"></i> Создать
+                            </button>
                         </div>
                     </div>
+                    <small class="form-text text-muted mt-1" style="display: block;">Если не указано, будет создано автоматическое имя</small>
                 </div>
             </div>
 
@@ -504,34 +502,6 @@
                 </div>
             </div>
 
-            <!-- SQL редактор -->
-            <div class="database-sql-editor">
-                <div class="sql-editor-toolbar">
-                    <div class="sql-toolbar-left">
-                        <div class="sql-db-selector">
-                            <i class="fas fa-database"></i>
-                            <select class="form-select form-select-sm" id="sql-db-select">
-                                <option value="">Выберите базу данных...</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="sql-toolbar-right">
-                        <button class="btn btn-sm btn-secondary" id="sql-clear-btn" title="Очистить запрос">
-                            <i class="fas fa-eraser"></i> Очистить
-                        </button>
-                        <button class="btn btn-sm btn-primary" id="execute-query-btn">
-                            <i class="fas fa-play"></i> Выполнить
-                        </button>
-                        <button class="btn btn-sm btn-info" id="sqlite-editor-btn" style="display: none;" title="Открыть расширенный редактор">
-                            <i class="fas fa-external-link-alt"></i> Расширенный редактор
-                        </button>
-                    </div>
-                </div>
-                <div class="sql-editor-container">
-                    <textarea id="sql-query" placeholder="Введите SQL запрос здесь...&#10;Пример: SELECT * FROM users LIMIT 10;"></textarea>
-                </div>
-                <div id="query-result" class="sql-query-result"></div>
-            </div>
         </section>
 
         <!-- Logs Section -->

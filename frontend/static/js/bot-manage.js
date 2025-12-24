@@ -6,7 +6,6 @@
     // Глобальные переменные
     let botId = null;
     let codeEditor = null;
-    let sqlEditor = null;
     let currentFile = null;
     let updateInterval = null;
     let cpuChart = null;
@@ -152,30 +151,6 @@
             });
         }
         
-        const executeQueryBtn = document.getElementById('execute-query-btn');
-        if (executeQueryBtn) {
-            executeQueryBtn.addEventListener('click', handleExecuteQuery);
-        }
-        
-        // Инициализация SQL редактора
-        initSqlEditor();
-        
-        // Кнопка очистки SQL запроса
-        const sqlClearBtn = document.getElementById('sql-clear-btn');
-        if (sqlClearBtn) {
-            sqlClearBtn.addEventListener('click', function() {
-                if (sqlEditor) {
-                    sqlEditor.setValue('');
-                    sqlEditor.focus();
-                } else {
-                    const sqlTextarea = document.getElementById('sql-query');
-                    if (sqlTextarea) {
-                        sqlTextarea.value = '';
-                        sqlTextarea.focus();
-                    }
-                }
-            });
-        }
         
         // Кнопка обновления из Git
         const updateGitBtn = document.getElementById('update-git-btn');
@@ -1702,77 +1677,6 @@
         });
     }
     
-    // Инициализация SQL редактора
-    function initSqlEditor() {
-        if (sqlEditor) {
-            return;
-        }
-        
-        if (typeof CodeMirror === 'undefined') {
-            console.error('CodeMirror is not loaded');
-            return;
-        }
-        
-        const sqlTextarea = document.getElementById('sql-query');
-        if (!sqlTextarea) {
-            return;
-        }
-        
-        // Проверяем, не инициализирован ли уже CodeMirror
-        if (sqlTextarea.cmInstance) {
-            sqlEditor = sqlTextarea.cmInstance;
-            return;
-        }
-        
-        sqlEditor = CodeMirror.fromTextArea(sqlTextarea, {
-            lineNumbers: true,
-            mode: 'text/x-sql',
-            theme: 'monokai',
-            indentUnit: 2,
-            lineWrapping: true,
-            autoCloseBrackets: true,
-            matchBrackets: true,
-            indentWithTabs: false,
-            tabSize: 2,
-            extraKeys: {
-                "Ctrl-Enter": function(cm) {
-                    handleExecuteQuery();
-                },
-                "Ctrl-/": "toggleComment",
-                "Ctrl-F": "findPersistent"
-            }
-        });
-        
-        // Сохраняем ссылку на экземпляр
-        sqlTextarea.cmInstance = sqlEditor;
-        
-        // Обновляем размер редактора при изменении размера контейнера
-        const sqlEditorContainer = document.querySelector('.sql-editor-container');
-        if (sqlEditorContainer) {
-            const resizeObserver = new ResizeObserver(function() {
-                if (sqlEditor) {
-                    setTimeout(function() {
-                        sqlEditor.refresh();
-                    }, 10);
-                }
-            });
-            resizeObserver.observe(sqlEditorContainer);
-        }
-        
-        // Обновляем размер при изменении размера окна
-        let resizeTimeout;
-        window.addEventListener('resize', function() {
-            if (sqlEditor && resizeTimeout) {
-                clearTimeout(resizeTimeout);
-            }
-            resizeTimeout = setTimeout(function() {
-                if (sqlEditor) {
-                    sqlEditor.refresh();
-                }
-            }, 100);
-        });
-    }
-    
     // Сохранение файла
     async function handleSaveFile() {
         if (!botId || !currentFile || !codeEditor) {
@@ -1875,9 +1779,6 @@
             const result = await response.json();
             const databases = result.databases || [];
             
-            // Обновляем список БД в SQL редакторе
-            updateSqlDbSelect(databases);
-            
             // Обновляем список БД в селекторе импорта (если открыт режим existing)
             const importModeExisting = document.getElementById('import-mode-existing');
             if (importModeExisting && importModeExisting.checked) {
@@ -1935,24 +1836,6 @@
             console.error('Error loading databases:', error);
             container.innerHTML = '<div class="database-item-empty"><i class="fas fa-exclamation-triangle"></i><p>Ошибка загрузки списка баз данных: ' + escapeHtml(error.message) + '</p></div>';
         }
-    }
-    
-    function updateSqlDbSelect(databases) {
-        const select = document.getElementById('sql-db-select');
-        if (!select) return;
-        
-        // Очищаем список
-        select.innerHTML = '<option value="">Выберите базу данных...</option>';
-        
-        // Добавляем базы данных (databases - это массив объектов или строк с именами БД)
-        databases.forEach(db => {
-            const option = document.createElement('option');
-            // Если db - это объект, берем db_name, иначе это строка
-            const dbName = typeof db === 'object' ? db.db_name : db;
-            option.value = dbName;
-            option.textContent = dbName;
-            select.appendChild(option);
-        });
     }
     
     window.selectDatabase = function(dbName) {
@@ -2173,107 +2056,6 @@
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-file-import"></i> Импортировать';
             }
-        }
-    }
-    
-    // Выполнение SQL запроса
-    async function handleExecuteQuery() {
-        if (!botId) return;
-        
-        const query = sqlEditor ? sqlEditor.getValue().trim() : (document.getElementById('sql-query') ? document.getElementById('sql-query').value.trim() : '');
-        if (!query) {
-            showWarning('Внимание', 'Введите SQL запрос');
-            if (sqlEditor) sqlEditor.focus();
-            return;
-        }
-        
-        const dbSelect = document.getElementById('sql-db-select');
-        const dbName = dbSelect ? dbSelect.value : null;
-        
-        if (!dbName) {
-            showWarning('Внимание', 'Выберите базу данных для выполнения запроса');
-            return;
-        }
-        
-        try {
-            const response = await fetch('/api/bots/' + botId + '/sqlite/execute', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    query: query,
-                    db_name: dbName || 'bot.db'
-                })
-            });
-            
-            const result = await response.json();
-            const container = document.getElementById('query-result');
-            
-            if (!container) return;
-            
-            // Показываем индикатор загрузки
-            const executeBtn = document.getElementById('execute-query-btn');
-            const originalBtnText = executeBtn ? executeBtn.innerHTML : '';
-            if (executeBtn) {
-                executeBtn.disabled = true;
-                executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Выполнение...';
-            }
-            
-            try {
-                if (result.success) {
-                    if (result.type === 'select') {
-                        const rowCount = result.rows ? result.rows.length : 0;
-                        let html = '<div class="alert alert-success mb-3"><i class="fas fa-check-circle"></i> Запрос выполнен успешно. Найдено строк: <strong>' + rowCount + '</strong></div>';
-                        
-                        if (result.rows && result.rows.length > 0) {
-                            html += '<div class="table-responsive"><table class="table table-dark table-hover table-bordered mb-0"><thead><tr>';
-                            if (result.columns) {
-                                result.columns.forEach(function(col) {
-                                    html += '<th>' + escapeHtml(col) + '</th>';
-                                });
-                            }
-                            html += '</tr></thead><tbody>';
-                            
-                            result.rows.forEach(function(row) {
-                                html += '<tr>';
-                                if (result.columns) {
-                                    result.columns.forEach(function(col) {
-                                        const value = row[col];
-                                        html += '<td>' + (value !== null && value !== undefined ? escapeHtml(String(value)) : '<span class="text-muted">NULL</span>') + '</td>';
-                                    });
-                                }
-                                html += '</tr>';
-                            });
-                            
-                            html += '</tbody></table></div>';
-                        } else {
-                            html += '<div class="sql-result-empty"><i class="fas fa-info-circle"></i> Результаты не найдены</div>';
-                        }
-                        
-                        container.innerHTML = html;
-                    } else {
-                        const affectedRows = result.affected_rows || 0;
-                        container.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Запрос выполнен успешно. Затронуто строк: <strong>' + affectedRows + '</strong></div>';
-                    }
-                    
-                    // Прокручиваем к результатам
-                    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                } else {
-                    container.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> <strong>Ошибка:</strong> ' + escapeHtml(result.error || 'Неизвестная ошибка') + '</div>';
-                    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-            } finally {
-                if (executeBtn) {
-                    executeBtn.disabled = false;
-                    executeBtn.innerHTML = originalBtnText;
-                }
-            }
-        } catch (error) {
-            console.error('Execute query error:', error);
-            const container = document.getElementById('query-result');
-            if (container) {
-                container.innerHTML = '<div class="alert alert-danger">Ошибка выполнения запроса. См. консоль (F12) для подробностей.</div>';
-            }
-            showError('Ошибка запроса', 'Не удалось выполнить SQL запрос. См. консоль (F12).', error.message);
         }
     }
     
