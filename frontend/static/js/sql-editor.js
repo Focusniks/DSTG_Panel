@@ -55,6 +55,13 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     window.sqlEditor = sqlEditor;
     
+    // Читаем параметр db из URL заранее
+    const urlParams = new URLSearchParams(window.location.search);
+    const dbParam = urlParams.get('db');
+    if (dbParam) {
+        currentDbName = decodeURIComponent(dbParam);
+    }
+    
     // Загрузка данных
     loadBotInfo();
     // Загружаем базы данных - функция сама обработает выбор БД из URL
@@ -132,13 +139,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.getElementById('structure-btn').addEventListener('click', function() {
-        showStructure();
-    });
-    
-    document.getElementById('back-to-data-btn').addEventListener('click', function() {
-        document.getElementById('structure-view').style.display = 'none';
-        document.getElementById('table-data-view').style.display = 'block';
-        document.getElementById('query-results').style.display = 'none';
+        toggleStructureView();
     });
     
     document.getElementById('execute-query-btn').addEventListener('click', function() {
@@ -200,30 +201,17 @@ async function loadDatabases() {
             selector.appendChild(option);
         });
         
-        // Если была установлена текущая БД, выбираем её
-        // Проверяем параметр db из URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const dbParam = urlParams.get('db');
-        
-        // Если есть параметр db в URL, выбираем эту БД
-        if (dbParam) {
-            const dbOption = Array.from(selector.options).find(opt => opt.value === dbParam);
-            if (dbOption) {
-                selector.value = dbParam;
-                currentDbName = dbParam;
-                // Вызываем событие change для загрузки таблиц после небольшой задержки
-                setTimeout(() => {
-                    selector.dispatchEvent(new Event('change', { bubbles: true }));
-                }, 100);
-                return; // Выходим, так как уже выбрали БД из URL
-            }
-        }
-        
-        // Если была установлена текущая БД ранее, выбираем её
-        if (currentDbName && selector.options.length > 1) {
+        // Если была установлена текущая БД (из URL или ранее), выбираем её
+        if (currentDbName) {
             const dbOption = Array.from(selector.options).find(opt => opt.value === currentDbName);
             if (dbOption) {
                 selector.value = currentDbName;
+                // Загружаем таблицы для выбранной БД
+                const createTableBtn = document.getElementById('create-table-btn');
+                if (createTableBtn) {
+                    createTableBtn.style.display = 'inline-block';
+                }
+                loadTables();
             }
         }
     } catch (error) {
@@ -642,6 +630,25 @@ async function deleteRow(rowIndex) {
     } catch (error) {
         console.error('Error deleting row:', error);
         showError('Ошибка', 'Не удалось удалить строку');
+    }
+}
+
+// Переключение между структурой и данными таблицы
+async function toggleStructureView() {
+    if (!currentDbName || !currentTableName) return;
+    
+    const structureView = document.getElementById('structure-view');
+    const tableDataView = document.getElementById('table-data-view');
+    const queryResults = document.getElementById('query-results');
+    
+    // Если структура уже открыта, закрываем её и показываем данные
+    if (structureView.style.display === 'block') {
+        structureView.style.display = 'none';
+        tableDataView.style.display = 'block';
+        queryResults.style.display = 'none';
+    } else {
+        // Показываем структуру
+        await showStructure();
     }
 }
 

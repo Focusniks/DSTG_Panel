@@ -269,6 +269,10 @@ async def sql_editor_page(request: Request, bot_id: int):
 async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
 
+@app.get("/wiki", response_class=HTMLResponse)
+async def wiki_page(request: Request):
+    return templates.TemplateResponse("wiki.html", {"request": request})
+
 # API роуты
 @app.post("/api/login")
 async def login(login_data: LoginRequest, response: Response):
