@@ -1,4 +1,4 @@
-// SQL Editor JavaScript
+// SQL Editor JavaScript - Полностью переписан
 let botId = null;
 let currentDbName = null;
 let currentTableName = null;
@@ -6,6 +6,7 @@ let currentTableStructure = null;
 let currentTableData = null;
 let editingRowId = null;
 let primaryKeyColumn = 'id';
+let sqlEditor = null;
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', function() {
@@ -26,34 +27,38 @@ document.addEventListener('DOMContentLoaded', function() {
     if (botIdDisplay) {
         botIdDisplay.textContent = botId;
     }
-    // Обновляем title страницы
+    
     if (document.title.includes('...')) {
         document.title = document.title.replace('...', botId);
     }
+    
     const backToBotLink = document.getElementById('back-to-bot-link');
     if (backToBotLink) {
         backToBotLink.href = `/bot/${botId}`;
     }
     
     // Инициализация CodeMirror для SQL запросов
-    const sqlEditor = CodeMirror.fromTextArea(document.getElementById('sql-query'), {
-        mode: 'text/x-sql',
-        theme: 'monokai',
-        lineNumbers: true,
-        indentWithTabs: true,
-        smartIndent: true,
-        lineWrapping: true,
-        autoCloseBrackets: true,
-        matchBrackets: true,
-        extraKeys: {
-            "Ctrl-Enter": function(cm) {
-                executeQuery();
-            },
-            "Ctrl-/": "toggleComment",
-            "Ctrl-F": "findPersistent"
-        }
-    });
-    window.sqlEditor = sqlEditor;
+    const sqlQueryTextarea = document.getElementById('sql-query');
+    if (sqlQueryTextarea) {
+        sqlEditor = CodeMirror.fromTextArea(sqlQueryTextarea, {
+            mode: 'text/x-sql',
+            theme: 'monokai',
+            lineNumbers: true,
+            indentWithTabs: true,
+            smartIndent: true,
+            lineWrapping: true,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            extraKeys: {
+                "Ctrl-Enter": function(cm) {
+                    executeQuery();
+                },
+                "Ctrl-/": "toggleComment",
+                "Ctrl-F": "findPersistent"
+            }
+        });
+        window.sqlEditor = sqlEditor;
+    }
     
     // Читаем параметр db из URL заранее
     const urlParams = new URLSearchParams(window.location.search);
@@ -64,24 +69,26 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Загрузка данных
     loadBotInfo();
-    // Загружаем базы данных - функция сама обработает выбор БД из URL
     loadDatabases();
     
-    // Обработчики событий
-    document.getElementById('db-selector').addEventListener('change', function() {
-        currentDbName = this.value;
-        const createTableBtn = document.getElementById('create-table-btn');
+    // Обработчики событий для вкладок
+    document.querySelectorAll('.sql-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            const tabName = this.getAttribute('data-tab');
+            switchTab(tabName);
+        });
+    });
+    
+    // Обработчики кнопок
+    document.getElementById('refresh-btn').addEventListener('click', function() {
         if (currentDbName) {
-            loadTables();
-            if (createTableBtn) {
-                createTableBtn.style.display = 'inline-block';
+            loadDatabases();
+            if (currentTableName) {
+                loadTableData();
+                loadStructure();
             }
         } else {
-            document.getElementById('tables-list').innerHTML = '<li class="text-muted">Выберите базу данных</li>';
-            hideTableData();
-            if (createTableBtn) {
-                createTableBtn.style.display = 'none';
-            }
+            loadDatabases();
         }
     });
     
@@ -89,7 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showCreateTableModal();
     });
     
-    document.getElementById('add-column-btn').addEventListener('click', function() {
+    document.getElementById('add-column-form-btn').addEventListener('click', function() {
         addColumnToForm();
     });
     
@@ -101,33 +108,8 @@ document.addEventListener('DOMContentLoaded', function() {
         addColumnToTable();
     });
     
-    document.getElementById('refresh-btn').addEventListener('click', function() {
-        if (currentDbName) {
-            loadTables();
-            if (currentTableName) {
-                loadTableData();
-            }
-        } else {
-            loadDatabases();
-        }
-    });
-    
-    // Кнопка обновления таблицы
-    const refreshTableBtn = document.getElementById('refresh-table-btn');
-    if (refreshTableBtn) {
-        refreshTableBtn.addEventListener('click', function() {
-            if (currentTableName && currentDbName) {
-                loadTableData();
-            }
-        });
-    }
-    
     document.getElementById('add-row-btn').addEventListener('click', function() {
-        showAddRowForm();
-    });
-    
-    document.getElementById('cancel-add-row-btn').addEventListener('click', function() {
-        hideAddRowForm();
+        showAddRowModal();
     });
     
     document.getElementById('save-new-row-btn').addEventListener('click', function() {
@@ -138,8 +120,12 @@ document.addEventListener('DOMContentLoaded', function() {
         saveEditRow();
     });
     
-    document.getElementById('structure-btn').addEventListener('click', function() {
-        toggleStructureView();
+    document.getElementById('structure-toggle-btn').addEventListener('click', function() {
+        switchTab('structure');
+    });
+    
+    document.getElementById('add-column-btn').addEventListener('click', function() {
+        showAddColumnModal();
     });
     
     document.getElementById('execute-query-btn').addEventListener('click', function() {
@@ -147,10 +133,43 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.getElementById('clear-query-btn').addEventListener('click', function() {
-        sqlEditor.setValue('');
-        document.getElementById('query-results').style.display = 'none';
+        if (sqlEditor) {
+            sqlEditor.setValue('');
+            sqlEditor.focus();
+        }
+        document.getElementById('query-results-section').style.display = 'none';
     });
 });
+
+// Переключение вкладок
+function switchTab(tabName) {
+    // Скрываем все вкладки
+    document.querySelectorAll('.sql-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    
+    // Убираем активный класс со всех кнопок вкладок
+    document.querySelectorAll('.sql-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Показываем выбранную вкладку
+    const selectedTab = document.getElementById(`tab-${tabName}`);
+    const selectedTabButton = document.querySelector(`.sql-tab[data-tab="${tabName}"]`);
+    
+    if (selectedTab) {
+        selectedTab.classList.add('active');
+    }
+    
+    if (selectedTabButton) {
+        selectedTabButton.classList.add('active');
+    }
+    
+    // Если переключаемся на структуру, загружаем её
+    if (tabName === 'structure' && currentTableName) {
+        loadStructure();
+    }
+}
 
 // Загрузка информации о боте
 async function loadBotInfo() {
@@ -163,15 +182,12 @@ async function loadBotInfo() {
             const bot = await response.json();
             const botName = bot.name || `Бот #${botId}`;
             botNameHeader.textContent = botName;
-            // Обновляем title страницы
             document.title = `SQL Редактор - ${botName}`;
         } else {
-            // Если запрос не успешен, показываем ID бота
             botNameHeader.textContent = `Бот #${botId}`;
         }
     } catch (error) {
         console.error('Error loading bot info:', error);
-        // В случае ошибки показываем ID бота
         botNameHeader.textContent = `Бот #${botId}`;
     }
 }
@@ -184,39 +200,81 @@ async function loadDatabases() {
         
         const result = await response.json();
         const databases = result.databases || result;
-        const selector = document.getElementById('db-selector');
-        if (!selector) return;
+        const databaseList = document.getElementById('database-list');
+        if (!databaseList) return;
         
-        selector.innerHTML = '<option value="">Выберите базу данных...</option>';
+        databaseList.innerHTML = '';
         
         if (!databases || databases.length === 0) {
+            databaseList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Базы данных не найдены</div>';
             return;
         }
         
         databases.forEach(db => {
-            const option = document.createElement('option');
             const dbName = db.db_name || db;
-            option.value = dbName;
-            option.textContent = dbName;
-            selector.appendChild(option);
+            const dbItem = document.createElement('div');
+            dbItem.className = 'database-item';
+            if (currentDbName === dbName) {
+                dbItem.classList.add('active');
+            }
+            dbItem.innerHTML = `
+                <span class="database-item-name">${escapeHtml(dbName)}</span>
+            `;
+            dbItem.addEventListener('click', function() {
+                selectDatabase(dbName);
+            });
+            databaseList.appendChild(dbItem);
         });
         
-        // Если была установлена текущая БД (из URL или ранее), выбираем её
+        // Если была установлена текущая БД, выбираем её
         if (currentDbName) {
-            const dbOption = Array.from(selector.options).find(opt => opt.value === currentDbName);
-            if (dbOption) {
-                selector.value = currentDbName;
-                // Загружаем таблицы для выбранной БД
-                const createTableBtn = document.getElementById('create-table-btn');
-                if (createTableBtn) {
-                    createTableBtn.style.display = 'inline-block';
-                }
-                loadTables();
-            }
+            selectDatabase(currentDbName, false);
         }
     } catch (error) {
         console.error('Error loading databases:', error);
         showError('Ошибка', 'Не удалось загрузить список баз данных');
+    }
+}
+
+// Выбор базы данных
+function selectDatabase(dbName, updateUrl = true) {
+    currentDbName = dbName;
+    
+    // Обновляем активное состояние в списке
+    document.querySelectorAll('.database-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    const dbItem = Array.from(document.querySelectorAll('.database-item')).find(item => {
+        return item.querySelector('.database-item-name').textContent === dbName;
+    });
+    
+    if (dbItem) {
+        dbItem.classList.add('active');
+    }
+    
+    // Обновляем бейдж в топбаре
+    const dbBadge = document.getElementById('current-db-badge');
+    const dbNameSpan = document.getElementById('current-db-name');
+    if (dbBadge && dbNameSpan) {
+        dbBadge.classList.add('active');
+        dbNameSpan.textContent = dbName;
+    }
+    
+    // Показываем кнопку создания таблицы
+    const createTableBtn = document.getElementById('create-table-btn');
+    if (createTableBtn) {
+        createTableBtn.style.display = 'inline-block';
+    }
+    
+    // Загружаем таблицы
+    loadTables();
+    
+    // Обновляем URL если нужно
+    if (updateUrl) {
+        const url = new URL(window.location);
+        url.searchParams.set('db', encodeURIComponent(dbName));
+        window.history.replaceState({}, '', url);
     }
 }
 
@@ -227,8 +285,7 @@ async function loadTables() {
     const tablesList = document.getElementById('tables-list');
     if (!tablesList) return;
     
-    // Показываем индикатор загрузки
-    tablesList.innerHTML = '<li class="text-muted"><i class="fas fa-spinner fa-spin"></i> Загрузка...</li>';
+    tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
     
     try {
         const response = await fetch(`/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/tables`);
@@ -237,64 +294,78 @@ async function loadTables() {
         try {
             result = await response.json();
         } catch (e) {
-            // Если не удалось распарсить JSON, считаем что это ошибка
             console.error('Error parsing response:', e);
-            tablesList.innerHTML = '<li class="text-muted">Нет таблиц</li>';
+            tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Нет таблиц</div>';
             return;
         }
         
-        // Проверяем, есть ли success в ответе
         if (result.success === false) {
-            // Если success = false, показываем ошибку только если это не просто отсутствие таблиц
             const errorMessage = result.error || result.detail || 'Не удалось загрузить список таблиц';
-            if (response.status === 404 || errorMessage.includes('не существует') || errorMessage.includes('not found')) {
-                tablesList.innerHTML = '<li class="text-muted">Нет таблиц</li>';
-            } else {
-                console.error('Error loading tables:', errorMessage);
-                tablesList.innerHTML = '<li class="text-muted">Нет таблиц</li>';
-                // Не показываем ошибку пользователю, чтобы не раздражать
-            }
+            tablesList.innerHTML = `<div style="color: var(--text-muted); padding: 1rem; text-align: center;">${escapeHtml(errorMessage)}</div>`;
             return;
         }
         
-        // Если response.ok = false, но success = true, все равно обрабатываем
-        if (!response.ok && result.success !== true) {
-            // Пытаемся получить детали ошибки
-            const errorMessage = result.detail || result.error || 'Не удалось загрузить список таблиц';
-            // Для любых ошибок просто показываем "Нет таблиц", чтобы не ломать UI
-            console.error('Error loading tables:', errorMessage);
-            tablesList.innerHTML = '<li class="text-muted">Нет таблиц</li>';
-            return;
-        }
-        
-        // Извлекаем список таблиц
-        const tables = result.tables || result || [];
+        const tables = result.tables || [];
         tablesList.innerHTML = '';
         
-        if (!tables || tables.length === 0) {
-            tablesList.innerHTML = '<li class="text-muted">Нет таблиц</li>';
+        if (tables.length === 0) {
+            tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Нет таблиц</div>';
             return;
         }
         
         tables.forEach(table => {
-            const tableName = typeof table === 'string' ? table : (table.name || table);
-            const li = document.createElement('li');
-            li.textContent = tableName;
-            li.addEventListener('click', function() {
-                // Убираем активный класс у всех
-                tablesList.querySelectorAll('li').forEach(item => item.classList.remove('active'));
-                // Добавляем активный класс текущему
-                li.classList.add('active');
-                currentTableName = tableName;
-                loadTableData();
+            const tableName = table.table_name || table;
+            const tableItem = document.createElement('div');
+            tableItem.className = 'table-item';
+            if (currentTableName === tableName) {
+                tableItem.classList.add('active');
+            }
+            tableItem.innerHTML = `
+                <i class="fas fa-table table-item-icon"></i>
+                <span class="table-item-name">${escapeHtml(tableName)}</span>
+            `;
+            tableItem.addEventListener('click', function() {
+                selectTable(tableName);
             });
-            tablesList.appendChild(li);
+            tablesList.appendChild(tableItem);
         });
     } catch (error) {
         console.error('Error loading tables:', error);
-        // В случае любой ошибки просто показываем "Нет таблиц"
-        tablesList.innerHTML = '<li class="text-muted">Нет таблиц</li>';
+        tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Ошибка загрузки таблиц</div>';
     }
+}
+
+// Выбор таблицы
+function selectTable(tableName) {
+    currentTableName = tableName;
+    
+    // Обновляем активное состояние в списке
+    document.querySelectorAll('.table-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    const tableItem = Array.from(document.querySelectorAll('.table-item')).find(item => {
+        return item.querySelector('.table-item-name').textContent === tableName;
+    });
+    
+    if (tableItem) {
+        tableItem.classList.add('active');
+    }
+    
+    // Показываем вкладки данных и структуры
+    document.querySelectorAll('.sql-tab[data-tab="data"], .sql-tab[data-tab="structure"]').forEach(tab => {
+        tab.style.display = 'inline-flex';
+    });
+    
+    // Обновляем бейджи
+    const tableNameBadge = document.getElementById('current-table-name-badge');
+    const structureTableNameBadge = document.getElementById('structure-table-name-badge');
+    if (tableNameBadge) tableNameBadge.textContent = tableName;
+    if (structureTableNameBadge) structureTableNameBadge.textContent = tableName;
+    
+    // Переключаемся на вкладку данных и загружаем данные
+    switchTab('data');
+    loadTableData();
 }
 
 // Загрузка данных таблицы
@@ -326,16 +397,13 @@ async function loadTableData() {
         
         // Отображаем данные
         displayTableData();
-        
-        // Показываем кнопки управления
-        document.getElementById('add-row-btn').style.display = 'inline-block';
-        document.getElementById('structure-btn').style.display = 'inline-block';
-        document.getElementById('table-data-view').style.display = 'block';
-        document.getElementById('empty-state').style.display = 'none';
-        document.getElementById('current-table-name').textContent = currentTableName;
     } catch (error) {
         console.error('Error loading table data:', error);
         showError('Ошибка', 'Не удалось загрузить данные таблицы');
+        const placeholder = document.getElementById('table-data-placeholder');
+        const dataTable = document.getElementById('data-table');
+        if (placeholder) placeholder.style.display = 'flex';
+        if (dataTable) dataTable.style.display = 'none';
     }
 }
 
@@ -343,11 +411,16 @@ async function loadTableData() {
 function displayTableData() {
     if (!currentTableStructure || !currentTableData) return;
     
+    const placeholder = document.getElementById('table-data-placeholder');
+    const dataTable = document.getElementById('data-table');
     const thead = document.getElementById('data-table-head');
     const tbody = document.getElementById('data-table-body');
     
+    if (placeholder) placeholder.style.display = 'none';
+    if (dataTable) dataTable.style.display = 'table';
+    
     // Заголовки
-    thead.innerHTML = '<tr><th>Действия</th>';
+    thead.innerHTML = '<tr><th style="width: 120px;">Действия</th>';
     currentTableStructure.columns.forEach(col => {
         const th = document.createElement('th');
         th.textContent = col.name + (col.pk ? ' (PK)' : '');
@@ -387,121 +460,8 @@ function displayTableData() {
     });
 }
 
-// Показать форму добавления строки
-function showAddRowForm() {
-    if (!currentTableStructure) return;
-    
-    const form = document.getElementById('add-row-form-content');
-    form.innerHTML = '';
-    
-    currentTableStructure.columns.forEach(col => {
-        if (col.pk && col.type === 'INTEGER' && col.notnull) {
-            // Пропускаем автоинкрементные primary key
-            return;
-        }
-        
-        const formRow = document.createElement('div');
-        formRow.className = 'form-row';
-        
-        const label = document.createElement('label');
-        label.textContent = col.name + (col.notnull ? ' *' : '');
-        label.className = 'text-white';
-        
-        let input;
-        if (col.type === 'INTEGER') {
-            input = document.createElement('input');
-            input.type = 'number';
-        } else if (col.type === 'REAL') {
-            input = document.createElement('input');
-            input.type = 'number';
-            input.step = 'any';
-        } else if (col.type === 'TEXT') {
-            input = document.createElement('textarea');
-            input.rows = 3;
-        } else {
-            input = document.createElement('input');
-            input.type = 'text';
-        }
-        
-        input.className = 'form-control form-control-sm';
-        input.name = col.name;
-        input.required = col.notnull;
-        if (col.dflt_value !== null && col.dflt_value !== undefined) {
-            input.value = col.dflt_value;
-        }
-        
-        formRow.appendChild(label);
-        formRow.appendChild(input);
-        form.appendChild(formRow);
-    });
-    
-    document.getElementById('add-row-form').style.display = 'block';
-}
-
-// Скрыть форму добавления строки
-function hideAddRowForm() {
-    document.getElementById('add-row-form').style.display = 'none';
-    document.getElementById('add-row-form-content').innerHTML = '';
-}
-
-// Сохранение новой строки
-async function saveNewRow() {
-    if (!currentDbName || !currentTableName) return;
-    
-    const form = document.getElementById('add-row-form-content');
-    const formData = new FormData(form);
-    const rowData = {};
-    
-    for (const [key, value] of formData.entries()) {
-        if (value.trim() !== '') {
-            rowData[key] = value.trim();
-        }
-    }
-    
-    try {
-        const response = await fetch(
-            `/api/bots/${botId}/sqlite/tables/${encodeURIComponent(currentTableName)}/rows`,
-            {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    row_data: rowData,
-                    db_name: currentDbName
-                })
-            }
-        );
-        
-        let result;
-        try {
-            result = await response.json();
-        } catch (e) {
-            console.error('Error parsing response:', e);
-            showError('Ошибка', `Ошибка сервера: ${response.status} ${response.statusText}`);
-            return;
-        }
-        
-        if (!response.ok) {
-            // Если response.ok = false, проверяем result.detail или result.error
-            const errorMessage = result.detail || result.error || `Ошибка ${response.status}: ${response.statusText}`;
-            showError('Ошибка', errorMessage);
-            return;
-        }
-        
-        if (result.success) {
-            showSuccess('Успех', 'Строка успешно добавлена');
-            hideAddRowForm();
-            loadTableData();
-        } else {
-            showError('Ошибка', result.error || 'Не удалось добавить строку');
-        }
-    } catch (error) {
-        console.error('Error saving new row:', error);
-        showError('Ошибка', `Не удалось добавить строку: ${error.message || 'Неизвестная ошибка'}`);
-    }
-}
-
-// Редактирование строки
-function editRow(rowIndex) {
+// Глобальные функции для onclick
+window.editRow = function(rowIndex) {
     if (!currentTableData || !currentTableData[rowIndex]) return;
     
     const row = currentTableData[rowIndex];
@@ -511,93 +471,36 @@ function editRow(rowIndex) {
     form.innerHTML = '';
     
     currentTableStructure.columns.forEach(col => {
-        const formRow = document.createElement('div');
-        formRow.className = 'form-row mb-3';
+        const value = row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : '';
+        
+        const div = document.createElement('div');
+        div.className = 'mb-3';
         
         const label = document.createElement('label');
-        label.textContent = col.name + (col.pk ? ' (PK)' : '') + (col.notnull ? ' *' : '');
-        label.className = 'text-white';
+        label.className = 'form-label';
+        label.textContent = `${col.name}${col.pk ? ' (PK)' : ''} (${col.type})`;
+        label.setAttribute('for', `edit-${col.name}`);
         
-        let input;
-        if (col.type === 'INTEGER') {
-            input = document.createElement('input');
-            input.type = 'number';
-        } else if (col.type === 'REAL') {
-            input = document.createElement('input');
-            input.type = 'number';
-            input.step = 'any';
-        } else if (col.type === 'TEXT') {
-            input = document.createElement('textarea');
-            input.rows = 3;
-        } else {
-            input = document.createElement('input');
-            input.type = 'text';
-        }
-        
+        const input = document.createElement('input');
+        input.type = col.type.toLowerCase().includes('int') ? 'number' : 'text';
         input.className = 'form-control';
+        input.id = `edit-${col.name}`;
         input.name = col.name;
-        input.value = row[col.name] !== null && row[col.name] !== undefined ? row[col.name] : '';
+        input.value = value;
         if (col.pk) {
             input.disabled = true;
-            input.style.opacity = '0.6';
         }
-        input.required = col.notnull && !col.pk;
         
-        formRow.appendChild(label);
-        formRow.appendChild(input);
-        form.appendChild(formRow);
+        div.appendChild(label);
+        div.appendChild(input);
+        form.appendChild(div);
     });
     
     const modal = new bootstrap.Modal(document.getElementById('edit-row-modal'));
     modal.show();
-}
+};
 
-// Сохранение редактируемой строки
-async function saveEditRow() {
-    if (!currentDbName || !currentTableName || editingRowId === null) return;
-    
-    const form = document.getElementById('edit-row-form');
-    const formData = new FormData(form);
-    const rowData = {};
-    
-    for (const [key, value] of formData.entries()) {
-        if (!currentTableStructure.columns.find(col => col.name === key && col.pk)) {
-            rowData[key] = value.trim();
-        }
-    }
-    
-    try {
-        const response = await fetch(
-            `/api/bots/${botId}/sqlite/tables/${encodeURIComponent(currentTableName)}/rows/${editingRowId}`,
-            {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    row_data: rowData,
-                    primary_key: primaryKeyColumn,
-                    db_name: currentDbName
-                })
-            }
-        );
-        
-        const result = await response.json();
-        if (result.success) {
-            showSuccess('Успех', 'Строка успешно обновлена');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('edit-row-modal'));
-            modal.hide();
-            editingRowId = null;
-            loadTableData();
-        } else {
-            showError('Ошибка', result.error || 'Не удалось обновить строку');
-        }
-    } catch (error) {
-        console.error('Error saving edited row:', error);
-        showError('Ошибка', 'Не удалось обновить строку');
-    }
-}
-
-// Удаление строки
-async function deleteRow(rowIndex) {
+window.deleteRow = async function(rowIndex) {
     if (!currentTableData || !currentTableData[rowIndex]) return;
     
     const row = currentTableData[rowIndex];
@@ -631,29 +534,140 @@ async function deleteRow(rowIndex) {
         console.error('Error deleting row:', error);
         showError('Ошибка', 'Не удалось удалить строку');
     }
+};
+
+// Показать модальное окно добавления строки
+function showAddRowModal() {
+    if (!currentTableStructure) return;
+    
+    const form = document.getElementById('add-row-form');
+    form.innerHTML = '';
+    
+    currentTableStructure.columns.forEach(col => {
+        if (col.pk && col.type.toLowerCase().includes('int')) {
+            // Пропускаем auto-increment primary keys
+            return;
+        }
+        
+        const div = document.createElement('div');
+        div.className = 'mb-3';
+        
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.textContent = `${col.name}${col.pk ? ' (PK)' : ''} (${col.type})${col.notnull ? ' *' : ''}`;
+        label.setAttribute('for', `add-${col.name}`);
+        
+        const input = document.createElement('input');
+        input.type = col.type.toLowerCase().includes('int') || col.type.toLowerCase().includes('real') ? 'number' : 'text';
+        input.className = 'form-control';
+        input.id = `add-${col.name}`;
+        input.name = col.name;
+        if (col.notnull && !col.dflt_value) {
+            input.required = true;
+        }
+        if (col.dflt_value !== null) {
+            input.value = col.dflt_value;
+        }
+        
+        div.appendChild(label);
+        div.appendChild(input);
+        form.appendChild(div);
+    });
+    
+    const modal = new bootstrap.Modal(document.getElementById('add-row-modal'));
+    modal.show();
 }
 
-// Переключение между структурой и данными таблицы
-async function toggleStructureView() {
-    if (!currentDbName || !currentTableName) return;
+// Сохранить новую строку
+async function saveNewRow() {
+    if (!currentTableStructure) return;
     
-    const structureView = document.getElementById('structure-view');
-    const tableDataView = document.getElementById('table-data-view');
-    const queryResults = document.getElementById('query-results');
+    const form = document.getElementById('add-row-form');
+    const formData = new FormData(form);
+    const rowData = {};
     
-    // Если структура уже открыта, закрываем её и показываем данные
-    if (structureView.style.display === 'block') {
-        structureView.style.display = 'none';
-        tableDataView.style.display = 'block';
-        queryResults.style.display = 'none';
-    } else {
-        // Показываем структуру
-        await showStructure();
+    currentTableStructure.columns.forEach(col => {
+        const value = formData.get(col.name);
+        if (value !== null && value !== '') {
+            rowData[col.name] = value;
+        }
+    });
+    
+    try {
+        const response = await fetch(
+            `/api/bots/${botId}/sqlite/tables/${encodeURIComponent(currentTableName)}/rows`,
+            {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    data: rowData,
+                    db_name: currentDbName
+                })
+            }
+        );
+        
+        const result = await response.json();
+        if (result.success) {
+            showSuccess('Успех', 'Строка успешно добавлена');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('add-row-modal'));
+            modal.hide();
+            loadTableData();
+        } else {
+            showError('Ошибка', result.error || 'Не удалось добавить строку');
+        }
+    } catch (error) {
+        console.error('Error adding row:', error);
+        showError('Ошибка', 'Не удалось добавить строку');
     }
 }
 
-// Показать структуру таблицы
-async function showStructure() {
+// Сохранить отредактированную строку
+async function saveEditRow() {
+    if (!editingRowId || !currentTableStructure) return;
+    
+    const form = document.getElementById('edit-row-form');
+    const formData = new FormData(form);
+    const rowData = {};
+    
+    currentTableStructure.columns.forEach(col => {
+        if (!col.pk) {
+            const value = formData.get(col.name);
+            rowData[col.name] = value !== null ? value : null;
+        }
+    });
+    
+    try {
+        const response = await fetch(
+            `/api/bots/${botId}/sqlite/tables/${encodeURIComponent(currentTableName)}/rows/${editingRowId}`,
+            {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    data: rowData,
+                    primary_key: primaryKeyColumn,
+                    db_name: currentDbName
+                })
+            }
+        );
+        
+        const result = await response.json();
+        if (result.success) {
+            showSuccess('Успех', 'Строка успешно обновлена');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('edit-row-modal'));
+            modal.hide();
+            editingRowId = null;
+            loadTableData();
+        } else {
+            showError('Ошибка', result.error || 'Не удалось обновить строку');
+        }
+    } catch (error) {
+        console.error('Error updating row:', error);
+        showError('Ошибка', 'Не удалось обновить строку');
+    }
+}
+
+// Загрузка структуры таблицы
+async function loadStructure() {
     if (!currentDbName || !currentTableName) return;
     
     try {
@@ -666,29 +680,24 @@ async function showStructure() {
         const structure = result.structure || result;
         const content = document.getElementById('structure-content');
         
-        let html = '<div class="mb-3">';
-        html += '<button class="btn btn-sm btn-success" onclick="showAddColumnModal()">';
-        html += '<i class="fas fa-plus"></i> Добавить столбец';
-        html += '</button>';
-        html += '</div>';
-        html += '<table class="table table-dark table-striped"><thead><tr>';
+        let html = '<table class="structure-table"><thead><tr>';
         html += '<th>Имя</th><th>Тип</th><th>NOT NULL</th><th>Значение по умолчанию</th><th>Primary Key</th><th>Действия</th>';
         html += '</tr></thead><tbody>';
         
         structure.columns.forEach(col => {
             html += '<tr>';
-            html += `<td>${col.name}</td>`;
-            html += `<td>${col.type}</td>`;
+            html += `<td>${escapeHtml(col.name)}</td>`;
+            html += `<td>${escapeHtml(col.type)}</td>`;
             html += `<td>${col.notnull ? 'Да' : 'Нет'}</td>`;
-            html += `<td>${col.dflt_value !== null ? col.dflt_value : '-'}</td>`;
+            html += `<td>${col.dflt_value !== null ? escapeHtml(col.dflt_value) : '-'}</td>`;
             html += `<td>${col.pk ? 'Да' : 'Нет'}</td>`;
             html += `<td>`;
             if (!col.pk) {
-                html += `<button class="btn btn-sm btn-danger" onclick="deleteColumn('${col.name}')">`;
+                html += `<button class="btn btn-sm btn-danger" onclick="deleteColumn('${escapeHtml(col.name)}')">`;
                 html += '<i class="fas fa-trash"></i> Удалить';
                 html += '</button>';
             } else {
-                html += '<span class="text-muted">-</span>';
+                html += '<span style="color: var(--text-muted);">-</span>';
             }
             html += `</td>`;
             html += '</tr>';
@@ -697,13 +706,18 @@ async function showStructure() {
         html += '</tbody></table>';
         content.innerHTML = html;
         
-        document.getElementById('structure-view').style.display = 'block';
-        document.getElementById('table-data-view').style.display = 'none';
-        document.getElementById('query-results').style.display = 'none';
-        document.getElementById('structure-table-name').textContent = currentTableName;
+        // Показываем кнопку добавления столбца
+        const addColumnBtn = document.getElementById('add-column-btn');
+        if (addColumnBtn) {
+            addColumnBtn.style.display = 'inline-block';
+        }
     } catch (error) {
         console.error('Error loading structure:', error);
         showError('Ошибка', 'Не удалось загрузить структуру таблицы');
+        const content = document.getElementById('structure-content');
+        if (content) {
+            content.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><p>Ошибка загрузки структуры</p></div>';
+        }
     }
 }
 
@@ -714,7 +728,12 @@ async function executeQuery() {
         return;
     }
     
-    const query = window.sqlEditor.getValue().trim();
+    if (!sqlEditor) {
+        showError('Ошибка', 'SQL редактор не инициализирован');
+        return;
+    }
+    
+    const query = sqlEditor.getValue().trim();
     if (!query) {
         showWarning('Внимание', 'Введите SQL запрос');
         return;
@@ -731,55 +750,47 @@ async function executeQuery() {
         });
         
         const result = await response.json();
-        const resultsDiv = document.getElementById('query-results');
+        const resultsSection = document.getElementById('query-results-section');
         const contentDiv = document.getElementById('query-results-content');
         
         if (result.success) {
             if (result.type === 'select' && result.rows) {
-                let html = `<div class="alert alert-success">Запрос выполнен успешно. Найдено строк: ${result.rows.length}</div>`;
+                let html = '';
                 
                 if (result.rows.length > 0) {
-                    html += '<table class="table table-dark table-striped table-bordered"><thead><tr>';
+                    html += '<table class="results-table"><thead><tr>';
                     Object.keys(result.rows[0]).forEach(key => {
-                        html += `<th>${key}</th>`;
+                        html += `<th>${escapeHtml(key)}</th>`;
                     });
                     html += '</tr></thead><tbody>';
                     
                     result.rows.forEach(row => {
                         html += '<tr>';
                         Object.values(row).forEach(value => {
-                            html += `<td>${value !== null ? value : ''}</td>`;
+                            html += `<td>${value !== null ? escapeHtml(String(value)) : '<em style="color: var(--text-muted);">NULL</em>'}</td>`;
                         });
                         html += '</tr>';
                     });
                     
                     html += '</tbody></table>';
+                } else {
+                    html = '<div class="results-empty"><i class="fas fa-inbox"></i><p>Нет результатов</p></div>';
                 }
                 
                 contentDiv.innerHTML = html;
             } else {
-                contentDiv.innerHTML = `<div class="alert alert-success">Запрос выполнен успешно. Затронуто строк: ${result.affected_rows || 0}</div>`;
+                contentDiv.innerHTML = `<div class="alert alert-success" style="margin: 0;">Запрос выполнен успешно. Затронуто строк: ${result.affected_rows || 0}</div>`;
             }
             
-            resultsDiv.style.display = 'block';
-            document.getElementById('table-data-view').style.display = 'none';
-            document.getElementById('structure-view').style.display = 'none';
+            resultsSection.style.display = 'block';
         } else {
-            contentDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${result.error || 'Неизвестная ошибка'}</div>`;
-            resultsDiv.style.display = 'block';
+            contentDiv.innerHTML = `<div class="alert alert-danger" style="margin: 0;">Ошибка: ${escapeHtml(result.error || 'Неизвестная ошибка')}</div>`;
+            resultsSection.style.display = 'block';
         }
     } catch (error) {
         console.error('Error executing query:', error);
         showError('Ошибка', 'Не удалось выполнить запрос');
     }
-}
-
-// Скрыть данные таблицы
-function hideTableData() {
-    document.getElementById('table-data-view').style.display = 'none';
-    document.getElementById('add-row-btn').style.display = 'none';
-    document.getElementById('structure-btn').style.display = 'none';
-    document.getElementById('empty-state').style.display = 'block';
 }
 
 // Показать модальное окно создания таблицы
@@ -789,12 +800,11 @@ function showCreateTableModal() {
         return;
     }
     
-    // Очищаем форму
     document.getElementById('new-table-name').value = '';
     document.getElementById('columns-list').innerHTML = '';
     
     // Добавляем первый столбец по умолчанию (обычно id)
-    addColumnToForm('id', 'INTEGER', true, false, true);
+    addColumnToForm('id', 'INTEGER', false, true, true);
     
     const modal = new bootstrap.Modal(document.getElementById('create-table-modal'));
     modal.show();
@@ -821,7 +831,7 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
         <div class="column-item-fields">
             <div>
                 <label class="form-label">Имя столбца *</label>
-                <input type="text" class="form-control form-control-sm" name="column_name" value="${name}" required>
+                <input type="text" class="form-control form-control-sm" name="column_name" value="${escapeHtml(name)}" required>
             </div>
             <div>
                 <label class="form-label">Тип данных *</label>
@@ -854,29 +864,15 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
     columnsList.appendChild(columnItem);
 }
 
-// Удалить столбец из формы (глобальная функция для onclick)
+// Глобальные функции для форм
 window.removeColumnFromForm = function(button) {
     const columnItem = button.closest('.column-item');
     if (columnItem) {
         columnItem.remove();
-        // Обновляем номера столбцов
         updateColumnNumbers();
     }
-}
+};
 
-// Обновить номера столбцов
-function updateColumnNumbers() {
-    const columnsList = document.getElementById('columns-list');
-    columnsList.querySelectorAll('.column-item').forEach((item, index) => {
-        item.setAttribute('data-index', index);
-        const header = item.querySelector('.column-item-header strong');
-        if (header) {
-            header.textContent = `Столбец #${index + 1}`;
-        }
-    });
-}
-
-// Переключить AUTO INCREMENT при изменении Primary Key (глобальная функция для onclick)
 window.toggleAutoIncrement = function(checkbox) {
     const columnItem = checkbox.closest('.column-item');
     const autoIncrementCheckbox = columnItem.querySelector('input[name="column_autoincrement"]');
@@ -886,6 +882,17 @@ window.toggleAutoIncrement = function(checkbox) {
             autoIncrementCheckbox.checked = false;
         }
     }
+};
+
+function updateColumnNumbers() {
+    const columnsList = document.getElementById('columns-list');
+    columnsList.querySelectorAll('.column-item').forEach((item, index) => {
+        item.setAttribute('data-index', index);
+        const header = item.querySelector('.column-item-header strong');
+        if (header) {
+            header.textContent = `Столбец #${index + 1}`;
+        }
+    });
 }
 
 // Создать таблицу
@@ -901,7 +908,6 @@ async function createTable() {
         return;
     }
     
-    // Собираем данные о столбцах
     const columns = [];
     const columnItems = document.querySelectorAll('#columns-list .column-item');
     
@@ -958,14 +964,12 @@ async function createTable() {
         try {
             result = await response.json();
         } catch (e) {
-            // Если не удалось распарсить JSON, значит это ошибка сервера
             console.error('Error parsing response:', e);
             showError('Ошибка', `Ошибка сервера: ${response.status} ${response.statusText}`);
             return;
         }
         
         if (!response.ok) {
-            // Если response.ok = false, проверяем result.detail или result.error
             const errorMessage = result.detail || result.error || `Ошибка ${response.status}: ${response.statusText}`;
             showError('Ошибка', errorMessage);
             return;
@@ -985,14 +989,13 @@ async function createTable() {
     }
 }
 
-// Показать модальное окно добавления столбца (глобальная функция для onclick)
+// Показать модальное окно добавления столбца
 window.showAddColumnModal = function() {
     if (!currentDbName || !currentTableName) {
         showWarning('Внимание', 'Выберите таблицу');
         return;
     }
     
-    // Очищаем форму
     document.getElementById('new-column-name').value = '';
     document.getElementById('new-column-type').value = 'TEXT';
     document.getElementById('new-column-notnull').checked = false;
@@ -1000,7 +1003,7 @@ window.showAddColumnModal = function() {
     
     const modal = new bootstrap.Modal(document.getElementById('add-column-modal'));
     modal.show();
-}
+};
 
 // Добавить столбец в существующую таблицу
 async function addColumnToTable() {
@@ -1040,11 +1043,8 @@ async function addColumnToTable() {
             showSuccess('Успех', 'Столбец успешно добавлен');
             const modal = bootstrap.Modal.getInstance(document.getElementById('add-column-modal'));
             modal.hide();
-            // Обновляем структуру и данные
-            showStructure();
-            if (document.getElementById('table-data-view').style.display !== 'none') {
-                loadTableData();
-            }
+            loadStructure();
+            loadTableData();
         } else {
             showError('Ошибка', result.error || 'Не удалось добавить столбец');
         }
@@ -1054,7 +1054,7 @@ async function addColumnToTable() {
     }
 }
 
-// Удалить столбец из таблицы (глобальная функция для onclick)
+// Удалить столбец из таблицы
 window.deleteColumn = async function(columnName) {
     if (!currentDbName || !currentTableName) {
         showWarning('Внимание', 'Выберите таблицу');
@@ -1076,11 +1076,8 @@ window.deleteColumn = async function(columnName) {
         const result = await response.json();
         if (result.success) {
             showSuccess('Успех', 'Столбец успешно удален');
-            // Обновляем структуру и данные
-            showStructure();
-            if (document.getElementById('table-data-view').style.display !== 'none') {
-                loadTableData();
-            }
+            loadStructure();
+            loadTableData();
         } else {
             showError('Ошибка', result.error || 'Не удалось удалить столбец');
         }
@@ -1088,7 +1085,7 @@ window.deleteColumn = async function(columnName) {
         console.error('Error deleting column:', error);
         showError('Ошибка', 'Не удалось удалить столбец');
     }
-}
+};
 
 // Утилиты для уведомлений
 function showAlert(message, type) {
@@ -1101,6 +1098,7 @@ function showAlert(message, type) {
     const alert = document.createElement('div');
     alert.className = `alert alert-${type} alert-dismissible fade show`;
     alert.role = 'alert';
+    alert.style.cssText = 'background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);';
     alert.innerHTML = `
         ${escapeHtml(message)}
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -1132,5 +1130,3 @@ function showError(title, message) {
 function showWarning(title, message) {
     showAlert(`${title}: ${message}`, 'warning');
 }
-
-
