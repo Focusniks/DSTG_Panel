@@ -863,6 +863,9 @@
                 <span id="bot-name-header" style="color: var(--text-secondary); font-size: 0.9rem;">Загрузка...</span>
             </div>
         <div class="sql-topbar-actions">
+            <button class="btn btn-sm btn-info" id="export-db-btn" style="display: none;">
+                <i class="fas fa-download"></i> Экспорт БД
+            </button>
             <button class="btn btn-sm btn-secondary" id="refresh-btn">
                 <i class="fas fa-sync"></i> Обновить
             </button>
@@ -956,6 +959,9 @@
                             <span class="badge" id="current-table-name-badge">-</span>
                         </div>
                         <div class="table-data-actions">
+                            <button class="btn btn-sm btn-info" id="export-table-btn" style="display: none;">
+                                <i class="fas fa-download"></i> Экспорт таблицы
+                            </button>
                             <button class="btn btn-sm btn-success" id="add-row-btn">
                                 <i class="fas fa-plus"></i> Добавить строку
                             </button>

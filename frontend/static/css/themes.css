@@ -509,11 +509,93 @@
     color: #000000 !important;
 }
 
-/* Переопределяем только элементы без классов cm-* (т.е. обычный текст) */
-/* Классы подсветки синтаксиса (cm-keyword, cm-string и т.д.) сохранят свои цвета от темы monokai */
-[data-theme="light"] .CodeMirror-line span:not([class^="cm-"]),
-[data-theme="minimal"] .CodeMirror-line span:not([class^="cm-"]) {
+/* Переопределяем все span элементы на черный по умолчанию */
+/* Затем мы явно зададим цвета только для важных классов подсветки */
+[data-theme="light"] .CodeMirror-line span,
+[data-theme="minimal"] .CodeMirror-line span {
     color: #000000 !important;
+}
+
+/* Переопределяем классы, которые могут быть белыми в теме monokai */
+[data-theme="light"] .CodeMirror-line .cm-variable,
+[data-theme="minimal"] .CodeMirror-line .cm-variable {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-variable-2,
+[data-theme="minimal"] .CodeMirror-line .cm-variable-2 {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-variable-3,
+[data-theme="minimal"] .CodeMirror-line .cm-variable-3 {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-property,
+[data-theme="minimal"] .CodeMirror-line .cm-property {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-attribute,
+[data-theme="minimal"] .CodeMirror-line .cm-attribute {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-def,
+[data-theme="minimal"] .CodeMirror-line .cm-def {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-type,
+[data-theme="minimal"] .CodeMirror-line .cm-type {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-qualifier,
+[data-theme="minimal"] .CodeMirror-line .cm-qualifier {
+    color: #000000 !important;
+}
+
+/* Теперь явно задаем цвета для важных классов подсветки синтаксиса */
+[data-theme="light"] .CodeMirror-line .cm-keyword,
+[data-theme="minimal"] .CodeMirror-line .cm-keyword {
+    color: #0080ff !important; /* Синий для ключевых слов */
+}
+
+[data-theme="light"] .CodeMirror-line .cm-string,
+[data-theme="minimal"] .CodeMirror-line .cm-string {
+    color: #d14 !important; /* Красный для строк */
+}
+
+[data-theme="light"] .CodeMirror-line .cm-string-2,
+[data-theme="minimal"] .CodeMirror-line .cm-string-2 {
+    color: #d14 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-number,
+[data-theme="minimal"] .CodeMirror-line .cm-number {
+    color: #099 !important; /* Темно-синий для чисел */
+}
+
+[data-theme="light"] .CodeMirror-line .cm-comment,
+[data-theme="minimal"] .CodeMirror-line .cm-comment {
+    color: #998 !important; /* Серый для комментариев */
+}
+
+[data-theme="light"] .CodeMirror-line .cm-atom,
+[data-theme="minimal"] .CodeMirror-line .cm-atom {
+    color: #099 !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-builtin,
+[data-theme="minimal"] .CodeMirror-line .cm-builtin {
+    color: #0080ff !important;
+}
+
+[data-theme="light"] .CodeMirror-line .cm-tag,
+[data-theme="minimal"] .CodeMirror-line .cm-tag {
+    color: #0080ff !important;
 }
 
 /* Номера строк делаем более темными для лучшей видимости */
@@ -533,9 +615,54 @@
     color: #000000 !important;
 }
 
-[data-theme="light"] .sql-editor-container .CodeMirror-line span:not([class^="cm-"]),
-[data-theme="minimal"] .sql-editor-container .CodeMirror-line span:not([class^="cm-"]) {
+[data-theme="light"] .sql-editor-container .CodeMirror-line span,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line span {
     color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-variable,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-variable {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-variable-2,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-variable-2 {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-property,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-property {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-attribute,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-attribute {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-def,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-def {
+    color: #000000 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-keyword,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-keyword {
+    color: #0080ff !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-string,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-string {
+    color: #d14 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-number,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-number {
+    color: #099 !important;
+}
+
+[data-theme="light"] .sql-editor-container .CodeMirror-line .cm-comment,
+[data-theme="minimal"] .sql-editor-container .CodeMirror-line .cm-comment {
+    color: #998 !important;
 }
 
 [data-theme="light"] .sql-editor-container .CodeMirror-linenumber,

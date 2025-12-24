@@ -185,6 +185,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Кнопка экспорта базы данных
+    const exportDbBtn = document.getElementById('export-db-btn');
+    if (exportDbBtn) {
+        exportDbBtn.addEventListener('click', function() {
+            exportDatabase();
+        });
+    }
+    
+    // Кнопка экспорта таблицы
+    const exportTableBtn = document.getElementById('export-table-btn');
+    if (exportTableBtn) {
+        exportTableBtn.addEventListener('click', function() {
+            exportTable();
+        });
+    }
+    
     const createTableBtn = document.getElementById('create-table-btn');
     if (createTableBtn) {
         createTableBtn.addEventListener('click', function() {
@@ -395,6 +411,12 @@ function clearTableData() {
         deleteTableBtn.style.display = 'none';
     }
     
+    // Скрываем кнопку экспорта таблицы
+    const exportTableBtn = document.getElementById('export-table-btn');
+    if (exportTableBtn) {
+        exportTableBtn.style.display = 'none';
+    }
+    
     // Очищаем отображение данных таблицы
     const placeholder = document.getElementById('table-data-placeholder');
     const dataTable = document.getElementById('data-table');
@@ -439,7 +461,7 @@ function selectDatabase(dbName, updateUrl = true) {
         dbSelector.value = dbName;
     }
     
-    // Показываем кнопки создания и удаления таблицы
+    // Показываем кнопки создания и удаления таблицы, экспорта БД
     const createTableBtn = document.getElementById('create-table-btn');
     if (createTableBtn) {
         createTableBtn.style.display = 'inline-block';
@@ -447,6 +469,10 @@ function selectDatabase(dbName, updateUrl = true) {
     const deleteTableBtn = document.getElementById('delete-table-btn');
     if (deleteTableBtn) {
         deleteTableBtn.style.display = 'none'; // Скрываем, так как таблица еще не выбрана
+    }
+    const exportDbBtn = document.getElementById('export-db-btn');
+    if (exportDbBtn) {
+        exportDbBtn.style.display = 'inline-block';
     }
     
     // Загружаем таблицы
@@ -551,9 +577,75 @@ function selectTable(tableName) {
         deleteTableBtn.style.display = 'inline-block';
     }
     
+    // Показываем кнопку экспорта таблицы
+    const exportTableBtn = document.getElementById('export-table-btn');
+    if (exportTableBtn) {
+        exportTableBtn.style.display = 'inline-block';
+    }
+    
     // Переключаемся на вкладку данных и загружаем данные
     switchTab('data');
     loadTableData();
+}
+
+// Экспорт базы данных
+function exportDatabase() {
+    if (!currentDbName) {
+        showWarning('Внимание', 'Выберите базу данных для экспорта');
+        return;
+    }
+    
+    // Показываем выбор формата через prompt (в будущем можно заменить на модальное окно)
+    const format = prompt('Выберите формат экспорта:\n1 - .db файл (копия базы данных)\n2 - .sql файл (SQL дамп)\n\nВведите 1 или 2:');
+    
+    if (!format) {
+        return; // Пользователь отменил
+    }
+    
+    let exportFormat = 'db';
+    if (format === '2') {
+        exportFormat = 'sql';
+    } else if (format !== '1') {
+        showWarning('Ошибка', 'Неверный выбор формата. Введите 1 или 2.');
+        return;
+    }
+    
+    // Создаем ссылку для скачивания
+    const downloadUrl = `/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/export?format=${exportFormat}`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    
+    if (exportFormat === 'db') {
+        link.download = currentDbName.endsWith('.db') ? currentDbName : `${currentDbName}.db`;
+    } else {
+        const baseName = currentDbName.replace('.db', '');
+        link.download = `${baseName}.sql`;
+    }
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showSuccess('Экспорт', `База данных экспортируется в формате ${exportFormat.toUpperCase()}`);
+}
+
+// Экспорт таблицы
+function exportTable() {
+    if (!currentDbName || !currentTableName) {
+        showWarning('Внимание', 'Выберите таблицу для экспорта');
+        return;
+    }
+    
+    // Создаем ссылку для скачивания
+    const downloadUrl = `/api/bots/${botId}/sqlite/databases/${encodeURIComponent(currentDbName)}/tables/${encodeURIComponent(currentTableName)}/export`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${currentTableName}.sql`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showSuccess('Экспорт', `Таблица "${currentTableName}" экспортируется в SQL файл`);
 }
 
 // Удаление таблицы

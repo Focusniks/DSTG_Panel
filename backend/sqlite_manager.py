@@ -6,6 +6,8 @@ import json
 import random
 import string
 import time
+import shutil
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 from backend.database import get_bot
@@ -1141,4 +1143,133 @@ def _import_from_sql_file(bot_id: int, sql_file_path: Path, target_db_name: Opti
     except Exception as e:
         logger.error(f"Error importing from SQL file: {e}", exc_info=True)
         return {'success': False, 'error': str(e)}
+
+def export_database_db(bot_id: int, db_name: str) -> str:
+    """Экспорт базы данных в .db файл (копирование файла)
+    
+    Args:
+        bot_id: ID бота
+        db_name: Имя базы данных
+        
+    Returns:
+        Путь к временному файлу с базой данных
+    """
+    try:
+        db_path = get_bot_sqlite_db_path(bot_id, db_name)
+        if not db_path.exists():
+            raise ValueError(f'База данных {db_name} не найдена')
+        
+        # Создаем временный файл
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.db', prefix=f'{db_name.replace(".db", "")}_')
+        temp_file.close()
+        
+        # Копируем файл БД
+        shutil.copy2(db_path, temp_file.name)
+        
+        return temp_file.name
+    except Exception as e:
+        logger.error(f"Error exporting database to .db: {e}", exc_info=True)
+        raise
+
+def export_database_sql(bot_id: int, db_name: str) -> str:
+    """Экспорт базы данных в .sql файл (SQL дамп)
+    
+    Args:
+        bot_id: ID бота
+        db_name: Имя базы данных
+        
+    Returns:
+        Путь к временному SQL файлу
+    """
+    try:
+        db_path = get_bot_sqlite_db_path(bot_id, db_name)
+        if not db_path.exists():
+            raise ValueError(f'База данных {db_name} не найдена')
+        
+        # Создаем временный файл для SQL дампа
+        temp_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.sql', 
+                                                prefix=f'{db_name.replace(".db", "")}_')
+        
+        # Подключаемся к БД и получаем дамп
+        conn = sqlite3.connect(str(db_path))
+        try:
+            for line in conn.iterdump():
+                temp_file.write(f'{line}\n')
+        finally:
+            conn.close()
+        
+        temp_file.close()
+        
+        return temp_file.name
+    except Exception as e:
+        logger.error(f"Error exporting database to .sql: {e}", exc_info=True)
+        raise
+
+def export_table_sql(bot_id: int, db_name: str, table_name: str) -> str:
+    """Экспорт таблицы в .sql файл (SQL дамп)
+    
+    Args:
+        bot_id: ID бота
+        db_name: Имя базы данных
+        table_name: Имя таблицы
+        
+    Returns:
+        Путь к временному SQL файлу
+    """
+    try:
+        conn = get_sqlite_connection(bot_id, db_name)
+        
+        try:
+            cursor = conn.cursor()
+            
+            # Получаем структуру таблицы (используем параметризованный запрос для безопасности)
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+            create_table_sql = cursor.fetchone()
+            
+            if not create_table_sql or not create_table_sql[0]:
+                raise ValueError(f'Таблица {table_name} не найдена')
+            
+            # Создаем временный файл для SQL дампа
+            temp_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.sql',
+                                                    prefix=f'{table_name}_')
+            
+            # Записываем CREATE TABLE
+            temp_file.write(f'{create_table_sql[0]};\n\n')
+            
+            # Получаем данные таблицы
+            cursor.execute(f"SELECT * FROM {table_name}")
+            columns = [description[0] for description in cursor.description]
+            
+            # Генерируем INSERT запросы
+            rows = cursor.fetchall()
+            for row in rows:
+                values = []
+                for value in row:
+                    if value is None:
+                        values.append('NULL')
+                    elif isinstance(value, str):
+                        # Экранируем кавычки в строках
+                        escaped_value = value.replace("'", "''")
+                        values.append(f"'{escaped_value}'")
+                    elif isinstance(value, (int, float)):
+                        values.append(str(value))
+                    elif isinstance(value, bytes):
+                        # Для BLOB используем hex
+                        values.append(f"X'{value.hex()}'")
+                    else:
+                        values.append(f"'{str(value)}'")
+                
+                columns_str = ', '.join([f'"{col}"' for col in columns])
+                values_str = ', '.join(values)
+                temp_file.write(f"INSERT INTO \"{table_name}\" ({columns_str}) VALUES ({values_str});\n")
+            
+            temp_file.close()
+            return temp_file.name
+            
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        logger.error(f"Error exporting table to .sql: {e}", exc_info=True)
+        raise
 

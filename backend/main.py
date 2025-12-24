@@ -26,7 +26,7 @@ from backend.sqlite_manager import (
     create_table, drop_table, insert_row, update_row, delete_row,
     add_column, drop_column, update_column, get_databases as get_sqlite_databases,
     create_database as create_sqlite_database, delete_database as delete_sqlite_database,
-    import_database
+    import_database, export_database_db, export_database_sql, export_table_sql
 )
 from backend.git_manager import (
     update_panel_from_git, update_bot_from_git,
@@ -1300,6 +1300,130 @@ async def delete_sqlite_database_endpoint(bot_id: int, db_name: str):
             raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
     except Exception as e:
         logger.error(f"Error deleting SQLite database: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bots/{bot_id}/sqlite/databases/{db_name}/export")
+async def export_sqlite_database_endpoint(bot_id: int, db_name: str, format: str = Query("db", regex="^(db|sql)$")):
+    """Экспорт SQLite БД в .db или .sql файл"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        from urllib.parse import unquote
+        db_name = unquote(db_name)
+        
+        if format == "db":
+            # Экспорт в .db файл
+            temp_file_path = export_database_db(bot_id, db_name)
+            filename = db_name if db_name.endswith('.db') else f"{db_name}.db"
+            
+            # Кастомный класс для автоматической очистки временного файла
+            class DbFileResponse(FileResponse):
+                def __init__(self, *args, **kwargs):
+                    self.temp_file_path = kwargs.pop('temp_file_path', None)
+                    super().__init__(*args, **kwargs)
+                
+                async def __call__(self, scope, receive, send):
+                    try:
+                        await super().__call__(scope, receive, send)
+                    finally:
+                        if self.temp_file_path and os.path.exists(self.temp_file_path):
+                            try:
+                                os.unlink(self.temp_file_path)
+                            except:
+                                pass
+            
+            return DbFileResponse(
+                temp_file_path,
+                media_type='application/x-sqlite3',
+                filename=filename,
+                temp_file_path=temp_file_path,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
+        else:
+            # Экспорт в .sql файл
+            temp_file_path = export_database_sql(bot_id, db_name)
+            base_name = db_name.replace('.db', '') if db_name.endswith('.db') else db_name
+            filename = f"{base_name}.sql"
+            
+            # Кастомный класс для автоматической очистки временного файла
+            class SqlFileResponse(FileResponse):
+                def __init__(self, *args, **kwargs):
+                    self.temp_file_path = kwargs.pop('temp_file_path', None)
+                    super().__init__(*args, **kwargs)
+                
+                async def __call__(self, scope, receive, send):
+                    try:
+                        await super().__call__(scope, receive, send)
+                    finally:
+                        if self.temp_file_path and os.path.exists(self.temp_file_path):
+                            try:
+                                os.unlink(self.temp_file_path)
+                            except:
+                                pass
+            
+            return SqlFileResponse(
+                temp_file_path,
+                media_type='application/sql',
+                filename=filename,
+                temp_file_path=temp_file_path,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error exporting database: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bots/{bot_id}/sqlite/databases/{db_name:path}/tables/{table_name}/export")
+async def export_sqlite_table_endpoint(bot_id: int, db_name: str, table_name: str):
+    """Экспорт таблицы в .sql файл"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    try:
+        from urllib.parse import unquote
+        db_name = unquote(db_name)
+        table_name = unquote(table_name)
+        
+        temp_file_path = export_table_sql(bot_id, db_name, table_name)
+        filename = f"{table_name}.sql"
+        
+        # Кастомный класс для автоматической очистки временного файла
+        class SqlFileResponse(FileResponse):
+            def __init__(self, *args, **kwargs):
+                self.temp_file_path = kwargs.pop('temp_file_path', None)
+                super().__init__(*args, **kwargs)
+            
+            async def __call__(self, scope, receive, send):
+                try:
+                    await super().__call__(scope, receive, send)
+                finally:
+                    if self.temp_file_path and os.path.exists(self.temp_file_path):
+                        try:
+                            os.unlink(self.temp_file_path)
+                        except:
+                            pass
+        
+        return SqlFileResponse(
+            temp_file_path,
+            media_type='application/sql',
+            filename=filename,
+            temp_file_path=temp_file_path,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error exporting table: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/bots/{bot_id}/sqlite/databases/import")
