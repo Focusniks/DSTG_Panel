@@ -136,7 +136,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (this.value) {
                 selectDatabase(this.value, true);
             } else {
+                // Снят выбор базы данных - очищаем все
                 currentDbName = null;
+                clearTableData();
+                
                 const tablesList = document.getElementById('tables-list');
                 if (tablesList) {
                     tablesList.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; text-align: center;">Выберите базу данных</div>';
@@ -145,6 +148,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (createTableBtn) {
                     createTableBtn.style.display = 'none';
                 }
+                const deleteTableBtn = document.getElementById('delete-table-btn');
+                if (deleteTableBtn) {
+                    deleteTableBtn.style.display = 'none';
+                }
+                
+                // Очищаем URL параметр
+                const url = new URL(window.location);
+                url.searchParams.delete('db');
+                window.history.replaceState({}, '', url);
             }
         });
     }
@@ -177,6 +189,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (createTableBtn) {
         createTableBtn.addEventListener('click', function() {
             showCreateTableModal();
+        });
+    }
+    
+    const deleteTableBtn = document.getElementById('delete-table-btn');
+    if (deleteTableBtn) {
+        deleteTableBtn.addEventListener('click', function() {
+            deleteTable();
         });
     }
     
@@ -363,8 +382,55 @@ async function loadDatabases() {
     }
 }
 
+// Очистить данные выбранной таблицы
+function clearTableData() {
+    currentTableName = null;
+    currentTableStructure = null;
+    currentTableData = null;
+    editingRowId = null;
+    
+    // Скрываем кнопку удаления
+    const deleteTableBtn = document.getElementById('delete-table-btn');
+    if (deleteTableBtn) {
+        deleteTableBtn.style.display = 'none';
+    }
+    
+    // Очищаем отображение данных таблицы
+    const placeholder = document.getElementById('table-data-placeholder');
+    const dataTable = document.getElementById('data-table');
+    const structureContent = document.getElementById('structure-content');
+    
+    if (placeholder) {
+        placeholder.style.display = 'flex';
+        placeholder.innerHTML = '<i class="fas fa-table"></i><p>Выберите таблицу для просмотра данных</p>';
+    }
+    if (dataTable) dataTable.style.display = 'none';
+    if (structureContent) {
+        structureContent.innerHTML = '<div class="empty-state"><i class="fas fa-sitemap"></i><p>Выберите таблицу для просмотра структуры</p></div>';
+    }
+    
+    // Очищаем бейджи с названием таблицы
+    const tableNameBadge = document.getElementById('current-table-name-badge');
+    const structureTableNameBadge = document.getElementById('structure-table-name-badge');
+    if (tableNameBadge) tableNameBadge.textContent = '';
+    if (structureTableNameBadge) structureTableNameBadge.textContent = '';
+    
+    // Убираем активное состояние у таблиц в списке
+    document.querySelectorAll('.table-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Скрываем вкладки данных и структуры
+    document.querySelectorAll('.sql-tab[data-tab="data"], .sql-tab[data-tab="structure"]').forEach(tab => {
+        tab.style.display = 'none';
+    });
+}
+
 // Выбор базы данных
 function selectDatabase(dbName, updateUrl = true) {
+    // Очищаем данные выбранной таблицы при смене БД
+    clearTableData();
+    
     currentDbName = dbName;
     
     // Обновляем селектор в топбаре
@@ -373,10 +439,14 @@ function selectDatabase(dbName, updateUrl = true) {
         dbSelector.value = dbName;
     }
     
-    // Показываем кнопку создания таблицы
+    // Показываем кнопки создания и удаления таблицы
     const createTableBtn = document.getElementById('create-table-btn');
     if (createTableBtn) {
         createTableBtn.style.display = 'inline-block';
+    }
+    const deleteTableBtn = document.getElementById('delete-table-btn');
+    if (deleteTableBtn) {
+        deleteTableBtn.style.display = 'none'; // Скрываем, так как таблица еще не выбрана
     }
     
     // Загружаем таблицы
@@ -475,9 +545,54 @@ function selectTable(tableName) {
     if (tableNameBadge) tableNameBadge.textContent = tableName;
     if (structureTableNameBadge) structureTableNameBadge.textContent = tableName;
     
+    // Показываем кнопку удаления таблицы
+    const deleteTableBtn = document.getElementById('delete-table-btn');
+    if (deleteTableBtn) {
+        deleteTableBtn.style.display = 'inline-block';
+    }
+    
     // Переключаемся на вкладку данных и загружаем данные
     switchTab('data');
     loadTableData();
+}
+
+// Удаление таблицы
+async function deleteTable() {
+    if (!currentDbName || !currentTableName) {
+        showWarning('Внимание', 'Выберите таблицу для удаления');
+        return;
+    }
+    
+    // Подтверждение удаления
+    if (!confirm(`Вы уверены, что хотите удалить таблицу "${currentTableName}"? Это действие необратимо. Все данные в таблице будут удалены.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(
+            `/api/bots/${botId}/sqlite/tables/${encodeURIComponent(currentTableName)}?db_name=${encodeURIComponent(currentDbName)}`,
+            {
+                method: 'DELETE'
+            }
+        );
+        
+        const result = await response.json();
+        if (result.success) {
+            const deletedTableName = currentTableName;
+            showSuccess('Успех', `Таблица "${deletedTableName}" успешно удалена`);
+            
+            // Очищаем данные таблицы
+            clearTableData();
+            
+            // Перезагружаем список таблиц
+            loadTables();
+        } else {
+            showError('Ошибка', result.error || 'Не удалось удалить таблицу');
+        }
+    } catch (error) {
+        console.error('Error deleting table:', error);
+        showError('Ошибка', 'Не удалось удалить таблицу');
+    }
 }
 
 // Загрузка данных таблицы
@@ -809,13 +924,18 @@ async function loadStructure() {
             html += `<td>${col.dflt_value !== null ? escapeHtml(col.dflt_value) : '-'}</td>`;
             html += `<td>${col.pk ? 'Да' : 'Нет'}</td>`;
             html += `<td>`;
+            html += `<div class="d-flex gap-2">`;
+            html += `<button class="btn btn-sm btn-primary" onclick="editColumn('${escapeHtml(col.name)}')" title="Редактировать">`;
+            html += '<i class="fas fa-edit"></i>';
+            html += '</button>';
             if (!col.pk) {
-                html += `<button class="btn btn-sm btn-danger" onclick="deleteColumn('${escapeHtml(col.name)}')">`;
-                html += '<i class="fas fa-trash"></i> Удалить';
+                html += `<button class="btn btn-sm btn-danger" onclick="deleteColumn('${escapeHtml(col.name)}')" title="Удалить">`;
+                html += '<i class="fas fa-trash"></i>';
                 html += '</button>';
             } else {
                 html += '<span style="color: var(--text-muted);">-</span>';
             }
+            html += `</div>`;
             html += `</td>`;
             html += '</tr>';
         });
@@ -923,6 +1043,9 @@ function showCreateTableModal() {
     // Добавляем первый столбец по умолчанию (обычно id)
     addColumnToForm('id', 'INTEGER', false, true, true);
     
+    // Обновляем состояние Primary Key checkbox'ов после инициализации
+    updatePrimaryKeyCheckboxes();
+    
     const modal = new bootstrap.Modal(document.getElementById('create-table-modal'));
     modal.show();
 }
@@ -963,7 +1086,7 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
             </div>
             <div>
                 <label class="form-label">
-                    <input type="checkbox" name="column_pk" ${pk ? 'checked' : ''} onchange="toggleAutoIncrement(this)"> Primary Key
+                    <input type="checkbox" name="column_pk" ${pk ? 'checked' : ''} onchange="togglePrimaryKey(this)"> Primary Key
                 </label>
             </div>
             <div>
@@ -988,6 +1111,9 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
             typeDescription.textContent = getDataTypeDescription(this.value);
         });
     }
+    
+    // Обновляем состояние Primary Key checkbox'ов после добавления столбца
+    updatePrimaryKeyCheckboxes();
 }
 
 // Глобальные функции для форм
@@ -996,7 +1122,78 @@ window.removeColumnFromForm = function(button) {
     if (columnItem) {
         columnItem.remove();
         updateColumnNumbers();
+        // Обновляем состояние Primary Key checkbox'ов после удаления столбца
+        updatePrimaryKeyCheckboxes();
     }
+};
+
+// Обновить состояние всех Primary Key checkbox'ов
+function updatePrimaryKeyCheckboxes() {
+    const columnsList = document.getElementById('columns-list');
+    if (!columnsList) return;
+    
+    const columnItems = columnsList.querySelectorAll('.column-item');
+    const pkCheckboxes = Array.from(columnItems).map(item => 
+        item.querySelector('input[name="column_pk"]')
+    ).filter(cb => cb !== null);
+    
+    // Находим все установленные Primary Key
+    const checkedPK = pkCheckboxes.filter(cb => cb.checked);
+    
+    // Если есть установленный Primary Key, отключаем остальные
+    if (checkedPK.length > 0) {
+        pkCheckboxes.forEach(cb => {
+            if (!cb.checked) {
+                cb.disabled = true;
+            }
+        });
+    } else {
+        // Если нет установленного Primary Key, разрешаем устанавливать
+        pkCheckboxes.forEach(cb => {
+            cb.disabled = false;
+        });
+    }
+}
+
+window.togglePrimaryKey = function(checkbox) {
+    const columnItem = checkbox.closest('.column-item');
+    
+    // Проверяем, не пытается ли пользователь установить Primary Key, когда он уже есть
+    if (checkbox.checked) {
+        const columnsList = document.getElementById('columns-list');
+        if (columnsList) {
+            const columnItems = columnsList.querySelectorAll('.column-item');
+            let hasOtherPK = false;
+            
+            columnItems.forEach(item => {
+                if (item !== columnItem) {
+                    const pkCheckbox = item.querySelector('input[name="column_pk"]');
+                    if (pkCheckbox && pkCheckbox.checked) {
+                        hasOtherPK = true;
+                    }
+                }
+            });
+            
+            if (hasOtherPK) {
+                // Уже есть Primary Key, не позволяем установить еще один
+                checkbox.checked = false;
+                showWarning('Внимание', 'Может быть только один столбец с Primary Key');
+                return;
+            }
+        }
+    }
+    
+    // Обновляем состояние AUTO INCREMENT
+    const autoIncrementCheckbox = columnItem.querySelector('input[name="column_autoincrement"]');
+    if (autoIncrementCheckbox) {
+        autoIncrementCheckbox.disabled = !checkbox.checked;
+        if (!checkbox.checked) {
+            autoIncrementCheckbox.checked = false;
+        }
+    }
+    
+    // Обновляем состояние всех Primary Key checkbox'ов
+    updatePrimaryKeyCheckboxes();
 };
 
 window.toggleAutoIncrement = function(checkbox) {
@@ -1127,6 +1324,7 @@ window.showAddColumnModal = function() {
     const notnullCheckbox = document.getElementById('new-column-notnull');
     const defaultInput = document.getElementById('new-column-default');
     const typeDescription = document.getElementById('new-column-type-description');
+    const positionSelect = document.getElementById('new-column-position');
     
     if (nameInput) nameInput.value = '';
     if (typeSelect) {
@@ -1137,6 +1335,17 @@ window.showAddColumnModal = function() {
     }
     if (notnullCheckbox) notnullCheckbox.checked = false;
     if (defaultInput) defaultInput.value = '';
+    
+    // Заполняем список столбцов для выбора позиции
+    if (positionSelect && currentTableStructure && currentTableStructure.columns) {
+        positionSelect.innerHTML = '<option value="">В конец таблицы</option>';
+        currentTableStructure.columns.forEach(col => {
+            const option = document.createElement('option');
+            option.value = col.name;
+            option.textContent = col.name + (col.pk ? ' (PK)' : '');
+            positionSelect.appendChild(option);
+        });
+    }
     
     const modal = new bootstrap.Modal(document.getElementById('add-column-modal'));
     modal.show();
@@ -1153,6 +1362,7 @@ async function addColumnToTable() {
     const columnType = document.getElementById('new-column-type').value;
     const notnull = document.getElementById('new-column-notnull').checked;
     const defaultValue = document.getElementById('new-column-default').value.trim();
+    const afterColumn = document.getElementById('new-column-position').value;
     
     if (!columnName) {
         showWarning('Внимание', 'Введите имя столбца');
@@ -1170,6 +1380,7 @@ async function addColumnToTable() {
                     column_type: columnType,
                     notnull: notnull,
                     default_value: defaultValue || null,
+                    after_column: afterColumn || null,
                     db_name: currentDbName
                 })
             }
@@ -1188,6 +1399,102 @@ async function addColumnToTable() {
     } catch (error) {
         console.error('Error adding column:', error);
         showError('Ошибка', 'Не удалось добавить столбец');
+    }
+}
+
+// Показать модальное окно редактирования столбца
+window.editColumn = function(columnName) {
+    if (!currentDbName || !currentTableName || !currentTableStructure) {
+        showWarning('Внимание', 'Выберите таблицу');
+        return;
+    }
+    
+    const column = currentTableStructure.columns.find(col => col.name === columnName);
+    if (!column) {
+        showError('Ошибка', 'Столбец не найден');
+        return;
+    }
+    
+    // Нельзя редактировать Primary Key столбцы
+    if (column.pk) {
+        showWarning('Внимание', 'Нельзя редактировать Primary Key столбец');
+        return;
+    }
+    
+    const nameInput = document.getElementById('edit-column-name');
+    const typeSelect = document.getElementById('edit-column-type');
+    const notnullCheckbox = document.getElementById('edit-column-notnull');
+    const defaultInput = document.getElementById('edit-column-default');
+    const originalNameInput = document.getElementById('edit-column-original-name');
+    const typeDescription = document.getElementById('edit-column-type-description');
+    
+    if (nameInput) nameInput.value = column.name;
+    if (typeSelect) {
+        typeSelect.value = column.type;
+        if (typeDescription) {
+            typeDescription.textContent = getDataTypeDescription(column.type);
+        }
+    }
+    if (notnullCheckbox) notnullCheckbox.checked = column.notnull || false;
+    if (defaultInput) defaultInput.value = column.dflt_value || '';
+    if (originalNameInput) originalNameInput.value = column.name;
+    
+    const modal = new bootstrap.Modal(document.getElementById('edit-column-modal'));
+    modal.show();
+};
+
+// Сохранить изменения столбца
+async function saveEditColumn() {
+    if (!currentDbName || !currentTableName) {
+        showWarning('Внимание', 'Выберите таблицу');
+        return;
+    }
+    
+    const originalName = document.getElementById('edit-column-original-name').value;
+    const columnName = document.getElementById('edit-column-name').value.trim();
+    const columnType = document.getElementById('edit-column-type').value;
+    const notnull = document.getElementById('edit-column-notnull').checked;
+    const defaultValue = document.getElementById('edit-column-default').value.trim();
+    
+    if (!columnName) {
+        showWarning('Внимание', 'Введите имя столбца');
+        return;
+    }
+    
+    if (!originalName) {
+        showError('Ошибка', 'Не указано исходное имя столбца');
+        return;
+    }
+    
+    try {
+        const response = await fetch(
+            `/api/bots/${botId}/sqlite/tables/${encodeURIComponent(currentTableName)}/columns/${encodeURIComponent(originalName)}`,
+            {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    column_name: columnName,
+                    column_type: columnType,
+                    notnull: notnull,
+                    default_value: defaultValue || null,
+                    db_name: currentDbName
+                })
+            }
+        );
+        
+        const result = await response.json();
+        if (result.success) {
+            showSuccess('Успех', 'Столбец успешно обновлен');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('edit-column-modal'));
+            modal.hide();
+            loadStructure();
+            loadTableData();
+        } else {
+            showError('Ошибка', result.error || 'Не удалось обновить столбец');
+        }
+    } catch (error) {
+        console.error('Error updating column:', error);
+        showError('Ошибка', 'Не удалось обновить столбец');
     }
 }
 
@@ -1225,45 +1532,71 @@ window.deleteColumn = async function(columnName) {
 };
 
 // Утилиты для уведомлений
-function showAlert(message, type) {
-    const container = document.getElementById('alerts-container');
-    if (!container) {
-        console.error('Alerts container not found');
-        return;
-    }
-    
-    const alert = document.createElement('div');
-    alert.className = `alert alert-${type} alert-dismissible fade show`;
-    alert.role = 'alert';
-    alert.style.cssText = 'background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);';
-    alert.innerHTML = `
-        ${escapeHtml(message)}
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    
-    container.appendChild(alert);
-    
-    setTimeout(() => {
-        if (alert.parentNode) {
-            alert.remove();
-        }
-    }, 5000);
-}
-
 function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
+// Показ toast-уведомлений (как в других панелях)
+function showToast(title, message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification ' + type;
+    
+    const icons = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        warning: 'fa-exclamation-triangle',
+        info: 'fa-info-circle',
+        danger: 'fa-exclamation-circle'
+    };
+    
+    const icon = icons[type] || icons.info;
+    
+    toast.innerHTML = `
+        <div class="toast-icon">
+            <i class="fas ${icon}"></i>
+        </div>
+        <div class="toast-content">
+            <div class="toast-title">${escapeHtml(title)}</div>
+            ${message ? '<div class="toast-message">' + escapeHtml(message) + '</div>' : ''}
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Автоматическое удаление через 5 секунд
+    setTimeout(function() {
+        if (toast.parentNode) {
+            toast.classList.add('hiding');
+            setTimeout(function() {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300);
+        }
+    }, 5000);
+}
+
 function showSuccess(title, message) {
-    showAlert(`${title}: ${message}`, 'success');
+    showToast(title, message, 'success');
 }
 
 function showError(title, message) {
-    showAlert(`${title}: ${message}`, 'danger');
+    showToast(title, message, 'error');
 }
 
 function showWarning(title, message) {
-    showAlert(`${title}: ${message}`, 'warning');
+    showToast(title, message, 'warning');
 }

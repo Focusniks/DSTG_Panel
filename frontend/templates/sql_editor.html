@@ -691,14 +691,7 @@
             background: #2563eb;
         }
 
-        /* Alerts */
-        #alerts-container {
-            position: fixed;
-            top: 70px;
-            right: 1.5rem;
-            z-index: 2000;
-            max-width: 400px;
-        }
+        /* Toast notifications are styled in main style.css */
 
         /* Empty States */
         .empty-state {
@@ -795,13 +788,9 @@
             margin-top: 0.25rem;
             font-size: 0.75rem;
             color: var(--text-muted);
-            line-height: 1.3;
-            max-height: 2.6em;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
+            line-height: 1.4;
+            word-wrap: break-word;
+            white-space: normal;
         }
 
         .column-item-fields label {
@@ -891,9 +880,14 @@
                 <div class="sql-left-panel-title">
                     <i class="fas fa-table"></i> Таблицы
                 </div>
-                <button class="btn btn-sm btn-success" id="create-table-btn" style="display: none;">
-                    <i class="fas fa-plus"></i>
-                </button>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-sm btn-success" id="create-table-btn" style="display: none;">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" id="delete-table-btn" style="display: none;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
             <div class="sql-left-panel-content">
                 <div id="tables-list">
@@ -1002,9 +996,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Alerts Container -->
-    <div id="alerts-container"></div>
 
     <!-- Edit Row Modal -->
     <div class="modal fade" id="edit-row-modal" tabindex="-1">
@@ -1118,11 +1109,67 @@
                             <label for="new-column-default" class="form-label">Значение по умолчанию (опционально)</label>
                             <input type="text" class="form-control" id="new-column-default" placeholder="NULL">
                         </div>
+                        <div class="mb-3">
+                            <label for="new-column-position" class="form-label">Добавить после столбца</label>
+                            <select class="form-select" id="new-column-position">
+                                <option value="">В конец таблицы</option>
+                                <!-- Опции будут добавлены через JavaScript -->
+                            </select>
+                            <small class="form-text text-muted" style="display: block; margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">
+                                Выберите после какого столбца добавить новый (по умолчанию в конец)
+                            </small>
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                     <button type="button" class="btn btn-primary" id="save-add-column-btn">Добавить столбец</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Column Modal -->
+    <div class="modal fade" id="edit-column-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редактировать столбец</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-column-form">
+                        <div class="mb-3">
+                            <label for="edit-column-name" class="form-label">Имя столбца *</label>
+                            <input type="text" class="form-control" id="edit-column-name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-column-type" class="form-label">Тип данных *</label>
+                            <select class="form-select" id="edit-column-type" required>
+                                <!-- Опции будут добавлены через JavaScript -->
+                            </select>
+                            <small class="form-text text-muted" id="edit-column-type-description" style="display: block; margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">
+                                Выберите тип данных для столбца
+                            </small>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit-column-notnull">
+                                <label class="form-check-label" for="edit-column-notnull">
+                                    NOT NULL
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-column-default" class="form-label">Значение по умолчанию (опционально)</label>
+                            <input type="text" class="form-control" id="edit-column-default" placeholder="NULL">
+                        </div>
+                        <input type="hidden" id="edit-column-original-name">
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="save-edit-column-btn">Сохранить изменения</button>
                 </div>
             </div>
         </div>

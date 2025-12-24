@@ -5,6 +5,7 @@ import sqlite3
 import json
 import random
 import string
+import time
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 from backend.database import get_bot
@@ -455,9 +456,19 @@ def delete_row(bot_id: int, table_name: str, row_id: int,
         return {'success': False, 'error': str(e)}
 
 def add_column(bot_id: int, table_name: str, column_name: str, column_type: str,
-               db_name: str = "bot.db", notnull: bool = False, default_value: Optional[str] = None) -> Dict[str, Any]:
-    """Добавление столбца в таблицу"""
+               db_name: str = "bot.db", notnull: bool = False, default_value: Optional[str] = None,
+               after_column: Optional[str] = None) -> Dict[str, Any]:
+    """Добавление столбца в таблицу
+    
+    Args:
+        after_column: Имя столбца, после которого нужно добавить новый. Если None, добавляется в конец.
+    """
     try:
+        # Если указана позиция, нужно пересоздать таблицу
+        if after_column:
+            return _add_column_at_position(bot_id, table_name, column_name, column_type, db_name, notnull, default_value, after_column)
+        
+        # Иначе просто добавляем в конец
         sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
         if notnull:
             sql += " NOT NULL"
@@ -467,6 +478,159 @@ def add_column(bot_id: int, table_name: str, column_name: str, column_type: str,
         return execute_sql(bot_id, sql, db_name)
     except Exception as e:
         logger.error(f"Error adding column: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+
+def _add_column_at_position(bot_id: int, table_name: str, column_name: str, column_type: str,
+                            db_name: str, notnull: bool, default_value: Optional[str], after_column: str) -> Dict[str, Any]:
+    """Добавление столбца в определенную позицию через пересоздание таблицы"""
+    try:
+        # Получаем структуру таблицы
+        structure = get_table_structure(bot_id, table_name, db_name)
+        
+        # Находим индекс столбца, после которого нужно добавить
+        after_index = -1
+        for i, col in enumerate(structure['columns']):
+            if col['name'] == after_column:
+                after_index = i
+                break
+        
+        if after_index == -1:
+            return {'success': False, 'error': f'Столбец "{after_column}" не найден'}
+        
+        # Создаем новый список столбцов с новым столбцом в нужной позиции
+        new_columns = []
+        for i, col in enumerate(structure['columns']):
+            new_columns.append(col)
+            if i == after_index:
+                # Добавляем новый столбец после текущего
+                new_columns.append({
+                    'name': column_name,
+                    'type': column_type,
+                    'notnull': notnull,
+                    'default_value': default_value,
+                    'pk': False
+                })
+        
+        # Получаем данные
+        data_result = get_table_data(bot_id, table_name, db_name, limit=100000)
+        
+        # Создаем временную таблицу
+        temp_table = f"{table_name}_temp_{int(time.time())}"
+        column_defs = []
+        for col in new_columns:
+            col_def = f"{col['name']} {col['type']}"
+            if col.get('notnull'):
+                col_def += " NOT NULL"
+            if col.get('default_value') is not None:
+                col_def += f" DEFAULT '{col['default_value']}'"
+            if col.get('pk'):
+                col_def += " PRIMARY KEY"
+            column_defs.append(col_def)
+        
+        conn = get_sqlite_connection(bot_id, db_name)
+        cursor = conn.cursor()
+        
+        # Создаем временную таблицу
+        cursor.execute(f"CREATE TABLE {temp_table} ({', '.join(column_defs)})")
+        
+        # Копируем данные (старые столбцы)
+        if data_result.get('rows'):
+            old_columns = [col['name'] for col in structure['columns']]
+            placeholders = ', '.join(['?' for _ in old_columns])
+            insert_sql = f"INSERT INTO {temp_table} ({', '.join(old_columns)}) VALUES ({placeholders})"
+            
+            for row in data_result['rows']:
+                values = [row.get(col) for col in old_columns]
+                cursor.execute(insert_sql, values)
+        
+        # Удаляем старую таблицу
+        cursor.execute(f"DROP TABLE {table_name}")
+        
+        # Переименовываем временную таблицу
+        cursor.execute(f"ALTER TABLE {temp_table} RENAME TO {table_name}")
+        
+        conn.commit()
+        conn.close()
+        
+        return {'success': True, 'message': 'Column added successfully'}
+    except Exception as e:
+        logger.error(f"Error adding column at position: {e}", exc_info=True)
+        return {'success': False, 'error': str(e)}
+
+def update_column(bot_id: int, table_name: str, original_column_name: str, 
+                 new_column_name: str, column_type: str, db_name: str = "bot.db",
+                 notnull: bool = False, default_value: Optional[str] = None) -> Dict[str, Any]:
+    """Обновление столбца (переименование, изменение типа и т.д.) через пересоздание таблицы"""
+    try:
+        # Получаем структуру таблицы
+        structure = get_table_structure(bot_id, table_name, db_name)
+        
+        # Находим столбец для обновления
+        column_found = False
+        new_columns = []
+        for col in structure['columns']:
+            if col['name'] == original_column_name:
+                column_found = True
+                # Обновляем параметры столбца
+                new_columns.append({
+                    'name': new_column_name,
+                    'type': column_type,
+                    'notnull': notnull,
+                    'default_value': default_value,
+                    'pk': col.get('pk', False)  # Сохраняем PK статус
+                })
+            else:
+                new_columns.append(col)
+        
+        if not column_found:
+            return {'success': False, 'error': f'Столбец "{original_column_name}" не найден'}
+        
+        # Получаем данные
+        data_result = get_table_data(bot_id, table_name, db_name, limit=100000)
+        
+        # Создаем временную таблицу
+        temp_table = f"{table_name}_temp_{int(time.time())}"
+        column_defs = []
+        
+        for old_col, new_col in zip(structure['columns'], new_columns):
+            col_def = f"{new_col['name']} {new_col['type']}"
+            if new_col.get('notnull'):
+                col_def += " NOT NULL"
+            if new_col.get('default_value') is not None:
+                col_def += f" DEFAULT '{new_col['default_value']}'"
+            if new_col.get('pk'):
+                col_def += " PRIMARY KEY"
+            column_defs.append(col_def)
+        
+        conn = get_sqlite_connection(bot_id, db_name)
+        cursor = conn.cursor()
+        
+        # Создаем временную таблицу
+        cursor.execute(f"CREATE TABLE {temp_table} ({', '.join(column_defs)})")
+        
+        # Копируем данные
+        if data_result.get('rows'):
+            old_columns = [col['name'] for col in structure['columns']]
+            new_columns_list = [col['name'] for col in new_columns]
+            placeholders = ', '.join(['?' for _ in new_columns_list])
+            insert_sql = f"INSERT INTO {temp_table} ({', '.join(new_columns_list)}) VALUES ({placeholders})"
+            
+            for row in data_result['rows']:
+                values = [row.get(old_col) for old_col in old_columns]
+                cursor.execute(insert_sql, values)
+        
+        # Удаляем старую таблицу
+        cursor.execute(f"DROP TABLE {table_name}")
+        
+        # Переименовываем временную таблицу
+        cursor.execute(f"ALTER TABLE {temp_table} RENAME TO {table_name}")
+        
+        conn.commit()
+        conn.close()
+        
+        return {'success': True, 'message': 'Column updated successfully'}
+    except Exception as e:
+        logger.error(f"Error updating column: {e}", exc_info=True)
         return {'success': False, 'error': str(e)}
 
 def drop_column(bot_id: int, table_name: str, column_name: str, 

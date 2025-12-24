@@ -24,7 +24,7 @@ from backend.bot_manager import start_bot, stop_bot, get_bot_process_info, is_pr
 from backend.sqlite_manager import (
     get_tables, get_table_structure, get_table_data, execute_sql,
     create_table, drop_table, insert_row, update_row, delete_row,
-    add_column, drop_column, get_databases as get_sqlite_databases,
+    add_column, drop_column, update_column, get_databases as get_sqlite_databases,
     create_database as create_sqlite_database, delete_database as delete_sqlite_database,
     import_database
 )
@@ -1595,19 +1595,47 @@ async def add_sqlite_column_endpoint(bot_id: int, table_name: str, request: Requ
     column_type = data.get("column_type", "TEXT")
     notnull = data.get("notnull", False)
     default_value = data.get("default_value", None)
+    after_column = data.get("after_column", None)
     db_name = data.get("db_name", "bot.db")
     
     if not column_name:
         raise HTTPException(status_code=400, detail="Имя столбца обязательно")
     
     try:
-        result = add_column(bot_id, table_name, column_name, column_type, db_name, notnull, default_value)
+        result = add_column(bot_id, table_name, column_name, column_type, db_name, notnull, default_value, after_column)
         if result['success']:
             return result
         else:
             raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
     except Exception as e:
         logger.error(f"Error adding column: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/bots/{bot_id}/sqlite/tables/{table_name}/columns/{column_name}")
+async def update_sqlite_column_endpoint(bot_id: int, table_name: str, column_name: str, request: Request):
+    """Обновление столбца (переименование, изменение типа и т.д.)"""
+    bot = get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    
+    data = await request.json()
+    new_column_name = data.get("column_name", "")
+    column_type = data.get("column_type", "TEXT")
+    notnull = data.get("notnull", False)
+    default_value = data.get("default_value", None)
+    db_name = data.get("db_name", "bot.db")
+    
+    if not new_column_name:
+        raise HTTPException(status_code=400, detail="Имя столбца обязательно")
+    
+    try:
+        result = update_column(bot_id, table_name, column_name, new_column_name, column_type, db_name, notnull, default_value)
+        if result['success']:
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', 'Неизвестная ошибка'))
+    except Exception as e:
+        logger.error(f"Error updating column: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/bots/{bot_id}/sqlite/tables/{table_name}/columns/{column_name}")
