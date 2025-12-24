@@ -8,6 +8,44 @@ let editingRowId = null;
 let primaryKeyColumn = 'id';
 let sqlEditor = null;
 
+// SQLite типы данных с описаниями
+const SQLITE_DATA_TYPES = {
+    'NULL': 'Значение NULL (отсутствие данных)',
+    'INTEGER': 'Целое число (1, 2, 3, 4, 6 или 8 байт в зависимости от значения)',
+    'REAL': 'Число с плавающей точкой (8-байтное IEEE, двойная точность)',
+    'TEXT': 'Текстовая строка (UTF-8, UTF-16BE или UTF-16LE, неограниченная длина)',
+    'BLOB': 'Бинарные данные (Binary Large Object, массив байтов)',
+    'NUMERIC': 'Числовое значение (может храниться как INTEGER или REAL в зависимости от значения)',
+    'CHARACTER(n)': 'Текст фиксированной длины n (аналогично TEXT)',
+    'CHAR(n)': 'Текст фиксированной длины n (сокращение от CHARACTER)',
+    'VARCHAR(n)': 'Текст переменной длины до n символов (аналогично TEXT)',
+    'NCHAR(n)': 'Текст с национальной кодировкой фиксированной длины n (аналогично TEXT)',
+    'NVARCHAR(n)': 'Текст с национальной кодировкой переменной длины до n символов (аналогично TEXT)',
+    'CLOB': 'Большой текстовый объект (Character Large Object, аналогично TEXT)',
+    'DATE': 'Дата (сохраняется как TEXT в формате YYYY-MM-DD, INTEGER как количество дней с 1970-01-01, или REAL)',
+    'DATETIME': 'Дата и время (сохраняется как TEXT в формате YYYY-MM-DD HH:MM:SS, INTEGER как Unix timestamp, или REAL)',
+    'TIMESTAMP': 'Временная метка (сохраняется как TEXT в формате YYYY-MM-DD HH:MM:SS, INTEGER как Unix timestamp, или REAL)',
+    'TIME': 'Время (сохраняется как TEXT в формате HH:MM:SS, INTEGER, или REAL)',
+    'BOOLEAN': 'Логическое значение (0 = false, 1 = true, сохраняется как INTEGER)'
+};
+
+// Получить описание типа данных
+function getDataTypeDescription(type) {
+    return SQLITE_DATA_TYPES[type] || 'Неизвестный тип данных';
+}
+
+// Создать HTML для select с типами данных
+function createDataTypeSelect(selectedType = 'TEXT', selectName = 'column_type', selectId = null, selectClass = 'form-select') {
+    const idAttr = selectId ? `id="${selectId}"` : '';
+    const classAttr = selectClass ? `class="${selectClass}"` : '';
+    const options = Object.keys(SQLITE_DATA_TYPES).map(type => {
+        const selected = type === selectedType ? 'selected' : '';
+        const description = SQLITE_DATA_TYPES[type];
+        return `<option value="${escapeHtml(type)}" ${selected} title="${escapeHtml(description)}">${escapeHtml(type)}</option>`;
+    }).join('');
+    return `<select ${idAttr} ${classAttr} name="${selectName}" required>${options}</select>`;
+}
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', function() {
     // Получаем bot_id из URL
@@ -65,6 +103,26 @@ document.addEventListener('DOMContentLoaded', function() {
     const dbParam = urlParams.get('db');
     if (dbParam) {
         currentDbName = decodeURIComponent(dbParam);
+    }
+    
+    // Инициализация select типов данных в модальном окне добавления столбца
+    const addColumnTypeSelect = document.getElementById('new-column-type');
+    const addColumnTypeDescription = document.getElementById('new-column-type-description');
+    if (addColumnTypeSelect) {
+        // Заполняем select всеми типами данных
+        addColumnTypeSelect.innerHTML = Object.keys(SQLITE_DATA_TYPES).map(type => {
+            const description = SQLITE_DATA_TYPES[type];
+            return `<option value="${escapeHtml(type)}" title="${escapeHtml(description)}">${escapeHtml(type)}</option>`;
+        }).join('');
+        addColumnTypeSelect.value = 'TEXT'; // Значение по умолчанию
+        
+        // Обновляем описание при изменении типа
+        if (addColumnTypeDescription) {
+            addColumnTypeDescription.textContent = getDataTypeDescription('TEXT');
+            addColumnTypeSelect.addEventListener('change', function() {
+                addColumnTypeDescription.textContent = getDataTypeDescription(this.value);
+            });
+        }
     }
     
     // Загрузка данных
@@ -278,17 +336,26 @@ async function loadDatabases() {
         });
         
         // Восстанавливаем выбранное значение или устанавливаем из URL/currentDbName
+        const dbFromUrl = currentDbName; // Сохраняем значение из URL до изменений
+        
         if (currentDbName && Array.from(dbSelector.options).find(opt => opt.value === currentDbName)) {
             dbSelector.value = currentDbName;
         } else if (currentValue && Array.from(dbSelector.options).find(opt => opt.value === currentValue)) {
             dbSelector.value = currentValue;
         }
         
-        // Если была установлена текущая БД, выбираем её
-        if (currentDbName && dbSelector.value !== currentDbName) {
-            selectDatabase(currentDbName, false);
+        // Если была установлена текущая БД из URL, обязательно выбираем её и загружаем таблицы
+        // Важно: вызываем selectDatabase даже если значение уже установлено, чтобы загрузить таблицы
+        if (dbFromUrl && Array.from(dbSelector.options).find(opt => opt.value === dbFromUrl)) {
+            // Используем setTimeout чтобы убедиться, что DOM обновлен
+            setTimeout(() => {
+                selectDatabase(dbFromUrl, false);
+            }, 0);
         } else if (dbSelector.value && !currentDbName) {
-            selectDatabase(dbSelector.value, false);
+            // Если БД выбрана в селекторе, но currentDbName не установлен
+            setTimeout(() => {
+                selectDatabase(dbSelector.value, false);
+            }, 0);
         }
     } catch (error) {
         console.error('Error loading databases:', error);
@@ -864,7 +931,8 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
     columnItem.className = 'column-item';
     columnItem.setAttribute('data-index', columnIndex);
     
-    const sqliteTypes = ['TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC'];
+    const selectId = `column_type_${columnIndex}`;
+    const descriptionId = `column_type_desc_${columnIndex}`;
     
     columnItem.innerHTML = `
         <div class="column-item-header">
@@ -880,9 +948,8 @@ function addColumnToForm(name = '', type = 'TEXT', notnull = false, pk = false, 
             </div>
             <div>
                 <label class="form-label">Тип данных *</label>
-                <select class="form-select form-select-sm" name="column_type" required>
-                    ${sqliteTypes.map(t => `<option value="${t}" ${t === type ? 'selected' : ''}>${t}</option>`).join('')}
-                </select>
+                ${createDataTypeSelect(type, 'column_type', selectId, 'form-select form-select-sm column-type-select')}
+                <small class="form-text text-muted column-type-description" id="${descriptionId}" style="display: block; margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">${getDataTypeDescription(type)}</small>
             </div>
             <div>
                 <label class="form-label">
@@ -1041,10 +1108,21 @@ window.showAddColumnModal = function() {
         return;
     }
     
-    document.getElementById('new-column-name').value = '';
-    document.getElementById('new-column-type').value = 'TEXT';
-    document.getElementById('new-column-notnull').checked = false;
-    document.getElementById('new-column-default').value = '';
+    const nameInput = document.getElementById('new-column-name');
+    const typeSelect = document.getElementById('new-column-type');
+    const notnullCheckbox = document.getElementById('new-column-notnull');
+    const defaultInput = document.getElementById('new-column-default');
+    const typeDescription = document.getElementById('new-column-type-description');
+    
+    if (nameInput) nameInput.value = '';
+    if (typeSelect) {
+        typeSelect.value = 'TEXT';
+        if (typeDescription) {
+            typeDescription.textContent = getDataTypeDescription('TEXT');
+        }
+    }
+    if (notnullCheckbox) notnullCheckbox.checked = false;
+    if (defaultInput) defaultInput.value = '';
     
     const modal = new bootstrap.Modal(document.getElementById('add-column-modal'));
     modal.show();

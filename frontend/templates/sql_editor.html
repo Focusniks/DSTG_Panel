@@ -1056,12 +1056,11 @@
                         <div class="mb-3">
                             <label for="new-column-type" class="form-label">Тип данных *</label>
                             <select class="form-select" id="new-column-type" required>
-                                <option value="TEXT">TEXT</option>
-                                <option value="INTEGER">INTEGER</option>
-                                <option value="REAL">REAL</option>
-                                <option value="BLOB">BLOB</option>
-                                <option value="NUMERIC">NUMERIC</option>
+                                <!-- Опции будут добавлены через JavaScript -->
                             </select>
+                            <small class="form-text text-muted" id="new-column-type-description" style="display: block; margin-top: 0.25rem; font-size: 0.875rem; color: var(--text-muted);">
+                                Выберите тип данных для столбца
+                            </small>
                         </div>
                         <div class="mb-3">
                             <div class="form-check">
