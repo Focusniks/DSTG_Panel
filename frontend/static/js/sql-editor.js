@@ -55,37 +55,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     window.sqlEditor = sqlEditor;
     
-    // Получаем параметр db из URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const dbParam = urlParams.get('db');
-    
     // Загрузка данных
     loadBotInfo();
+    // Загружаем базы данных - функция сама обработает выбор БД из URL
     loadDatabases();
-    
-    // Если есть параметр db в URL, выбираем эту базу данных после загрузки списка
-    if (dbParam) {
-        // Используем несколько попыток, так как loadDatabases асинхронный
-        let attempts = 0;
-        const maxAttempts = 20;
-        const checkInterval = setInterval(() => {
-            attempts++;
-            const dbSelector = document.getElementById('db-selector');
-            if (dbSelector && dbSelector.options.length > 1) {
-                // Проверяем, есть ли нужная БД в списке
-                const dbOption = Array.from(dbSelector.options).find(opt => opt.value === dbParam);
-                if (dbOption) {
-                    dbSelector.value = dbParam;
-                    dbSelector.dispatchEvent(new Event('change'));
-                    clearInterval(checkInterval);
-                } else if (attempts >= maxAttempts) {
-                    clearInterval(checkInterval);
-                }
-            } else if (attempts >= maxAttempts) {
-                clearInterval(checkInterval);
-            }
-        }, 100);
-    }
     
     // Обработчики событий
     document.getElementById('db-selector').addEventListener('change', function() {
@@ -211,6 +184,8 @@ async function loadDatabases() {
         const result = await response.json();
         const databases = result.databases || result;
         const selector = document.getElementById('db-selector');
+        if (!selector) return;
+        
         selector.innerHTML = '<option value="">Выберите базу данных...</option>';
         
         if (!databases || databases.length === 0) {
@@ -219,13 +194,37 @@ async function loadDatabases() {
         
         databases.forEach(db => {
             const option = document.createElement('option');
-            option.value = db.db_name || db;
-            option.textContent = db.db_name || db;
+            const dbName = db.db_name || db;
+            option.value = dbName;
+            option.textContent = dbName;
             selector.appendChild(option);
         });
         
-        if (currentDbName) {
-            selector.value = currentDbName;
+        // Если была установлена текущая БД, выбираем её
+        // Проверяем параметр db из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const dbParam = urlParams.get('db');
+        
+        // Если есть параметр db в URL, выбираем эту БД
+        if (dbParam) {
+            const dbOption = Array.from(selector.options).find(opt => opt.value === dbParam);
+            if (dbOption) {
+                selector.value = dbParam;
+                currentDbName = dbParam;
+                // Вызываем событие change для загрузки таблиц после небольшой задержки
+                setTimeout(() => {
+                    selector.dispatchEvent(new Event('change', { bubbles: true }));
+                }, 100);
+                return; // Выходим, так как уже выбрали БД из URL
+            }
+        }
+        
+        // Если была установлена текущая БД ранее, выбираем её
+        if (currentDbName && selector.options.length > 1) {
+            const dbOption = Array.from(selector.options).find(opt => opt.value === currentDbName);
+            if (dbOption) {
+                selector.value = currentDbName;
+            }
         }
     } catch (error) {
         console.error('Error loading databases:', error);
