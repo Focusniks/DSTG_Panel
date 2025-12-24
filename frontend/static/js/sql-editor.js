@@ -80,65 +80,104 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Обработчики кнопок
-    document.getElementById('refresh-btn').addEventListener('click', function() {
-        if (currentDbName) {
-            loadDatabases();
-            if (currentTableName) {
-                loadTableData();
-                loadStructure();
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            if (currentDbName) {
+                loadDatabases();
+                if (currentTableName) {
+                    loadTableData();
+                    loadStructure();
+                }
+            } else {
+                loadDatabases();
             }
-        } else {
-            loadDatabases();
-        }
-    });
+        });
+    }
     
-    document.getElementById('create-table-btn').addEventListener('click', function() {
-        showCreateTableModal();
-    });
+    const createTableBtn = document.getElementById('create-table-btn');
+    if (createTableBtn) {
+        createTableBtn.addEventListener('click', function() {
+            showCreateTableModal();
+        });
+    }
     
-    document.getElementById('add-column-form-btn').addEventListener('click', function() {
-        addColumnToForm();
-    });
+    const addColumnFormBtn = document.getElementById('add-column-form-btn');
+    if (addColumnFormBtn) {
+        addColumnFormBtn.addEventListener('click', function() {
+            addColumnToForm();
+        });
+    }
     
-    document.getElementById('save-create-table-btn').addEventListener('click', function() {
-        createTable();
-    });
+    const saveCreateTableBtn = document.getElementById('save-create-table-btn');
+    if (saveCreateTableBtn) {
+        saveCreateTableBtn.addEventListener('click', function() {
+            createTable();
+        });
+    }
     
-    document.getElementById('save-add-column-btn').addEventListener('click', function() {
-        addColumnToTable();
-    });
+    const saveAddColumnBtn = document.getElementById('save-add-column-btn');
+    if (saveAddColumnBtn) {
+        saveAddColumnBtn.addEventListener('click', function() {
+            addColumnToTable();
+        });
+    }
     
-    document.getElementById('add-row-btn').addEventListener('click', function() {
-        showAddRowModal();
-    });
+    const addRowBtn = document.getElementById('add-row-btn');
+    if (addRowBtn) {
+        addRowBtn.addEventListener('click', function() {
+            showAddRowModal();
+        });
+    }
     
-    document.getElementById('save-new-row-btn').addEventListener('click', function() {
-        saveNewRow();
-    });
+    const saveNewRowBtn = document.getElementById('save-new-row-btn');
+    if (saveNewRowBtn) {
+        saveNewRowBtn.addEventListener('click', function() {
+            saveNewRow();
+        });
+    }
     
-    document.getElementById('save-edit-row-btn').addEventListener('click', function() {
-        saveEditRow();
-    });
+    const saveEditRowBtn = document.getElementById('save-edit-row-btn');
+    if (saveEditRowBtn) {
+        saveEditRowBtn.addEventListener('click', function() {
+            saveEditRow();
+        });
+    }
     
-    document.getElementById('structure-toggle-btn').addEventListener('click', function() {
-        switchTab('structure');
-    });
+    const structureToggleBtn = document.getElementById('structure-toggle-btn');
+    if (structureToggleBtn) {
+        structureToggleBtn.addEventListener('click', function() {
+            switchTab('structure');
+        });
+    }
     
-    document.getElementById('add-column-btn').addEventListener('click', function() {
-        showAddColumnModal();
-    });
+    const addColumnBtn = document.getElementById('add-column-btn');
+    if (addColumnBtn) {
+        addColumnBtn.addEventListener('click', function() {
+            showAddColumnModal();
+        });
+    }
     
-    document.getElementById('execute-query-btn').addEventListener('click', function() {
-        executeQuery();
-    });
+    const executeQueryBtn = document.getElementById('execute-query-btn');
+    if (executeQueryBtn) {
+        executeQueryBtn.addEventListener('click', function() {
+            executeQuery();
+        });
+    }
     
-    document.getElementById('clear-query-btn').addEventListener('click', function() {
-        if (sqlEditor) {
-            sqlEditor.setValue('');
-            sqlEditor.focus();
-        }
-        document.getElementById('query-results-section').style.display = 'none';
-    });
+    const clearQueryBtn = document.getElementById('clear-query-btn');
+    if (clearQueryBtn) {
+        clearQueryBtn.addEventListener('click', function() {
+            if (sqlEditor) {
+                sqlEditor.setValue('');
+                sqlEditor.focus();
+            }
+            const queryResultsSection = document.getElementById('query-results-section');
+            if (queryResultsSection) {
+                queryResultsSection.style.display = 'none';
+            }
+        });
+    }
 });
 
 // Переключение вкладок
@@ -201,7 +240,10 @@ async function loadDatabases() {
         const result = await response.json();
         const databases = result.databases || result;
         const databaseList = document.getElementById('database-list');
-        if (!databaseList) return;
+        if (!databaseList) {
+            console.error('database-list element not found');
+            return;
+        }
         
         databaseList.innerHTML = '';
         
@@ -232,6 +274,10 @@ async function loadDatabases() {
         }
     } catch (error) {
         console.error('Error loading databases:', error);
+        const databaseList = document.getElementById('database-list');
+        if (databaseList) {
+            databaseList.innerHTML = '<div style="color: var(--text-danger); padding: 1rem; text-align: center;">Ошибка загрузки баз данных</div>';
+        }
         showError('Ошибка', 'Не удалось загрузить список баз данных');
     }
 }
