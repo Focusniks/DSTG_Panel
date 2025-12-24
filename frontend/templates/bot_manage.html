@@ -461,9 +461,6 @@
                     </h2>
                     <p class="text-muted mb-0">Управление SQLite базами данных бота: создание, удаление, выполнение SQL запросов, работа с таблицами</p>
                 </div>
-                <a href="#" id="sql-editor-link" class="btn btn-primary">
-                    <i class="fas fa-database"></i> Открыть SQL редактор
-                </a>
             </div>
 
             <!-- Форма создания новой базы данных -->
@@ -502,27 +499,31 @@
 
             <!-- SQL редактор -->
             <div class="database-sql-editor">
-                <div class="database-sql-header">
-                    <h5><i class="fas fa-code"></i> SQL редактор</h5>
-                </div>
-                <div class="database-sql-body">
-                    <div class="mb-3">
-                        <label for="sql-db-select" class="form-label">База данных для запроса</label>
-                        <select class="form-select" id="sql-db-select">
-                            <option value="">Выберите базу данных...</option>
-                        </select>
+                <div class="sql-editor-toolbar">
+                    <div class="sql-toolbar-left">
+                        <div class="sql-db-selector">
+                            <i class="fas fa-database"></i>
+                            <select class="form-select form-select-sm" id="sql-db-select">
+                                <option value="">Выберите базу данных...</option>
+                            </select>
+                        </div>
                     </div>
-                    <textarea id="sql-query" class="form-control" rows="8" placeholder="Введите SQL запрос..."></textarea>
-                    <div class="d-flex gap-2 mt-3">
-                        <button class="btn btn-primary" id="execute-query-btn">
-                            <i class="fas fa-play"></i> Выполнить запрос
+                    <div class="sql-toolbar-right">
+                        <button class="btn btn-sm btn-secondary" id="sql-clear-btn" title="Очистить запрос">
+                            <i class="fas fa-eraser"></i> Очистить
                         </button>
-                        <button class="btn btn-info" id="sqlite-editor-btn" style="display: none;">
-                            <i class="fas fa-database"></i> SQLite редактор
+                        <button class="btn btn-sm btn-primary" id="execute-query-btn">
+                            <i class="fas fa-play"></i> Выполнить
+                        </button>
+                        <button class="btn btn-sm btn-info" id="sqlite-editor-btn" style="display: none;" title="Открыть расширенный редактор">
+                            <i class="fas fa-external-link-alt"></i> Расширенный редактор
                         </button>
                     </div>
-                    <div id="query-result" class="mt-3"></div>
                 </div>
+                <div class="sql-editor-container">
+                    <textarea id="sql-query" placeholder="Введите SQL запрос здесь...&#10;Пример: SELECT * FROM users LIMIT 10;"></textarea>
+                </div>
+                <div id="query-result" class="sql-query-result"></div>
             </div>
         </section>
 

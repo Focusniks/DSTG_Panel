@@ -42,13 +42,50 @@ document.addEventListener('DOMContentLoaded', function() {
         lineNumbers: true,
         indentWithTabs: true,
         smartIndent: true,
-        lineWrapping: true
+        lineWrapping: true,
+        autoCloseBrackets: true,
+        matchBrackets: true,
+        extraKeys: {
+            "Ctrl-Enter": function(cm) {
+                executeQuery();
+            },
+            "Ctrl-/": "toggleComment",
+            "Ctrl-F": "findPersistent"
+        }
     });
     window.sqlEditor = sqlEditor;
+    
+    // Получаем параметр db из URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const dbParam = urlParams.get('db');
     
     // Загрузка данных
     loadBotInfo();
     loadDatabases();
+    
+    // Если есть параметр db в URL, выбираем эту базу данных после загрузки списка
+    if (dbParam) {
+        // Используем несколько попыток, так как loadDatabases асинхронный
+        let attempts = 0;
+        const maxAttempts = 20;
+        const checkInterval = setInterval(() => {
+            attempts++;
+            const dbSelector = document.getElementById('db-selector');
+            if (dbSelector && dbSelector.options.length > 1) {
+                // Проверяем, есть ли нужная БД в списке
+                const dbOption = Array.from(dbSelector.options).find(opt => opt.value === dbParam);
+                if (dbOption) {
+                    dbSelector.value = dbParam;
+                    dbSelector.dispatchEvent(new Event('change'));
+                    clearInterval(checkInterval);
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                }
+            } else if (attempts >= maxAttempts) {
+                clearInterval(checkInterval);
+            }
+        }, 100);
+    }
     
     // Обработчики событий
     document.getElementById('db-selector').addEventListener('change', function() {
@@ -94,6 +131,16 @@ document.addEventListener('DOMContentLoaded', function() {
             loadDatabases();
         }
     });
+    
+    // Кнопка обновления таблицы
+    const refreshTableBtn = document.getElementById('refresh-table-btn');
+    if (refreshTableBtn) {
+        refreshTableBtn.addEventListener('click', function() {
+            if (currentTableName && currentDbName) {
+                loadTableData();
+            }
+        });
+    }
     
     document.getElementById('add-row-btn').addEventListener('click', function() {
         showAddRowForm();

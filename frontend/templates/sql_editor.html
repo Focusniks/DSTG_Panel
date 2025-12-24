@@ -50,172 +50,276 @@
             display: flex;
             height: calc(100vh - 60px);
             margin-top: 60px;
+            background: var(--bg-primary);
         }
         .sql-sidebar {
-            width: 250px;
-            background: var(--dark-bg);
+            width: 280px;
+            background: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
             overflow-y: auto;
-            padding: 20px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
         }
         .sql-main-content {
             flex: 1;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            background: var(--bg-primary);
         }
         .sql-toolbar {
-            padding: 15px 20px;
-            background: var(--dark-bg);
+            padding: 1rem 1.5rem;
+            background: var(--bg-tertiary);
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .sql-toolbar .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         .sql-content-area {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
+            padding: 1.5rem;
         }
         .database-selector {
-            margin-bottom: 20px;
+            margin-bottom: 1.5rem;
+        }
+        .database-selector label {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: block;
+            font-size: 0.9rem;
         }
         .tables-list {
             list-style: none;
             padding: 0;
             margin: 0;
+            flex: 1;
         }
         .tables-list li {
-            padding: 8px 12px;
-            margin-bottom: 5px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 4px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all var(--anim-normal) ease;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
         .tables-list li:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--bg-hover);
+            border-color: var(--neon-cyan);
+            transform: translateX(4px);
         }
         .tables-list li.active {
-            background: var(--neon-cyan);
-            color: var(--dark-bg);
+            background: rgba(0, 243, 255, 0.15);
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+        }
+        .sql-query-editor {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .sql-query-editor h5 {
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .CodeMirror {
+            height: 250px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .CodeMirror-gutters {
+            background: var(--bg-tertiary) !important;
+            border-right: 1px solid var(--border-color) !important;
+        }
+        .CodeMirror-linenumber {
+            color: var(--text-muted) !important;
         }
         .data-table {
             width: 100%;
-            background: var(--dark-bg);
+            background: var(--bg-card);
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 1rem;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
         }
         .data-table th,
         .data-table td {
-            padding: 12px;
+            padding: 0.875rem 1rem;
             text-align: left;
-            border: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
         }
         .data-table th {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--bg-tertiary);
             font-weight: 600;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
         }
-        .data-table tr:hover {
-            background: rgba(255, 255, 255, 0.05);
+        .data-table tbody tr {
+            transition: background-color var(--anim-fast) ease;
+        }
+        .data-table tbody tr:hover {
+            background: var(--bg-hover);
+        }
+        .data-table td {
+            color: var(--text-secondary);
         }
         .editable-cell {
             cursor: pointer;
             position: relative;
         }
         .editable-cell:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--bg-hover);
         }
         .editable-cell input {
             width: 100%;
-            background: transparent;
+            background: var(--bg-tertiary);
             border: 1px solid var(--neon-cyan);
-            color: var(--text-color);
-            padding: 4px 8px;
+            color: var(--text-primary);
+            padding: 0.5rem;
+            border-radius: 4px;
         }
         .row-actions {
             display: flex;
-            gap: 5px;
+            gap: 0.5rem;
         }
         .row-actions button {
-            padding: 4px 8px;
-            font-size: 12px;
-        }
-        .sql-query-editor {
-            margin-bottom: 20px;
-        }
-        .CodeMirror {
-            height: 200px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.85rem;
         }
         .query-results {
-            margin-top: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        .query-results h5 {
+            color: var(--text-primary);
+            margin-bottom: 1rem;
         }
         .query-results table {
             width: 100%;
-            background: var(--dark-bg);
+            background: transparent;
             border-collapse: collapse;
         }
         .query-results th,
         .query-results td {
-            padding: 10px;
+            padding: 0.75rem;
             border: 1px solid var(--border-color);
         }
+        .query-results th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-primary);
+        }
         .add-row-form {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+        }
+        .add-row-form h6 {
+            color: var(--text-primary);
+            margin-bottom: 1rem;
         }
         .form-row {
             display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            align-items: flex-end;
         }
         .form-row label {
-            min-width: 120px;
+            min-width: 140px;
             margin: 0;
+            color: var(--text-secondary);
+            font-weight: 500;
         }
         .form-row input,
         .form-row select {
             flex: 1;
         }
         .column-item {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 10px;
+            background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
         }
         .column-item-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 1rem;
         }
         .column-item-fields {
             display: grid;
             grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr;
-            gap: 10px;
+            gap: 1rem;
             align-items: end;
         }
         .column-item-fields label {
-            font-size: 12px;
-            margin-bottom: 5px;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+            display: block;
+        }
+        #table-data-view h5,
+        #structure-view h5 {
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+        #empty-state {
+            padding: 4rem 2rem;
+        }
+        #empty-state i {
+            opacity: 0.3;
+        }
+        @media (max-width: 768px) {
+            .sql-sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .sql-editor-container {
+                flex-direction: column;
+                height: auto;
+            }
         }
     </style>
 </head>
 <body>
     <!-- Header -->
-    <nav class="navbar navbar-dark bg-dark fixed-top">
+    <nav class="navbar">
         <div class="container-fluid">
             <a class="navbar-brand" href="/">
-                <i class="fas fa-robot"></i> SQL Редактор
+                <i class="fas fa-database"></i> SQL Редактор
             </a>
             <div class="d-flex align-items-center">
-                <span class="text-white me-3" id="bot-name-header">Загрузка...</span>
+                <span class="me-3" id="bot-name-header" style="color: var(--text-secondary);">Загрузка...</span>
                 <a href="#" id="back-to-bot-link" class="btn btn-sm btn-outline-light">
                     <i class="fas fa-arrow-left"></i> Назад к боту
                 </a>
@@ -227,7 +331,7 @@
         <!-- Sidebar -->
         <div class="sql-sidebar">
             <div class="database-selector">
-                <label class="text-white mb-2">База данных:</label>
+                <label class="mb-2">База данных:</label>
                 <select id="db-selector" class="form-select form-select-sm">
                     <option value="">Выберите базу данных...</option>
                 </select>
@@ -235,7 +339,7 @@
             
             <div class="mt-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="text-white mb-0">Таблицы:</h6>
+                    <h6 class="mb-0" style="color: var(--text-primary); font-weight: 600;">Таблицы:</h6>
                     <button class="btn btn-sm btn-success" id="create-table-btn" style="display: none;">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -272,17 +376,21 @@
                 <div id="alerts-container" class="mb-3"></div>
                 <!-- SQL Query Editor -->
                 <div class="sql-query-editor">
-                    <h5 class="text-white mb-3">
+                    <h5 class="mb-3">
                         <i class="fas fa-code"></i> SQL Запросы
                     </h5>
-                    <textarea id="sql-query" class="form-control" rows="5" placeholder="Введите SQL запрос..."></textarea>
-                    <div class="mt-2">
+                    <textarea id="sql-query" placeholder="Введите SQL запрос здесь...&#10;Пример: SELECT * FROM users LIMIT 10;"></textarea>
+                    <div class="d-flex gap-2 mt-3">
                         <button class="btn btn-primary" id="execute-query-btn">
                             <i class="fas fa-play"></i> Выполнить запрос
                         </button>
                         <button class="btn btn-secondary" id="clear-query-btn">
                             <i class="fas fa-eraser"></i> Очистить
                         </button>
+                        <div class="ms-auto text-muted" style="font-size: 0.85rem; display: flex; align-items: center;">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <span>Используйте Ctrl+Enter для быстрого выполнения</span>
+                        </div>
                     </div>
                 </div>
 

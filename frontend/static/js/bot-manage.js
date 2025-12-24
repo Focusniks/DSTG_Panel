@@ -6,6 +6,7 @@
     // Глобальные переменные
     let botId = null;
     let codeEditor = null;
+    let sqlEditor = null;
     let currentFile = null;
     let updateInterval = null;
     let cpuChart = null;
@@ -27,12 +28,6 @@
         }
         
         botId = parseInt(match[1]);
-        
-        // Устанавливаем ссылку на SQL редактор
-        const sqlEditorLink = document.getElementById('sql-editor-link');
-        if (sqlEditorLink) {
-            sqlEditorLink.href = `/bot/${botId}/sql-editor`;
-        }
         
         // Настраиваем обработчики событий
         setupEventListeners();
@@ -112,6 +107,26 @@
         const executeQueryBtn = document.getElementById('execute-query-btn');
         if (executeQueryBtn) {
             executeQueryBtn.addEventListener('click', handleExecuteQuery);
+        }
+        
+        // Инициализация SQL редактора
+        initSqlEditor();
+        
+        // Кнопка очистки SQL запроса
+        const sqlClearBtn = document.getElementById('sql-clear-btn');
+        if (sqlClearBtn) {
+            sqlClearBtn.addEventListener('click', function() {
+                if (sqlEditor) {
+                    sqlEditor.setValue('');
+                    sqlEditor.focus();
+                } else {
+                    const sqlTextarea = document.getElementById('sql-query');
+                    if (sqlTextarea) {
+                        sqlTextarea.value = '';
+                        sqlTextarea.focus();
+                    }
+                }
+            });
         }
         
         // Кнопка обновления из Git
@@ -1639,6 +1654,77 @@
         });
     }
     
+    // Инициализация SQL редактора
+    function initSqlEditor() {
+        if (sqlEditor) {
+            return;
+        }
+        
+        if (typeof CodeMirror === 'undefined') {
+            console.error('CodeMirror is not loaded');
+            return;
+        }
+        
+        const sqlTextarea = document.getElementById('sql-query');
+        if (!sqlTextarea) {
+            return;
+        }
+        
+        // Проверяем, не инициализирован ли уже CodeMirror
+        if (sqlTextarea.cmInstance) {
+            sqlEditor = sqlTextarea.cmInstance;
+            return;
+        }
+        
+        sqlEditor = CodeMirror.fromTextArea(sqlTextarea, {
+            lineNumbers: true,
+            mode: 'text/x-sql',
+            theme: 'monokai',
+            indentUnit: 2,
+            lineWrapping: true,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            indentWithTabs: false,
+            tabSize: 2,
+            extraKeys: {
+                "Ctrl-Enter": function(cm) {
+                    handleExecuteQuery();
+                },
+                "Ctrl-/": "toggleComment",
+                "Ctrl-F": "findPersistent"
+            }
+        });
+        
+        // Сохраняем ссылку на экземпляр
+        sqlTextarea.cmInstance = sqlEditor;
+        
+        // Обновляем размер редактора при изменении размера контейнера
+        const sqlEditorContainer = document.querySelector('.sql-editor-container');
+        if (sqlEditorContainer) {
+            const resizeObserver = new ResizeObserver(function() {
+                if (sqlEditor) {
+                    setTimeout(function() {
+                        sqlEditor.refresh();
+                    }, 10);
+                }
+            });
+            resizeObserver.observe(sqlEditorContainer);
+        }
+        
+        // Обновляем размер при изменении размера окна
+        let resizeTimeout;
+        window.addEventListener('resize', function() {
+            if (sqlEditor && resizeTimeout) {
+                clearTimeout(resizeTimeout);
+            }
+            resizeTimeout = setTimeout(function() {
+                if (sqlEditor) {
+                    sqlEditor.refresh();
+                }
+            }, 100);
+        });
+    }
+    
     // Сохранение файла
     async function handleSaveFile() {
         if (!botId || !currentFile || !codeEditor) {
@@ -1751,32 +1837,40 @@
             
             let html = '';
             databases.forEach(db => {
+                const dbName = escapeHtml(db.db_name);
                 html += `
-                    <div class="database-item">
+                    <div class="database-item" onclick="selectDatabase('${dbName}')" style="cursor: pointer;">
                         <div class="database-item-header">
                             <div class="database-item-name">
-                                <i class="fas fa-database"></i> ${escapeHtml(db.db_name)}
+                                <i class="fas fa-database"></i>
+                                <span>${dbName}</span>
                             </div>
                             <div class="database-item-actions">
-                                <button class="database-item-btn btn-delete" onclick="deleteDatabase('${escapeHtml(db.db_name)}')" title="Удалить базу данных">
+                                <button class="database-item-btn btn-delete" onclick="event.stopPropagation(); deleteDatabase('${dbName}')" title="Удалить базу данных">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </div>
                         </div>
                         <div class="database-item-info">
                             <div class="database-item-info-item">
-                                <span class="database-item-info-label">Пользователь:</span>
+                                <span class="database-item-info-label">
+                                    <i class="fas fa-user"></i> Пользователь
+                                </span>
                                 <span class="database-item-info-value">${escapeHtml(db.db_user)}</span>
                             </div>
                             <div class="database-item-info-item">
-                                <span class="database-item-info-label">Таблиц:</span>
+                                <span class="database-item-info-label">
+                                    <i class="fas fa-table"></i> Таблиц
+                                </span>
                                 <span class="database-item-info-value">${db.table_count || 0}</span>
                             </div>
                             <div class="database-item-info-item">
-                                <span class="database-item-info-label">Размер:</span>
+                                <span class="database-item-info-label">
+                                    <i class="fas fa-hdd"></i> Размер
+                                </span>
                                 <span class="database-item-info-value">${db.size_mb || 0} MB</span>
                             </div>
-                            ${db.error ? `<div class="database-item-info-item"><span class="text-danger">Ошибка: ${escapeHtml(db.error)}</span></div>` : ''}
+                            ${db.error ? `<div class="database-item-info-item" style="grid-column: 1 / -1;"><span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Ошибка: ${escapeHtml(db.error)}</span></div>` : ''}
                         </div>
                     </div>
                 `;
@@ -1806,6 +1900,13 @@
             select.appendChild(option);
         });
     }
+    
+    window.selectDatabase = function(dbName) {
+        if (!dbName || !botId) return;
+        
+        // Открываем отдельную страницу SQL редактора с выбранной БД
+        window.location.href = `/bot/${botId}/sql-editor?db=${encodeURIComponent(dbName)}`;
+    };
     
     window.deleteDatabase = async function(dbName) {
         if (!botId || !dbName) return;
@@ -1913,9 +2014,10 @@
     async function handleExecuteQuery() {
         if (!botId) return;
         
-        const query = document.getElementById('sql-query').value.trim();
+        const query = sqlEditor ? sqlEditor.getValue().trim() : (document.getElementById('sql-query') ? document.getElementById('sql-query').value.trim() : '');
         if (!query) {
             showWarning('Внимание', 'Введите SQL запрос');
+            if (sqlEditor) sqlEditor.focus();
             return;
         }
         
@@ -1942,40 +2044,62 @@
             
             if (!container) return;
             
-            if (result.success) {
-                if (result.type === 'select') {
-                    const rowCount = result.rows ? result.rows.length : 0;
-                    let html = '<div class="alert alert-success">Запрос выполнен успешно. Найдено строк: ' + rowCount + '</div>';
-                    
-                    if (result.rows && result.rows.length > 0) {
-                        html += '<table class="table table-striped table-bordered"><thead><tr>';
-                        if (result.columns) {
-                            result.columns.forEach(function(col) {
-                                html += '<th>' + escapeHtml(col) + '</th>';
-                            });
-                        }
-                        html += '</tr></thead><tbody>';
+            // Показываем индикатор загрузки
+            const executeBtn = document.getElementById('execute-query-btn');
+            const originalBtnText = executeBtn ? executeBtn.innerHTML : '';
+            if (executeBtn) {
+                executeBtn.disabled = true;
+                executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Выполнение...';
+            }
+            
+            try {
+                if (result.success) {
+                    if (result.type === 'select') {
+                        const rowCount = result.rows ? result.rows.length : 0;
+                        let html = '<div class="alert alert-success mb-3"><i class="fas fa-check-circle"></i> Запрос выполнен успешно. Найдено строк: <strong>' + rowCount + '</strong></div>';
                         
-                        result.rows.forEach(function(row) {
-                            html += '<tr>';
+                        if (result.rows && result.rows.length > 0) {
+                            html += '<div class="table-responsive"><table class="table table-dark table-hover table-bordered mb-0"><thead><tr>';
                             if (result.columns) {
                                 result.columns.forEach(function(col) {
-                                    html += '<td>' + escapeHtml(String(row[col] || '')) + '</td>';
+                                    html += '<th>' + escapeHtml(col) + '</th>';
                                 });
                             }
-                            html += '</tr>';
-                        });
+                            html += '</tr></thead><tbody>';
+                            
+                            result.rows.forEach(function(row) {
+                                html += '<tr>';
+                                if (result.columns) {
+                                    result.columns.forEach(function(col) {
+                                        const value = row[col];
+                                        html += '<td>' + (value !== null && value !== undefined ? escapeHtml(String(value)) : '<span class="text-muted">NULL</span>') + '</td>';
+                                    });
+                                }
+                                html += '</tr>';
+                            });
+                            
+                            html += '</tbody></table></div>';
+                        } else {
+                            html += '<div class="sql-result-empty"><i class="fas fa-info-circle"></i> Результаты не найдены</div>';
+                        }
                         
-                        html += '</tbody></table>';
+                        container.innerHTML = html;
+                    } else {
+                        const affectedRows = result.affected_rows || 0;
+                        container.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Запрос выполнен успешно. Затронуто строк: <strong>' + affectedRows + '</strong></div>';
                     }
                     
-                    container.innerHTML = html;
+                    // Прокручиваем к результатам
+                    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 } else {
-                    const affectedRows = result.affected_rows || 0;
-                    container.innerHTML = '<div class="alert alert-success">Запрос выполнен. Затронуто строк: ' + affectedRows + '</div>';
+                    container.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> <strong>Ошибка:</strong> ' + escapeHtml(result.error || 'Неизвестная ошибка') + '</div>';
+                    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
-            } else {
-                container.innerHTML = '<div class="alert alert-danger">Ошибка: ' + escapeHtml(result.error || 'Неизвестная ошибка') + '</div>';
+            } finally {
+                if (executeBtn) {
+                    executeBtn.disabled = false;
+                    executeBtn.innerHTML = originalBtnText;
+                }
             }
         } catch (error) {
             console.error('Execute query error:', error);
